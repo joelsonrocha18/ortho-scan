@@ -7,14 +7,17 @@ function numericFromId(id: string) {
   return String(hash).padStart(6, '0')
 }
 
-export function patientCode(id: string) {
+export function patientCode(id: string, shortId?: string) {
+  if (shortId?.trim()) return shortId
   return `P${numericFromId(id)}`
 }
 
-export function dentistCode(id: string) {
+export function dentistCode(id: string, shortId?: string) {
+  if (shortId?.trim()) return shortId
   return `D${numericFromId(id)}`
 }
 
-export function clinicCode(id: string) {
+export function clinicCode(id: string, shortId?: string) {
+  if (shortId?.trim()) return shortId
   return `C${numericFromId(id)}`
 }

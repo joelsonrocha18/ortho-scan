@@ -8,6 +8,7 @@ export type Role =
 
 export type User = {
   id: string
+  shortId?: string
   name: string
   username?: string
   email: string

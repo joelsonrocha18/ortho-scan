@@ -43,6 +43,7 @@ type ProductionConfirmState = {
 
 type PatientOption = {
   id: string
+  shortId?: string
   name: string
   dentistId?: string
   clinicId?: string
@@ -278,13 +279,13 @@ export default function LabPage() {
       const [casesRes, labRes, patientsRes, dentistsRes, clinicsRes] = await Promise.all([
         supabase
           .from('cases')
-          .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, status, product_type, product_id, data, deleted_at')
+          .select('id, short_id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, status, product_type, product_id, data, deleted_at')
           .is('deleted_at', null),
         supabase
           .from('lab_items')
           .select('id, clinic_id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, deleted_at, data')
           .is('deleted_at', null),
-        supabase.from('patients').select('id, name, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
+        supabase.from('patients').select('id, short_id, name, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
         supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
       ])
@@ -296,8 +297,9 @@ export default function LabPage() {
       const clinicsById = new Map(
         ((clinicsRes.data ?? []) as Array<{ id: string; trade_name?: string }>).map((row) => [row.id, row.trade_name ?? '-']),
       )
-      const patientOptions = ((patientsRes.data ?? []) as Array<{ id: string; name?: string; clinic_id?: string; primary_dentist_id?: string }>).map((row) => ({
+      const patientOptions = ((patientsRes.data ?? []) as Array<{ id: string; short_id?: string; name?: string; clinic_id?: string; primary_dentist_id?: string }>).map((row) => ({
         id: row.id,
+        shortId: row.short_id ?? undefined,
         name: row.name ?? '-',
         clinicId: row.clinic_id ?? undefined,
         dentistId: row.primary_dentist_id ?? undefined,
@@ -311,6 +313,7 @@ export default function LabPage() {
         const createdAt = new Date().toISOString()
         return {
           id: asText(row.id),
+          shortId: asText(row.short_id) || undefined,
           productType: normalizeProductType(row.product_type ?? row.product_id ?? data.productType ?? data.productId),
           productId: normalizeProductType(row.product_id ?? row.product_type ?? data.productId ?? data.productType),
           patientId: asText(data.patientId, asText(row.patient_id)) || undefined,
@@ -491,6 +494,7 @@ export default function LabPage() {
             const clinic = patient.clinicId ? db.clinics.find((item) => item.id === patient.clinicId) : undefined
             return {
               id: patient.id,
+              shortId: patient.shortId,
               name: patient.name,
               dentistId: patient.primaryDentistId,
               clinicId: patient.clinicId,
@@ -501,6 +505,10 @@ export default function LabPage() {
     [isSupabaseMode, supabasePatientOptions, db.patients, db.dentists, db.clinics],
   )
   const visibleCases = caseSource
+  const patientOptionById = useMemo(
+    () => new Map(patientOptions.map((item) => [item.id, item])),
+    [patientOptions],
+  )
   const readyDeliveryItems = useMemo(
     () =>
       items.filter(
@@ -563,6 +571,8 @@ export default function LabPage() {
       const matchSearch =
         query.length === 0 ||
         item.patientName.toLowerCase().includes(query) ||
+        (item.patientId ? (patientOptionById.get(item.patientId)?.shortId ?? '').toLowerCase().includes(query) : false) ||
+        (item.caseId ? (caseById.get(item.caseId)?.shortId ?? '').toLowerCase().includes(query) : false) ||
         (item.requestCode ?? '').toLowerCase().includes(query) ||
         (item.caseId ?? '').toLowerCase().includes(query) ||
         `#${item.trayNumber}`.includes(query) ||
@@ -573,7 +583,7 @@ export default function LabPage() {
       const matchAlerts = !alertsOnly || (item.caseId ? casesWithAlerts.has(item.caseId) : false)
       return matchSearch && matchPriority && matchStatus && matchOverdue && matchAlerts
     })
-  }, [alertsOnly, casesWithAlerts, items, overdueOnly, priority, search, status])
+  }, [alertsOnly, caseById, casesWithAlerts, items, overdueOnly, patientOptionById, priority, search, status])
   const isDeliveredToProfessional = useCallback((item: LabItem) => {
     return isDeliveredToProfessionalItem(item, caseById)
   }, [caseById])

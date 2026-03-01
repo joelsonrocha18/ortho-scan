@@ -45,7 +45,7 @@ export default function LabFilters({
         <Input
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Buscar paciente ou #tray"
+          placeholder="Buscar codigo, paciente ou #tray"
         />
 
         <select

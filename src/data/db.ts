@@ -52,6 +52,7 @@ export type AppDb = {
 
 type LegacyCase = {
   id: string
+  shortId?: string
   productType?: ProductType
   productId?: ProductType
   paciente?: { nome?: string }
@@ -123,6 +124,7 @@ type LegacyCase = {
 
 type LegacyScan = Partial<Scan> & {
   id: string
+  shortId?: string
   serviceOrderCode?: string
   purposeProductId?: string
   purposeProductType?: string
@@ -1106,6 +1108,7 @@ function migrateCase(oldCase: LegacyCase): Case {
 
   return {
     id: oldCase.id,
+    shortId: oldCase.shortId,
     productType: normalizeProductType(oldCase.productType),
     productId: normalizeProductType(oldCase.productId ?? oldCase.productType),
     treatmentCode: oldCase.treatmentCode,
@@ -1178,6 +1181,7 @@ function migrateScan(raw: LegacyScan): Scan {
 
   return {
     id: raw.id,
+    shortId: raw.shortId,
     serviceOrderCode: raw.serviceOrderCode,
     purposeProductId: raw.purposeProductId,
     purposeProductType: raw.purposeProductType,
@@ -1204,6 +1208,7 @@ function migratePatient(raw: Partial<Patient>): Patient {
   const name = raw.name?.trim() || 'Paciente sem nome'
   return {
     id: raw.id ?? patientIdFromName(name),
+    shortId: raw.shortId,
     name,
     cpf: (raw as { document?: string }).document ?? raw.cpf,
     gender: raw.gender,
@@ -1264,6 +1269,7 @@ function migrateDentist(raw: LegacyDentistClinic): DentistClinic {
   const now = nowIso()
   return {
     id: raw.id,
+    shortId: raw.shortId,
     name: raw.name?.trim() || 'Sem nome',
     type: raw.type === 'clinica' ? 'clinica' : 'dentista',
     cnpj: raw.cnpj || undefined,
@@ -1286,6 +1292,7 @@ function migrateClinic(raw: LegacyClinic): Clinic {
   const now = nowIso()
   return {
     id: raw.id,
+    shortId: raw.shortId,
     legalName: raw.legalName,
     tradeName: raw.tradeName?.trim() || 'Clinica',
     cnpj: raw.cnpj,
@@ -1305,6 +1312,7 @@ function migrateUser(raw: LegacyUser): User {
   const now = nowIso()
   return {
     id: raw.id,
+    shortId: raw.shortId,
     name: raw.name?.trim() || 'Usuario',
     email: raw.email?.trim() || 'user@orthoscan.local',
     password: raw.password,

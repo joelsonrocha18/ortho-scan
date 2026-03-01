@@ -9,6 +9,7 @@ export type ClinicAddress = {
 
 export type Clinic = {
   id: string
+  shortId?: string
   legalName?: string
   tradeName: string
   cnpj?: string

@@ -1,5 +1,6 @@
 export type Patient = {
   id: string
+  shortId?: string
   name: string
   cpf?: string
   phone?: string

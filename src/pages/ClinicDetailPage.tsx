@@ -110,7 +110,7 @@ export default function ClinicDetailPage() {
     ;(async () => {
       const { data } = await supabase
         .from('clinics')
-        .select('id, trade_name, legal_name, cnpj, phone, whatsapp, email, address, notes, is_active, created_at, updated_at, deleted_at')
+        .select('id, short_id, trade_name, legal_name, cnpj, phone, whatsapp, email, address, notes, is_active, created_at, updated_at, deleted_at')
         .eq('id', params.id)
         .maybeSingle()
       if (!active) return
@@ -121,6 +121,7 @@ export default function ClinicDetailPage() {
       }
       setExistingSupabase({
         id: String(data.id),
+        shortId: (data.short_id as string | null) ?? undefined,
         tradeName: String(data.trade_name ?? ''),
         legalName: (data.legal_name as string | null) ?? undefined,
         cnpj: (data.cnpj as string | null) ?? undefined,
@@ -392,7 +393,7 @@ export default function ClinicDetailPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
             {isNew ? 'Nova clinica' : existing?.tradeName}
           </h1>
-          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{clinicCode(existing.id)}</p> : null}
+          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{clinicCode(existing.id, existing.shortId)}</p> : null}
           <p className="mt-2 text-sm text-slate-500">
             Clinica {existing?.deletedAt ? '(Excluida)' : ''}
           </p>

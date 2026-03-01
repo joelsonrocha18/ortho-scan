@@ -9,6 +9,7 @@ export type DentistClinicAddress = {
 
 export type DentistClinic = {
   id: string
+  shortId?: string
   name: string
   type: 'dentista' | 'clinica'
   cnpj?: string

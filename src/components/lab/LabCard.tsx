@@ -45,13 +45,22 @@ export default function LabCard({
   item,
   isOverdue,
   guideTone: _guideTone,
-  caseLabel: _caseLabel,
+  caseLabel,
   onPrevious,
   onNext,
   onDetails,
   hasPrevious,
   hasNext,
 }: LabCardProps) {
+  const formatDisplayCode = (code?: string) => {
+    if (!code) return undefined
+    const trimmed = code.trim()
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(trimmed)) {
+      return `GUIA-${trimmed.slice(0, 8).toUpperCase()}`
+    }
+    return trimmed
+  }
+  const displayCode = formatDisplayCode(caseLabel ?? item.requestCode)
   const isRework = item.requestKind === 'reconfeccao' || (item.notes ?? '').toLowerCase().includes('rework')
   const isAligner = isAlignerProductType(item.productId ?? item.productType ?? 'alinhador_12m')
   const cardTone = isRework ? 'border border-red-300 bg-red-50/40' : ''
@@ -60,7 +69,7 @@ export default function LabCard({
     <Card className={`p-4 ${cardTone}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          {item.requestCode ? <p className="text-xs font-medium text-slate-600">Guia: {item.requestCode}</p> : null}
+          {displayCode ? <p className="text-xs font-medium text-slate-600">Guia: {displayCode}</p> : null}
           <p className="text-sm font-semibold text-slate-900">Paciente: {item.patientName}</p>
           <p className="mt-1 text-xs text-slate-600">Produto: {PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</p>
           <p className="mt-1 text-xs text-slate-700">Arcada: {archLabelMap[item.arch]}</p>

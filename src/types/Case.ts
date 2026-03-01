@@ -68,6 +68,7 @@ export type CaseInstallation = {
 
 export type Case = {
   id: string
+  shortId?: string
   productType?: ProductType
   productId?: ProductType
   treatmentCode?: string

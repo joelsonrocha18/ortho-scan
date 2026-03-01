@@ -32,6 +32,7 @@ export type PhotoSlot = {
 
 export type Scan = {
   id: string
+  shortId?: string
   serviceOrderCode?: string
   purposeProductId?: string
   purposeProductType?: string

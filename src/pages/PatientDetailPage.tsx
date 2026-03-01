@@ -252,7 +252,7 @@ export default function PatientDetailPage() {
     void (async () => {
       const { data, error } = await supabase
         .from('patients')
-        .select('id, name, cpf, phone, whatsapp, clinic_id, primary_dentist_id, birth_date, gender, email, address, notes, deleted_at, created_at, updated_at')
+        .select('id, short_id, name, cpf, phone, whatsapp, clinic_id, primary_dentist_id, birth_date, gender, email, address, notes, deleted_at, created_at, updated_at')
         .eq('id', params.id)
         .maybeSingle()
       if (!active) return
@@ -266,6 +266,7 @@ export default function PatientDetailPage() {
         : {}
       const mapped: Patient = {
         id: String(data.id),
+        shortId: (data.short_id as string | null) ?? undefined,
         name: String(data.name ?? ''),
         cpf: (data.cpf as string | null) ?? undefined,
         phone: (data.phone as string | null) ?? undefined,
@@ -1056,7 +1057,7 @@ export default function PatientDetailPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
             {isNew ? 'Novo paciente' : existing?.name}
           </h1>
-          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{patientCode(existing.id)}</p> : null}
+          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{patientCode(existing.id, existing.shortId)}</p> : null}
           {existing?.deletedAt ? <p className="mt-2 text-sm text-red-600">Paciente excluido (soft delete).</p> : null}
         </div>
         <Link

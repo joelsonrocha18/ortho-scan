@@ -39,6 +39,7 @@ type LiveLabStatus = 'aguardando_iniciar' | 'em_producao' | 'controle_qualidade'
 
 type CaseListItem = {
   id: string
+  shortId?: string
   productType: ProductType
   patientId?: string
   patientName: string
@@ -105,8 +106,8 @@ export default function CasesPage() {
   const currentUser = getCurrentUser(db)
   const canAiComercial = can(currentUser, 'ai.comercial')
   const [supabaseCases, setSupabaseCases] = useState<CaseListItem[]>([])
-  const [supabasePatientsById, setSupabasePatientsById] = useState<Map<string, string>>(new Map())
-  const [supabaseDentistsById, setSupabaseDentistsById] = useState<Map<string, { name: string; gender?: string }>>(new Map())
+  const [supabasePatientsById, setSupabasePatientsById] = useState<Map<string, { name: string; shortId?: string }>>(new Map())
+  const [supabaseDentistsById, setSupabaseDentistsById] = useState<Map<string, { name: string; shortId?: string; gender?: string }>>(new Map())
   const [supabaseLabStatusByCase, setSupabaseLabStatusByCase] = useState<Map<string, LiveLabStatus>>(new Map())
   const [supabaseHasLabOrderByCase, setSupabaseHasLabOrderByCase] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
@@ -123,24 +124,24 @@ export default function CasesPage() {
       const [casesRes, patientsRes, dentistsRes, labRes] = await Promise.all([
         supabase
           .from('cases')
-          .select('id, patient_id, dentist_id, status, product_type, product_id, data, created_at, deleted_at')
+          .select('id, short_id, patient_id, dentist_id, status, product_type, product_id, data, created_at, deleted_at')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
-        supabase.from('patients').select('id, name, deleted_at').is('deleted_at', null),
-        supabase.from('dentists').select('id, name, gender, deleted_at').is('deleted_at', null),
+        supabase.from('patients').select('id, short_id, name, deleted_at').is('deleted_at', null),
+        supabase.from('dentists').select('id, short_id, name, gender, deleted_at').is('deleted_at', null),
         supabase.from('lab_items').select('case_id, status, deleted_at').is('deleted_at', null),
       ])
       if (!active) return
 
-      const patientsMap = new Map<string, string>()
-      for (const row of (patientsRes.data ?? []) as Array<{ id: string; name: string }>) {
-        patientsMap.set(row.id, row.name ?? '')
+      const patientsMap = new Map<string, { name: string; shortId?: string }>()
+      for (const row of (patientsRes.data ?? []) as Array<{ id: string; short_id?: string; name: string }>) {
+        patientsMap.set(row.id, { name: row.name ?? '', shortId: row.short_id ?? undefined })
       }
       setSupabasePatientsById(patientsMap)
 
-      const dentistsMap = new Map<string, { name: string; gender?: string }>()
-      for (const row of (dentistsRes.data ?? []) as Array<{ id: string; name: string; gender?: string }>) {
-        dentistsMap.set(row.id, { name: row.name ?? '', gender: row.gender })
+      const dentistsMap = new Map<string, { name: string; shortId?: string; gender?: string }>()
+      for (const row of (dentistsRes.data ?? []) as Array<{ id: string; short_id?: string; name: string; gender?: string }>) {
+        dentistsMap.set(row.id, { name: row.name ?? '', shortId: row.short_id ?? undefined, gender: row.gender })
       }
       setSupabaseDentistsById(dentistsMap)
 
@@ -160,17 +161,18 @@ export default function CasesPage() {
         ),
       )
 
-      const mapped = ((casesRes.data ?? []) as Array<{ id: string; patient_id?: string; dentist_id?: string; status?: string; product_type?: string; product_id?: string; created_at?: string; data?: Record<string, unknown> }>).map((row) => {
+      const mapped = ((casesRes.data ?? []) as Array<{ id: string; short_id?: string; patient_id?: string; dentist_id?: string; status?: string; product_type?: string; product_id?: string; created_at?: string; data?: Record<string, unknown> }>).map((row) => {
         const data = row.data ?? {}
         const status = (data.status as string | undefined) ?? row.status ?? 'planejamento'
         const phaseRaw = (data.phase as string | undefined) ?? ''
         const phase = (phaseRaw || (status === 'finalizado' ? 'finalizado' : status === 'em_producao' || status === 'em_entrega' ? 'em_producao' : 'planejamento')) as CasePhase
         const patientName = (data.patientName as string | undefined)
-          ?? (row.patient_id ? patientsMap.get(row.patient_id) : undefined)
+          ?? (row.patient_id ? patientsMap.get(row.patient_id)?.name : undefined)
           ?? '-'
         const caseDate = (data.scanDate as string | undefined) ?? (row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
         return {
           id: row.id,
+          shortId: row.short_id ?? (data.shortId as string | undefined) ?? undefined,
           productType: normalizeProductType(row.product_id ?? row.product_type ?? data.productId ?? data.productType),
           patientId: row.patient_id,
           patientName,
@@ -195,9 +197,12 @@ export default function CasesPage() {
     }
   }, [isSupabaseMode])
 
-  const localPatientsById = useMemo(() => new Map(db.patients.map((item) => [item.id, item.name])), [db.patients])
+  const localPatientsById = useMemo(
+    () => new Map(db.patients.map((item) => [item.id, { name: item.name, shortId: item.shortId }])),
+    [db.patients],
+  )
   const localDentistsById = useMemo(
-    () => new Map(db.dentists.map((item) => [item.id, { name: item.name, gender: item.gender }])),
+    () => new Map(db.dentists.map((item) => [item.id, { name: item.name, shortId: item.shortId, gender: item.gender }])),
     [db.dentists],
   )
   const localLabStatusByCase = useMemo(
@@ -239,10 +244,16 @@ export default function CasesPage() {
     const query = search.trim().toLowerCase()
     return cases
       .filter((item) => {
-        const patientName = (item.patientId ? patientsById.get(item.patientId) : undefined) ?? item.patientName
+        const patient = item.patientId ? patientsById.get(item.patientId) : undefined
+        const patientName = patient?.name ?? item.patientName
+        const patientShortId = item.patientId ? patientsById.get(item.patientId)?.shortId : undefined
+        const dentistShortId = item.dentistId ? dentistsById.get(item.dentistId)?.shortId : undefined
         const matchesSearch =
           query.length === 0 ||
           patientName.toLowerCase().includes(query) ||
+          (patientShortId ?? '').toLowerCase().includes(query) ||
+          (dentistShortId ?? '').toLowerCase().includes(query) ||
+          (item.shortId ?? '').toLowerCase().includes(query) ||
           (item.treatmentCode ?? item.id).toLowerCase().includes(query)
         const matchesProduct = isAlignerProductType(item.productType)
 
@@ -260,7 +271,7 @@ export default function CasesPage() {
         const bb = b.caseDate || ''
         return bb.localeCompare(aa)
       })
-  }, [cases, patientsById, search, showConcluded, showInTreatment])
+  }, [cases, dentistsById, patientsById, search, showConcluded, showInTreatment])
 
   const toggleInTreatment = () => {
     if (showInTreatment && !showConcluded) return
@@ -278,7 +289,7 @@ export default function CasesPage() {
     if (!reference) return
     const result = await runAiRequest(endpoint, {
       clinicId: currentUser?.linkedClinicId,
-      inputText: `Caso ${reference.treatmentCode ?? reference.id}. Paciente ${reference.patientName}. Fase ${reference.phase}. Status ${reference.status}.`,
+      inputText: `Caso ${reference.treatmentCode ?? reference.shortId ?? reference.id}. Paciente ${reference.patientName}. Fase ${reference.phase}. Status ${reference.status}.`,
       metadata: {
         patientId: reference.patientId,
         dentistId: reference.dentistId,
@@ -302,7 +313,7 @@ export default function CasesPage() {
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_240px_auto_auto] md:items-center">
           <Input
-            placeholder="Buscar por paciente ou Nº Caso"
+            placeholder="Buscar por codigo, paciente ou Nº Caso"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -362,7 +373,7 @@ export default function CasesPage() {
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {filteredCases.map((item) => {
-                  const patientName = item.patientId ? (patientsById.get(item.patientId) ?? item.patientName) : item.patientName
+                  const patientName = item.patientId ? (patientsById.get(item.patientId)?.name ?? item.patientName) : item.patientName
                   const dentist = item.dentistId ? dentistsById.get(item.dentistId) : undefined
                   const dentistPrefix = dentist?.gender === 'feminino' ? 'Dra.' : dentist ? 'Dr.' : ''
                   const resolvedUpper =

@@ -137,7 +137,7 @@ export default function DentistDetailPage() {
     void (async () => {
       const { data, error } = await supabase
         .from('dentists')
-        .select('id, name, cro, gender, clinic_id, phone, whatsapp, email, notes, is_active, deleted_at, created_at, updated_at')
+        .select('id, short_id, name, cro, gender, clinic_id, phone, whatsapp, email, notes, is_active, deleted_at, created_at, updated_at')
         .eq('id', params.id)
         .maybeSingle()
       if (!active) return
@@ -148,6 +148,7 @@ export default function DentistDetailPage() {
       }
       setSupabaseExisting({
         id: String(data.id),
+        shortId: (data.short_id as string | null) ?? undefined,
         type: 'dentista',
         name: String(data.name ?? ''),
         cro: (data.cro as string | null) ?? undefined,
@@ -395,7 +396,7 @@ export default function DentistDetailPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
             {isNew ? 'Novo dentista' : headerName || existing?.name}
           </h1>
-          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{dentistCode(existing.id)}</p> : null}
+          {!isNew && existing ? <p className="mt-1 text-xs font-semibold text-slate-500">{dentistCode(existing.id, existing.shortId)}</p> : null}
           <p className="mt-2 text-sm text-slate-500">
             Dentista {existing?.deletedAt ? '(Excluido)' : ''}
           </p>

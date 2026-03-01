@@ -18,6 +18,7 @@ import { clinicCode } from '../lib/entityCode'
 function mapSupabaseClinic(row: Record<string, unknown>): Clinic {
   return {
     id: String(row.id ?? ''),
+    shortId: (row.short_id as string | null) ?? undefined,
     tradeName: String(row.trade_name ?? ''),
     legalName: (row.legal_name as string | null) ?? undefined,
     cnpj: (row.cnpj as string | null) ?? undefined,
@@ -53,7 +54,7 @@ export default function ClinicsPage() {
     ;(async () => {
       const { data } = await supabase
         .from('clinics')
-        .select('id, trade_name, legal_name, cnpj, phone, whatsapp, email, address, notes, is_active, created_at, updated_at, deleted_at')
+        .select('id, short_id, trade_name, legal_name, cnpj, phone, whatsapp, email, address, notes, is_active, created_at, updated_at, deleted_at')
       if (!active) return
       setSupabaseClinics((data ?? []).map((row) => mapSupabaseClinic(row as Record<string, unknown>)))
     })()
@@ -72,6 +73,7 @@ export default function ClinicsPage() {
         if (!q) return true
         return (
           clinic.tradeName.toLowerCase().includes(q) ||
+          (clinic.shortId ?? '').toLowerCase().includes(q) ||
           (clinic.legalName ?? '').toLowerCase().includes(q) ||
           (clinic.cnpj ?? '').toLowerCase().includes(q) ||
           (clinic.phone ?? '').toLowerCase().includes(q) ||
@@ -99,7 +101,7 @@ export default function ClinicsPage() {
         <Card className="overflow-hidden p-0">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <Input
-              placeholder="Buscar por nome, razao social, CNPJ ou telefone"
+              placeholder="Buscar por codigo, nome, razao social, CNPJ ou telefone"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -126,7 +128,7 @@ export default function ClinicsPage() {
                   <tr key={clinic.id} className="bg-white">
                     <td className="px-5 py-4 text-sm font-medium text-slate-900">
                       <div>{clinic.tradeName}</div>
-                      <div className="text-xs font-semibold text-slate-500">{clinicCode(clinic.id)}</div>
+                      <div className="text-xs font-semibold text-slate-500">{clinicCode(clinic.id, clinic.shortId)}</div>
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">{clinic.cnpj || '-'}</td>
                     <td className="px-5 py-4 text-sm text-slate-700">

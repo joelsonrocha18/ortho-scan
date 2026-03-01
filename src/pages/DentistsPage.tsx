@@ -43,6 +43,7 @@ export default function DentistsPage() {
   const supabaseSyncTick = useSupabaseSyncTick()
   const [supabaseDentists, setSupabaseDentists] = useState<Array<{
     id: string
+    shortId?: string
     name: string
     cro?: string
     phone?: string
@@ -55,10 +56,11 @@ export default function DentistsPage() {
     let active = true
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
-      const dentistsRes = await supabase.from('dentists').select('id, name, cro, phone, whatsapp, is_active, deleted_at')
+      const dentistsRes = await supabase.from('dentists').select('id, short_id, name, cro, phone, whatsapp, is_active, deleted_at')
       if (!active) return
       const dentists = ((dentistsRes.data ?? []) as Array<{
         id: string
+        short_id?: string
         name: string
         cro?: string
         phone?: string
@@ -67,6 +69,7 @@ export default function DentistsPage() {
         deleted_at?: string
       }>).map((row) => ({
         id: row.id,
+        shortId: row.short_id ?? undefined,
         name: row.name ?? '-',
         cro: row.cro ?? undefined,
         phone: row.phone ?? undefined,
@@ -92,6 +95,7 @@ export default function DentistsPage() {
         if (!normalizedQuery) return true
         return (
           item.name.toLowerCase().includes(normalizedQuery) ||
+          (item.shortId ?? '').toLowerCase().includes(normalizedQuery) ||
           (item.cro ?? '').toLowerCase().includes(normalizedQuery) ||
           (item.phone ?? '').toLowerCase().includes(normalizedQuery) ||
           (item.whatsapp ?? '').toLowerCase().includes(normalizedQuery)
@@ -239,7 +243,7 @@ export default function DentistsPage() {
           <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1">
               <Input
-                placeholder="Buscar por nome, CRO ou telefone"
+                placeholder="Buscar por codigo, nome, CRO ou telefone"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -282,7 +286,7 @@ export default function DentistsPage() {
                     <tr key={item.id} className="bg-white">
                       <td className="px-5 py-4 text-sm font-medium text-slate-900">
                         <div>{item.name}</div>
-                        <div className="text-xs font-semibold text-slate-500">{dentistCode(item.id)}</div>
+                        <div className="text-xs font-semibold text-slate-500">{dentistCode(item.id, item.shortId)}</div>
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.cro || '-'}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.phone || '-'}</td>

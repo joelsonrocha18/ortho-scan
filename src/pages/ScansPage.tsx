@@ -108,8 +108,8 @@ export default function ScansPage() {
   const [details, setDetails] = useState<Scan | null>(null)
   const [createCaseTarget, setCreateCaseTarget] = useState<Scan | null>(null)
   const [supabaseScans, setSupabaseScans] = useState<Scan[]>([])
-  const [supabaseCases, setSupabaseCases] = useState<Array<{ id: string; treatmentCode?: string }>>([])
-  const [supabasePatients, setSupabasePatients] = useState<Array<{ id: string; name: string; primaryDentistId?: string; clinicId?: string }>>([])
+  const [supabaseCases, setSupabaseCases] = useState<Array<{ id: string; shortId?: string; treatmentCode?: string }>>([])
+  const [supabasePatients, setSupabasePatients] = useState<Array<{ id: string; shortId?: string; name: string; primaryDentistId?: string; clinicId?: string }>>([])
   const [supabaseDentists, setSupabaseDentists] = useState<Array<{ id: string; name: string; gender?: 'masculino' | 'feminino'; clinicId?: string }>>([])
   const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [supabaseRefreshKey, setSupabaseRefreshKey] = useState(0)
@@ -120,9 +120,9 @@ export default function ScansPage() {
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
       const [scansRes, casesRes, patientsRes, dentistsRes, clinicsRes] = await Promise.all([
-        supabase.from('scans').select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, deleted_at, data').is('deleted_at', null),
-        supabase.from('cases').select('id, deleted_at, data').is('deleted_at', null),
-        supabase.from('patients').select('id, name, primary_dentist_id, clinic_id, deleted_at').is('deleted_at', null),
+        supabase.from('scans').select('id, short_id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, deleted_at, data').is('deleted_at', null),
+        supabase.from('cases').select('id, short_id, deleted_at, data').is('deleted_at', null),
+        supabase.from('patients').select('id, short_id, name, primary_dentist_id, clinic_id, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, gender, clinic_id, deleted_at').is('deleted_at', null),
         supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
       ])
@@ -130,11 +130,13 @@ export default function ScansPage() {
 
       const patients = ((patientsRes.data ?? []) as Array<{
         id: string
+        short_id?: string
         name: string
         primary_dentist_id?: string
         clinic_id?: string
       }>).map((row) => ({
         id: row.id,
+        shortId: row.short_id ?? undefined,
         name: row.name ?? '-',
         primaryDentistId: row.primary_dentist_id ?? undefined,
         clinicId: row.clinic_id ?? undefined,
@@ -154,13 +156,15 @@ export default function ScansPage() {
         tradeName: row.trade_name ?? '-',
       })))
 
-      setSupabaseCases(((casesRes.data ?? []) as Array<{ id: string; data?: Record<string, unknown> }>).map((row) => ({
+      setSupabaseCases(((casesRes.data ?? []) as Array<{ id: string; short_id?: string; data?: Record<string, unknown> }>).map((row) => ({
         id: row.id,
+        shortId: row.short_id ?? undefined,
         treatmentCode: (row.data?.treatmentCode as string | undefined) ?? undefined,
       })))
 
       const scansMapped = ((scansRes.data ?? []) as Array<{
         id: string
+        short_id?: string
         clinic_id?: string
         patient_id?: string
         dentist_id?: string
@@ -172,6 +176,7 @@ export default function ScansPage() {
         const data = row.data ?? {}
         return {
           id: row.id,
+          shortId: row.short_id ?? (data.shortId as string | undefined),
           clinicId: row.clinic_id ?? undefined,
           patientId: row.patient_id ?? undefined,
           dentistId: row.dentist_id ?? undefined,
@@ -217,15 +222,19 @@ export default function ScansPage() {
     [scans],
   )
   const caseLookupSource = useMemo(
-    () => (isSupabaseMode ? supabaseCases : db.cases.map((item) => ({ id: item.id, treatmentCode: item.treatmentCode }))),
+    () => (isSupabaseMode ? supabaseCases : db.cases.map((item) => ({ id: item.id, shortId: item.shortId, treatmentCode: item.treatmentCode }))),
     [isSupabaseMode, supabaseCases, db.cases],
+  )
+  const caseShortById = useMemo(
+    () => new Map(caseLookupSource.map((item) => [item.id, item.shortId])),
+    [caseLookupSource],
   )
   const caseById = useMemo(
     () => new Map(caseLookupSource.map((item) => [item.id, item])),
     [caseLookupSource],
   )
   const patientLookupSource = useMemo(
-    () => (isSupabaseMode ? supabasePatients : db.patients.map((item) => ({ id: item.id, name: item.name, primaryDentistId: item.primaryDentistId, clinicId: item.clinicId }))),
+    () => (isSupabaseMode ? supabasePatients : db.patients.map((item) => ({ id: item.id, shortId: item.shortId, name: item.name, primaryDentistId: item.primaryDentistId, clinicId: item.clinicId }))),
     [isSupabaseMode, supabasePatients, db.patients],
   )
   const patientsById = useMemo(
@@ -236,11 +245,16 @@ export default function ScansPage() {
     const query = search.trim().toLowerCase()
     return scans.filter((scan) => {
       const patientName = (scan.patientId ? patientsById.get(scan.patientId) ?? scan.patientName : scan.patientName).toLowerCase()
+      const patientShortId = scan.patientId ? (patientLookupSource.find((item) => item.id === scan.patientId)?.shortId ?? '') : ''
+      const caseShortId = scan.linkedCaseId ? (caseShortById.get(scan.linkedCaseId) ?? '') : ''
       const serviceOrder = (scan.serviceOrderCode ?? '').toLowerCase()
       const purposeLabel = (scan.purposeLabel ?? scan.purposeProductType ?? 'Alinhador').toLowerCase()
       const matchesQuery =
         query.length === 0 ||
         patientName.includes(query) ||
+        patientShortId.toLowerCase().includes(query) ||
+        caseShortId.toLowerCase().includes(query) ||
+        (scan.shortId ?? '').toLowerCase().includes(query) ||
         serviceOrder.includes(query) ||
         purposeLabel.includes(query)
       const matchesStatus = statusFilter === 'todos' || scan.status === statusFilter
@@ -250,7 +264,7 @@ export default function ScansPage() {
         (scan.purposeLabel?.trim() || (scan.purposeProductType ? scan.purposeProductType : 'Alinhador')) === purposeFilter
       return matchesQuery && matchesStatus && matchesArch && matchesPurpose
     })
-  }, [archFilter, patientsById, scans, search, statusFilter, purposeFilter])
+  }, [archFilter, caseShortById, patientLookupSource, patientsById, scans, search, statusFilter, purposeFilter])
   const dentists = useMemo(
     () => (isSupabaseMode ? supabaseDentists : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt)),
     [isSupabaseMode, supabaseDentists, db.dentists],
@@ -543,7 +557,7 @@ export default function ScansPage() {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar por paciente, O.S ou finalidade"
+                  placeholder="Buscar por codigo, paciente, O.S ou finalidade"
                   className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>

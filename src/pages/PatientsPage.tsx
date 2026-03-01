@@ -42,6 +42,7 @@ export default function PatientsPage() {
   const supabaseSyncTick = useSupabaseSyncTick()
   const [supabasePatients, setSupabasePatients] = useState<Array<{
     id: string
+    shortId?: string
     name: string
     cpf?: string
     phone?: string
@@ -57,7 +58,7 @@ export default function PatientsPage() {
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
       const [patientsRes, dentistsRes, casesRes, labRes] = await Promise.all([
-        supabase.from('patients').select('id, name, cpf, phone, whatsapp, primary_dentist_id, deleted_at'),
+        supabase.from('patients').select('id, short_id, name, cpf, phone, whatsapp, primary_dentist_id, deleted_at'),
         supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
         supabase.from('cases').select('id, patient_id, product_type, data, deleted_at').is('deleted_at', null),
         supabase.from('lab_items').select('id, case_id, status, product_type, data, deleted_at').is('deleted_at', null),
@@ -65,6 +66,7 @@ export default function PatientsPage() {
       if (!active) return
       const patients = ((patientsRes.data ?? []) as Array<{
         id: string
+        short_id?: string
         name: string
         cpf?: string
         phone?: string
@@ -73,6 +75,7 @@ export default function PatientsPage() {
         deleted_at?: string
       }>).map((row) => ({
         id: row.id,
+        shortId: row.short_id ?? undefined,
         name: row.name ?? '-',
         cpf: row.cpf ?? undefined,
         phone: row.phone ?? undefined,
@@ -142,6 +145,7 @@ export default function PatientsPage() {
           if (!q) return true
           return (
             item.name.toLowerCase().includes(q) ||
+            (item.shortId ?? '').toLowerCase().includes(q) ||
             (item.cpf ?? '').toLowerCase().includes(q) ||
             (item.phone ?? '').toLowerCase().includes(q) ||
             (item.whatsapp ?? '').toLowerCase().includes(q)
@@ -321,7 +325,7 @@ export default function PatientsPage() {
         <Card className="overflow-hidden p-0">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <Input
-              placeholder="Buscar por nome, CPF, telefone ou WhatsApp"
+              placeholder="Buscar por codigo, nome, CPF, telefone ou WhatsApp"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -347,7 +351,7 @@ export default function PatientsPage() {
                   <tr key={item.id} className="bg-white">
                     <td className="px-5 py-4 text-sm font-medium text-slate-900">
                       <div>{item.name}</div>
-                      <div className="text-xs font-semibold text-slate-500">{patientCode(item.id)}</div>
+                      <div className="text-xs font-semibold text-slate-500">{patientCode(item.id, item.shortId)}</div>
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">
                       {item.primaryDentistId

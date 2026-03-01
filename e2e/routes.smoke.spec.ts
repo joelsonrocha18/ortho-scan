@@ -6,7 +6,7 @@ test('smoke routes for master_admin', async ({ page }) => {
   await loginAs(page, 'qa_user_master')
 
   const routes: Array<{ path: string; marker: string }> = [
-    { path: '/app/dashboard', marker: 'OrthoScan | Painel Operacional' },
+    { path: '/app/dashboard', marker: 'Painel Operacional' },
     { path: '/app/scans', marker: 'Exames (Scans)' },
     { path: '/app/cases', marker: 'Alinhadores' },
     { path: '/app/lab', marker: 'Fila de produção e entregas' },

@@ -24,7 +24,7 @@ export default function AppShell({ breadcrumb, children }: AppShellProps) {
       <Sidebar isOpen={sidebarOpen} onCloseMobile={() => setSidebarOpen(false)} onLogout={() => navigate('/login', { replace: true })} />
       <div className="md:pl-64">
         <Topbar breadcrumb={breadcrumb} onMenuToggle={() => setSidebarOpen((current) => !current)} />
-        <main className="px-4 py-6 sm:px-6">{children}</main>
+        <main className="px-4 py-4 sm:px-5">{children}</main>
         <InternalChatWidget />
       </div>
     </div>
