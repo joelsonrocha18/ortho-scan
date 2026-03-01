@@ -77,6 +77,34 @@ function getCaseTotalsByArch(caseItem?: { totalTrays: number; totalTraysUpper?: 
   }
 }
 
+function normalizeByTreatmentArch(
+  counts: { upper: number; lower: number },
+  arch: 'superior' | 'inferior' | 'ambos' | '',
+) {
+  if (arch === 'superior') return { upper: counts.upper, lower: 0 }
+  if (arch === 'inferior') return { upper: 0, lower: counts.lower }
+  return counts
+}
+
+function formatInfSupByArch(
+  counts: { upper: number; lower: number },
+  arch: 'superior' | 'inferior' | 'ambos' | '',
+) {
+  const lower = arch === 'superior' ? '-' : String(counts.lower)
+  const upper = arch === 'inferior' ? '-' : String(counts.upper)
+  return `${lower}/${upper}`
+}
+
+function formatFriendlyRequestCode(code?: string) {
+  if (!code) return '-'
+  const trimmed = code.trim()
+  const match = trimmed.match(/^([0-9a-f]{8})-[0-9a-f-]+(\/\d+)?$/i)
+  if (match) {
+    return `GUIA-${match[1].toUpperCase()}${match[2] ?? ''}`
+  }
+  return trimmed
+}
+
 function getDeliveredByArch(caseItem?: {
   installation?: { deliveredUpper?: number; deliveredLower?: number }
   deliveryLots?: Array<{ arch: 'superior' | 'inferior' | 'ambos'; quantity: number }>
@@ -161,12 +189,14 @@ function hasRemainingByArch(caseItem?: {
   totalTrays: number
   totalTraysUpper?: number
   totalTraysLower?: number
+  arch?: 'superior' | 'inferior' | 'ambos'
   installation?: { deliveredUpper?: number; deliveredLower?: number }
   deliveryLots?: Array<{ arch: 'superior' | 'inferior' | 'ambos'; quantity: number }>
 }) {
   if (!caseItem) return false
-  const totals = getCaseTotalsByArch(caseItem)
-  const delivered = getDeliveredByArch(caseItem)
+  const treatmentArch = caseItem.arch ?? 'ambos'
+  const totals = normalizeByTreatmentArch(getCaseTotalsByArch(caseItem), treatmentArch)
+  const delivered = normalizeByTreatmentArch(getDeliveredByArch(caseItem), treatmentArch)
   return Math.max(0, totals.upper - delivered.upper) > 0 || Math.max(0, totals.lower - delivered.lower) > 0
 }
 
@@ -1271,7 +1301,7 @@ export default function LabPage() {
                   <tbody>
                     {reworkItems.map((item) => (
                       <tr key={item.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2">{item.requestCode ?? (item.caseId ? caseById.get(item.caseId)?.treatmentCode : undefined) ?? '-'}</td>
+                        <td className="px-3 py-2">{formatFriendlyRequestCode(item.requestCode ?? (item.caseId ? caseById.get(item.caseId)?.treatmentCode : undefined))}</td>
                         <td className="px-3 py-2">{item.patientName}</td>
                         <td className="px-3 py-2">#{item.trayNumber}</td>
                         <td className="px-3 py-2">{item.arch}</td>
@@ -1308,8 +1338,9 @@ export default function LabPage() {
                   <tbody>
                     {remainingBankItems.map((item) => {
                       const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
-                      const totals = getCaseTotalsByArch(caseItem)
-                      const delivered = getDeliveredByArch(caseItem)
+                      const treatmentArch = caseItem?.arch ?? item.arch ?? 'ambos'
+                      const totals = normalizeByTreatmentArch(getCaseTotalsByArch(caseItem), treatmentArch)
+                      const delivered = normalizeByTreatmentArch(getDeliveredByArch(caseItem), treatmentArch)
                       const remaining = {
                         upper: Math.max(0, totals.upper - delivered.upper),
                         lower: Math.max(0, totals.lower - delivered.lower),
@@ -1329,12 +1360,12 @@ export default function LabPage() {
 
                       return (
                         <tr key={item.id} className="border-t border-slate-100">
-                          <td className="px-3 py-2">{item.requestCode ?? '-'}</td>
+                          <td className="px-3 py-2">{formatFriendlyRequestCode(item.requestCode ?? caseItem?.treatmentCode)}</td>
                           <td className="px-3 py-2">{item.patientName}</td>
                           <td className="px-3 py-2">{PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</td>
-                          <td className="px-3 py-2">{`${totals.lower}/${totals.upper}`}</td>
-                          <td className="px-3 py-2">{`${delivered.lower}/${delivered.upper}`}</td>
-                          <td className="px-3 py-2">{`${remaining.lower}/${remaining.upper}`}</td>
+                          <td className="px-3 py-2">{formatInfSupByArch(totals, treatmentArch)}</td>
+                          <td className="px-3 py-2">{formatInfSupByArch(delivered, treatmentArch)}</td>
+                          <td className="px-3 py-2">{formatInfSupByArch(remaining, treatmentArch)}</td>
                           <td className="px-3 py-2">{installationDate ? formatDate(installationDate) : '-'}</td>
                           <td className="px-3 py-2">{replenishmentLabDate ? formatDate(replenishmentLabDate) : '-'}</td>
                           <td className="px-3 py-2">{treatmentStatus}</td>
