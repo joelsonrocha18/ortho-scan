@@ -12,7 +12,7 @@
   Truck,
   UsersRound,
 } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { listCasesForUser, listLabItemsForUser, listPatientsForUser, listScansForUser } from '../auth/scope'
 import AiEditableModal from '../components/ai/AiEditableModal'
@@ -30,6 +30,7 @@ import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { can } from '../auth/permissions'
 import Button from '../components/Button'
 import { runAiEndpoint as runAiRequest } from '../repo/aiRepo'
+import { useToast } from '../app/ToastProvider'
 
 type Tone = 'neutral' | 'info' | 'warning' | 'danger' | 'success'
 
@@ -115,6 +116,7 @@ function asNumber(value: unknown, fallback = 0) {
 
 export default function DashboardPage() {
   const { db } = useDb()
+  const { addToast } = useToast()
   const currentUser = getCurrentUser(db)
   const canAiGestao = can(currentUser, 'ai.gestao')
   const isSupabaseMode = DATA_MODE === 'supabase'
@@ -407,10 +409,23 @@ export default function DashboardPage() {
       ? `${pendingActions.length} ações pendentes`
       : 'Nenhuma ação pendente'
 
+  const aiClinicId = useMemo(
+    () =>
+      currentUser?.linkedClinicId
+      ?? visibleCases.find((item) => item.clinicId)?.clinicId
+      ?? visiblePatients.find((item) => item.clinicId)?.clinicId
+      ?? visibleScans.find((item) => item.clinicId)?.clinicId,
+    [currentUser?.linkedClinicId, visibleCases, visiblePatients, visibleScans],
+  )
+
   const runGestaoAi = async (endpoint: '/gestao/insights-dre' | '/gestao/anomalias', title: string) => {
     if (!canAiGestao) return
+    if (!aiClinicId) {
+      addToast({ type: 'error', title: 'IA Dashboard', message: 'Clinica obrigatoria para executar IA.' })
+      return
+    }
     const payload = {
-      clinicId: currentUser?.linkedClinicId,
+      clinicId: aiClinicId,
       inputText: `Indicadores: scans=${scansRecent}, orcamentos_abertos=${budgetsOpenItems.length}, contratos_pendentes=${contractsToCloseItems.length}, fila_lab=${queuePipelineItems.length}, reconfeccoes=${reworkItems.length}`,
       metadata: {
         replenishmentRisk: riskLabel,
@@ -418,7 +433,10 @@ export default function DashboardPage() {
       },
     }
     const result = await runAiRequest(endpoint, payload)
-    if (!result.ok) return
+    if (!result.ok) {
+      addToast({ type: 'error', title: 'IA Dashboard', message: result.error })
+      return
+    }
     setAiModalTitle(title)
     setAiDraft(result.output)
     setAiModalOpen(true)
