@@ -172,6 +172,7 @@ export default function DashboardPage() {
       const patient = patientById.get(asText(row.patient_id))
       return {
         id: asText(row.id),
+        shortId: asText(data.shortId),
         clinicId: asText(row.clinic_id),
         patientId: asText(row.patient_id),
         dentistId: asText(row.dentist_id),
@@ -289,7 +290,11 @@ export default function DashboardPage() {
     })
     : listLabItemsForUser(db, currentUser)
 
-  const scansRecentItems = visibleScans
+  const trackedScans = isSupabaseMode
+    ? visibleScans.filter((scan) => Boolean((scan as { shortId?: string }).shortId))
+    : visibleScans
+
+  const scansRecentItems = trackedScans
     .slice()
     .sort((a, b) => (b.scanDate || '').localeCompare(a.scanDate || ''))
   const scansRecent = scansRecentItems.length
@@ -334,6 +339,14 @@ export default function DashboardPage() {
   const reworkItems = visibleLabItems.filter((item) => item.requestKind === 'reconfeccao' && item.status !== 'prontas')
 
   const completedCases = visibleCases.filter((caseItem) => caseItem.phase === 'finalizado' || caseItem.status === 'finalizado')
+  const trackedPatientIds = new Set<string>(
+    [
+      ...trackedScans.map((item) => item.patientId).filter((value): value is string => Boolean(value)),
+      ...visibleCases.map((item) => item.patientId).filter((value): value is string => Boolean(value)),
+      ...visibleLabItems.map((item) => item.patientId).filter((value): value is string => Boolean(value)),
+    ],
+  )
+  const patientsInFollowUp = trackedPatientIds.size
 
   const planningPendingTone: Tone = planningPending > 0 ? (planningPending >= 10 ? 'danger' : 'warning') : 'success'
   const reworksTone: Tone = reworkItems.length > 0 ? 'danger' : 'neutral'
@@ -554,7 +567,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               title="Pacientes em acompanhamento"
-              value={String(visiblePatients.length)}
+              value={String(patientsInFollowUp)}
               meta="Ativos"
               info="Origem: pacientes visiveis para o perfil atual."
               tone="neutral"
