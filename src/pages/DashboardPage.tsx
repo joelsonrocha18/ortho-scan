@@ -80,8 +80,8 @@ function KpiCard(props: { title: string; value: string; meta: string; info?: str
   const tone = props.tone ?? 'neutral'
   const styles = toneStyles[tone]
   return (
-    <Card className={`border bg-slate-950/40 p-3.5 shadow-none backdrop-blur ${styles.border}`}>
-      <div className="flex items-start justify-between gap-3">
+    <Card className={`border bg-slate-950/40 p-3 shadow-none backdrop-blur ${styles.border}`}>
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold text-slate-200">{props.title}</p>
@@ -94,10 +94,10 @@ function KpiCard(props: { title: string; value: string; meta: string; info?: str
               </span>
             ) : null}
           </div>
-          <p className={`mt-1.5 text-2xl font-semibold tracking-tight ${styles.value}`}>{props.value}</p>
-          <p className={`mt-0.5 text-xs font-medium ${styles.meta}`}>{props.meta}</p>
+          <p className={`mt-1 text-[1.8rem] leading-none font-semibold tracking-tight ${styles.value}`}>{props.value}</p>
+          <p className={`mt-0.5 text-[11px] font-medium leading-tight ${styles.meta}`}>{props.meta}</p>
         </div>
-        <div className={`shrink-0 rounded-xl p-2 ${styles.icon}`}>{props.icon}</div>
+        <div className={`shrink-0 rounded-xl p-1.5 ${styles.icon}`}>{props.icon}</div>
       </div>
     </Card>
   )
@@ -472,13 +472,13 @@ export default function DashboardPage() {
 
   return (
     <AppShell breadcrumb={['Inicio', 'Dashboard']}>
-      <div className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-4 shadow-sm sm:px-5">
+      <div className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 shadow-sm sm:px-5">
         <section>
           <h1 className="text-xl font-semibold tracking-tight text-slate-50">Painel Operacional</h1>
         </section>
 
-        <section className="mt-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               title="Escaneamentos recentes"
               value={String(scansRecent)}
@@ -514,7 +514,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5">
+        <section className="mt-4">
           {canAiGestao ? (
             <Card className="mb-4 border border-sky-800/50 bg-slate-950/40 p-4 shadow-none">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -536,7 +536,7 @@ export default function DashboardPage() {
               </div>
             </Card>
           ) : null}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               title="Fila de confecção"
               value={String(queuePipelineItems.length)}
@@ -576,8 +576,8 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               title="Pacientes em acompanhamento"
               value={String(patientsInFollowUp)}
@@ -594,7 +594,7 @@ export default function DashboardPage() {
               tone="neutral"
               icon={<PackageCheck className="h-4 w-4" />}
             />
-            <Card className="border border-slate-800/70 bg-slate-950/40 p-5 shadow-none backdrop-blur sm:col-span-2">
+            <Card className="border border-slate-800/70 bg-slate-950/40 p-4 shadow-none backdrop-blur sm:col-span-2">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-slate-200">Próximas ações</p>
