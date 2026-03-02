@@ -120,7 +120,7 @@ export default function ScansPage() {
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
       const [scansRes, casesRes, patientsRes, dentistsRes, clinicsRes] = await Promise.all([
-        supabase.from('scans').select('id, short_id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, deleted_at, data').is('deleted_at', null),
+        supabase.from('scans').select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, deleted_at, data').is('deleted_at', null),
         supabase.from('cases').select('id, short_id, deleted_at, data').is('deleted_at', null),
         supabase.from('patients').select('id, short_id, name, primary_dentist_id, clinic_id, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, gender, clinic_id, deleted_at').is('deleted_at', null),
@@ -164,7 +164,6 @@ export default function ScansPage() {
 
       const scansMapped = ((scansRes.data ?? []) as Array<{
         id: string
-        short_id?: string
         clinic_id?: string
         patient_id?: string
         dentist_id?: string
@@ -176,7 +175,7 @@ export default function ScansPage() {
         const data = row.data ?? {}
         return {
           id: row.id,
-          shortId: row.short_id ?? (data.shortId as string | undefined),
+          shortId: data.shortId as string | undefined,
           clinicId: row.clinic_id ?? undefined,
           patientId: row.patient_id ?? undefined,
           dentistId: row.dentist_id ?? undefined,

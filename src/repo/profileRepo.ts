@@ -158,11 +158,34 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
   if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
   const now = new Date().toISOString()
   const attachments = normalizeScanAttachments(scan.attachments)
+  let resolvedClinicId = scan.clinicId ?? null
+
+  if (!resolvedClinicId && scan.patientId) {
+    const { data: patientRow } = await supabase
+      .from('patients')
+      .select('clinic_id')
+      .eq('id', scan.patientId)
+      .maybeSingle()
+    resolvedClinicId = (patientRow as { clinic_id?: string | null } | null)?.clinic_id ?? null
+  }
+
+  if (!resolvedClinicId && scan.dentistId) {
+    const { data: dentistRow } = await supabase
+      .from('dentists')
+      .select('clinic_id')
+      .eq('id', scan.dentistId)
+      .maybeSingle()
+    resolvedClinicId = (dentistRow as { clinic_id?: string | null } | null)?.clinic_id ?? null
+  }
+
+  if (!resolvedClinicId) {
+    return { ok: false as const, error: 'Selecione uma clinica valida antes de salvar o exame.' }
+  }
 
   const { data, error } = await supabase
     .from('scans')
     .insert({
-      clinic_id: scan.clinicId ?? null,
+      clinic_id: resolvedClinicId,
       patient_id: scan.patientId ?? null,
       dentist_id: scan.dentistId ?? null,
       requested_by_dentist_id: scan.requestedByDentistId ?? null,
