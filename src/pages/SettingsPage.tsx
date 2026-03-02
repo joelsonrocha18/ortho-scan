@@ -207,6 +207,14 @@ function isValidEmail(value?: string | null) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+function normalizeUserCreationError(error: string) {
+  const text = (error ?? '').toLowerCase()
+  if (text.includes('idx_profiles_short_id_unique')) {
+    return 'Conflito interno ao gerar identificador do usuario. Tente novamente.'
+  }
+  return error
+}
+
 function mapProfilesToUsers(profiles: Awaited<ReturnType<typeof listProfiles>>): User[] {
   return profiles
     .filter((profile) => profile.deleted_at == null && isValidEmail(profile.login_email))
@@ -485,7 +493,7 @@ export default function SettingsPage() {
           if (result.code === 'unauthorized') return setError('Sessao expirada. Saia e entre novamente.')
           if (result.code === 'forbidden') return setError('Sem permissao para criar usuarios.')
           if (result.code === 'network_error') return setError(result.error)
-          return setError(result.error)
+          return setError(normalizeUserCreationError(result.error))
         }
         await reloadSupabaseUsers(isSupabaseMode, setSupabaseUsers)
         setModalOpen(false)

@@ -6,6 +6,12 @@ type Payload = {
   password: string
 }
 
+function buildFallbackProfileShortId(role: string) {
+  const prefix = role === 'lab_tech' ? 'LAB' : 'COL'
+  const token = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+  return `${prefix}-TMP-${token}`
+}
+
 function resolveAllowedOrigin(_req: Request) {
   const configured = (Deno.env.get('ALLOWED_ORIGIN') ?? '').trim()
   if (configured) return configured
@@ -92,7 +98,7 @@ Deno.serve(async (req) => {
 
   const userId = created.user.id
 
-  const { error: profileError } = await supabase.from('profiles').upsert({
+  const profilePayload = {
     user_id: userId,
     login_email: email,
     role: invite.role,
@@ -104,9 +110,27 @@ Deno.serve(async (req) => {
     onboarding_completed_at: new Date().toISOString(),
     is_active: true,
     deleted_at: null,
-  })
+  }
+  const { error: profileError } = await supabase.from('profiles').upsert(profilePayload)
 
   if (profileError) {
+    if (profileError.message.toLowerCase().includes('idx_profiles_short_id_unique')) {
+      const { error: retryError } = await supabase.from('profiles').upsert({
+        ...profilePayload,
+        short_id: buildFallbackProfileShortId(invite.role),
+      })
+      if (!retryError) {
+        const { data: consumeRows, error: consumeError } = await supabase
+          .from('user_onboarding_invites')
+          .update({ used_at: new Date().toISOString() })
+          .eq('id', invite.id)
+          .is('used_at', null)
+          .select('id')
+        if (!consumeError && consumeRows && consumeRows.length > 0) {
+          return json(req, { ok: true })
+        }
+      }
+    }
     await supabase.auth.admin.deleteUser(userId)
     return json(req, { ok: false, error: profileError.message }, 400)
   }

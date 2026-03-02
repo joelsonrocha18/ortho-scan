@@ -21,6 +21,12 @@ const APP_ROLES = new Set([
   'receptionist',
 ])
 
+function buildFallbackProfileShortId(role: string) {
+  const prefix = role === 'lab_tech' ? 'LAB' : 'COL'
+  const token = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+  return `${prefix}-TMP-${token}`
+}
+
 function resolveAllowedOrigin(_req: Request) {
   const configured = (Deno.env.get('ALLOWED_ORIGIN') ?? '').trim()
   if (configured) return configured
@@ -146,7 +152,7 @@ Deno.serve(async (req) => {
     return json(req, { ok: false, error: message }, 400)
   }
 
-  const { error: upsertError } = await admin.from('profiles').upsert({
+  const profilePayload = {
     user_id: createdData.user.id,
     login_email: email,
     role: payload.role,
@@ -156,8 +162,21 @@ Deno.serve(async (req) => {
     cpf: payload.cpf?.trim() || null,
     phone: payload.phone?.trim() || null,
     is_active: true,
-  })
+  }
+
+  const { error: upsertError } = await admin.from('profiles').upsert(profilePayload)
   if (upsertError) {
+    const message = upsertError.message.toLowerCase()
+    if (message.includes('idx_profiles_short_id_unique')) {
+      const { error: retryError } = await admin.from('profiles').upsert({
+        ...profilePayload,
+        short_id: buildFallbackProfileShortId(payload.role),
+      })
+      if (!retryError) {
+        return json(req, { ok: true, invitedEmail: email }, 200)
+      }
+    }
+    await admin.auth.admin.deleteUser(createdData.user.id)
     return json(req, { ok: false, error: upsertError.message }, 400)
   }
 
