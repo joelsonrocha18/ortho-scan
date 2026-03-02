@@ -9,6 +9,12 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function nextExamCode() {
+  const stamp = Date.now().toString().slice(-6)
+  const rand = Math.random().toString(36).slice(2, 4).toUpperCase()
+  return `EXM-${stamp}${rand}`
+}
+
 function buildPendingTrays(totalTrays: number, scanDate: string, changeEveryDays: number) {
   const trays: CaseTray[] = []
   const base = new Date(`${scanDate}T00:00:00`)
@@ -95,6 +101,7 @@ export async function createScan(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedA
 
   const next: Scan = {
     ...scan,
+    shortId: scan.shortId ?? nextExamCode(),
     serviceOrderCode,
     attachments,
     id: `scan_${Date.now()}`,
@@ -318,6 +325,7 @@ export function createCaseFromScan(
     trays: isAlignerFlow ? buildPendingTrays(fallback, scan.scanDate, payload.changeEveryDays) : [],
     attachments: [],
     sourceScanId: scan.id,
+    sourceExamCode: scan.shortId,
     arch: scan.arch,
     complaint: scan.complaint,
     dentistGuidance: scan.dentistGuidance,

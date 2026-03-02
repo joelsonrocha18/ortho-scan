@@ -154,6 +154,12 @@ function buildPendingTrays(totalTrays: number, scanDate: string, changeEveryDays
   return trays
 }
 
+function nextExamCode() {
+  const stamp = Date.now().toString().slice(-6)
+  const rand = Math.random().toString(36).slice(2, 4).toUpperCase()
+  return `EXM-${stamp}${rand}`
+}
+
 export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
   if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
   const now = new Date().toISOString()
@@ -181,6 +187,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
   if (!resolvedClinicId) {
     return { ok: false as const, error: 'Selecione uma clinica valida antes de salvar o exame.' }
   }
+  const shortId = scan.shortId ?? nextExamCode()
 
   const { data, error } = await supabase
     .from('scans')
@@ -194,6 +201,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
       dentist_guidance: scan.dentistGuidance ?? null,
       data: {
         patientName: scan.patientName,
+        shortId,
         serviceOrderCode: scan.serviceOrderCode,
         purposeProductId: scan.purposeProductId,
         purposeProductType: scan.purposeProductType,
@@ -270,6 +278,7 @@ export async function createCaseFromScanSupabase(
     trays: isAlignerFlow ? buildPendingTrays(totalTrays, scan.scanDate, payload.changeEveryDays) : [],
     attachments: [],
     sourceScanId: scan.id,
+    sourceExamCode: scan.shortId,
     arch: scan.arch,
     complaint: scan.complaint,
     dentistGuidance: scan.dentistGuidance,

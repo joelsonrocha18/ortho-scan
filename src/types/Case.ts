@@ -101,6 +101,7 @@ export type Case = {
   trays: CaseTray[]
   attachments: CaseAttachment[]
   sourceScanId?: string
+  sourceExamCode?: string
   arch?: 'superior' | 'inferior' | 'ambos'
   complaint?: string
   dentistGuidance?: string
