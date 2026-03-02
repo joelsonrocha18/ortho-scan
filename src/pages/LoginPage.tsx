@@ -69,10 +69,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <h2 className="text-xl font-semibold text-white">Entrar</h2>
-          <p className="mt-1 text-sm text-slate-300">Use suas credenciais para acessar o sistema</p>
-
-          <form className="mt-4 space-y-3" onSubmit={handleSubmit} noValidate>
+          <form className="mt-2 space-y-3" onSubmit={handleSubmit} noValidate>
             <div>
               <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-200">
                 Usuario (email)
@@ -119,13 +116,6 @@ export default function LoginPage() {
               </Link>
             </div>
           </form>
-
-          <p className="mt-4 text-center text-sm text-slate-300">
-            Nao tem uma conta?{' '}
-            <Link to="#" className="font-semibold text-brand-700 hover:text-brand-500">
-              Cadastre-se
-            </Link>
-          </p>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs">
             <Link to="/legal/terms" className="font-semibold text-slate-300 hover:text-white">
