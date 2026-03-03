@@ -208,8 +208,12 @@ function structuredSlotTag(slotId: string) {
   return `[slot:${slotId}]`
 }
 
-function hasStructuredSlotTag(note: string | undefined, slotId: string) {
-  return (note ?? '').includes(structuredSlotTag(slotId))
+function safeText(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+function hasStructuredSlotTag(note: unknown, slotId: string) {
+  return safeText(note).includes(structuredSlotTag(slotId))
 }
 
 export default function PatientDetailPage() {
@@ -1020,7 +1024,7 @@ export default function PatientDetailPage() {
       return
     }
     setSlotUploadBusy(slot.id)
-    const existingTaggedNote = structuredDocsBySlot.get(slot.id)?.note ?? ''
+    const existingTaggedNote = safeText(structuredDocsBySlot.get(slot.id)?.note)
     const mergedNote = `${existingTaggedNote.replace(structuredSlotTag(slot.id), '').trim()}\n${structuredSlotTag(slot.id)}`
       .trim()
     const result = await addPatientDoc({
