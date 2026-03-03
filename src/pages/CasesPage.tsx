@@ -393,17 +393,23 @@ export default function CasesPage() {
                   const dentist = item.dentistId ? dentistsById.get(item.dentistId) : undefined
                   const dentistPrefix = dentist?.gender === 'feminino' ? 'Dra.' : dentist ? 'Dr.' : ''
                   const resolvedUpper =
-                    typeof item.totalTraysUpper === 'number'
-                      ? item.totalTraysUpper
-                      : item.arch === 'inferior'
-                        ? 0
+                    item.arch === 'inferior'
+                      ? 0
+                      : typeof item.totalTraysUpper === 'number'
+                        ? item.totalTraysUpper
                         : (item.totalTrays ?? 0)
                   const resolvedLower =
-                    typeof item.totalTraysLower === 'number'
-                      ? item.totalTraysLower
-                      : item.arch === 'superior'
-                        ? 0
+                    item.arch === 'superior'
+                      ? 0
+                      : typeof item.totalTraysLower === 'number'
+                        ? item.totalTraysLower
                         : (item.totalTrays ?? 0)
+                  const traysLabel =
+                    item.arch === 'superior'
+                      ? `Sup ${resolvedUpper}`
+                      : item.arch === 'inferior'
+                        ? `Inf ${resolvedLower}`
+                        : `Sup ${resolvedUpper} | Inf ${resolvedLower}`
                   const badge = caseStatusBadge(
                     item,
                     liveLabStatusByCase.get(item.id) ?? null,
@@ -425,7 +431,7 @@ export default function CasesPage() {
                         Alinhadores
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">
-                        {`Sup ${resolvedUpper} | Inf ${resolvedLower}`}
+                        {traysLabel}
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.changeEveryDays ?? '-'}</td>
                       <td className="px-5 py-4">
