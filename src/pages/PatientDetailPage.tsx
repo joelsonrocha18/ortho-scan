@@ -212,6 +212,10 @@ function safeText(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 
+function asTextOrUndefined(value: unknown) {
+  return typeof value === 'string' ? value : undefined
+}
+
 function hasStructuredSlotTag(note: unknown, slotId: string) {
   return safeText(note).includes(structuredSlotTag(slotId))
 }
@@ -334,28 +338,28 @@ export default function PatientDetailPage() {
         : {}
       const mapped: Patient = {
         id: String(data.id),
-        shortId: (data.short_id as string | null) ?? undefined,
-        name: String(data.name ?? ''),
-        cpf: (data.cpf as string | null) ?? undefined,
-        phone: (data.phone as string | null) ?? undefined,
-        whatsapp: (data.whatsapp as string | null) ?? undefined,
-        email: (data.email as string | null) ?? undefined,
-        birthDate: (data.birth_date as string | null) ?? undefined,
+        shortId: asTextOrUndefined(data.short_id),
+        name: safeText(data.name),
+        cpf: asTextOrUndefined(data.cpf),
+        phone: asTextOrUndefined(data.phone),
+        whatsapp: asTextOrUndefined(data.whatsapp),
+        email: asTextOrUndefined(data.email),
+        birthDate: asTextOrUndefined(data.birth_date),
         gender: ((data.gender as string | null) as Patient['gender']) ?? 'outro',
-        clinicId: (data.clinic_id as string | null) ?? undefined,
-        primaryDentistId: (data.primary_dentist_id as string | null) ?? undefined,
+        clinicId: asTextOrUndefined(data.clinic_id),
+        primaryDentistId: asTextOrUndefined(data.primary_dentist_id),
         address: {
-          cep: (address.cep as string | undefined) ?? undefined,
-          street: (address.street as string | undefined) ?? undefined,
-          number: (address.number as string | undefined) ?? undefined,
-          district: (address.district as string | undefined) ?? undefined,
-          city: (address.city as string | undefined) ?? undefined,
-          state: (address.state as string | undefined) ?? undefined,
+          cep: asTextOrUndefined(address.cep),
+          street: asTextOrUndefined(address.street),
+          number: asTextOrUndefined(address.number),
+          district: asTextOrUndefined(address.district),
+          city: asTextOrUndefined(address.city),
+          state: asTextOrUndefined(address.state),
         },
-        notes: (data.notes as string | null) ?? undefined,
-        createdAt: (data.created_at as string | undefined) ?? new Date().toISOString(),
-        updatedAt: (data.updated_at as string | undefined) ?? new Date().toISOString(),
-        deletedAt: (data.deleted_at as string | null) ?? undefined,
+        notes: asTextOrUndefined(data.notes),
+        createdAt: asTextOrUndefined(data.created_at) ?? new Date().toISOString(),
+        updatedAt: asTextOrUndefined(data.updated_at) ?? new Date().toISOString(),
+        deletedAt: asTextOrUndefined(data.deleted_at),
       }
       setSupabaseExisting(mapped)
       setLoadingExisting(false)
@@ -368,7 +372,7 @@ export default function PatientDetailPage() {
   const scans = useMemo(() => {
     if (!existing) return []
     if (isSupabaseMode) return supabasePatientScans
-    const name = existing.name.toLowerCase()
+    const name = safeText(existing.name).toLowerCase()
     return db.scans.filter(
       (scan) =>
         (scan.patientId && scan.patientId === existing.id) ||
@@ -379,7 +383,7 @@ export default function PatientDetailPage() {
   const cases = useMemo(() => {
     if (!existing) return []
     if (isSupabaseMode) return supabasePatientCases
-    const name = existing.name.toLowerCase()
+    const name = safeText(existing.name).toLowerCase()
     return db.cases.filter(
       (caseItem) =>
         (caseItem.patientId && caseItem.patientId === existing.id) ||
@@ -462,24 +466,24 @@ export default function PatientDetailPage() {
       return
     }
     setForm({
-      name: existing.name,
-      cpf: existing.cpf ?? '',
-      birthDate: existing.birthDate ?? '',
+      name: safeText(existing.name),
+      cpf: safeText(existing.cpf),
+      birthDate: safeText(existing.birthDate),
       gender: existing.gender ?? 'outro',
-      phone: existing.phone ?? '',
-      whatsapp: existing.whatsapp ?? '',
-      email: existing.email ?? '',
+      phone: safeText(existing.phone),
+      whatsapp: safeText(existing.whatsapp),
+      email: safeText(existing.email),
       address: {
-        cep: existing.address?.cep ?? '',
-        street: existing.address?.street ?? '',
-        number: existing.address?.number ?? '',
-        district: existing.address?.district ?? '',
-        city: existing.address?.city ?? '',
-        state: existing.address?.state ?? '',
+        cep: safeText(existing.address?.cep),
+        street: safeText(existing.address?.street),
+        number: safeText(existing.address?.number),
+        district: safeText(existing.address?.district),
+        city: safeText(existing.address?.city),
+        state: safeText(existing.address?.state),
       },
-      primaryDentistId: existing.primaryDentistId ?? '',
-      clinicId: existing.clinicId ?? '',
-      notes: existing.notes ?? '',
+      primaryDentistId: safeText(existing.primaryDentistId),
+      clinicId: safeText(existing.clinicId),
+      notes: safeText(existing.notes),
     })
   }, [existing])
 
