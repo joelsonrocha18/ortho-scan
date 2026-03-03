@@ -374,21 +374,32 @@ export default function CaseDetailPage() {
     })
     return map
   }, [currentCase])
-  const patientDeliveryDateByTray = useMemo(() => {
+  const dentistDeliveryDateByTray = useMemo(() => {
     const map = new Map<number, string>()
-    const lots = [...(currentCase?.installation?.patientDeliveryLots ?? [])].sort((a, b) =>
-      a.deliveredAt.localeCompare(b.deliveredAt),
-    )
+    const lots = [...(currentCase?.deliveryLots ?? [])].sort((a, b) => {
+      const aDate = (a.deliveredToDoctorAt ?? '').trim()
+      const bDate = (b.deliveredToDoctorAt ?? '').trim()
+      return aDate.localeCompare(bDate)
+    })
     lots.forEach((lot) => {
+      const appliesUpper = lot.arch === 'superior' || lot.arch === 'ambos'
+      const appliesLower = lot.arch === 'inferior' || lot.arch === 'ambos'
+      if ((hasUpperArch && !appliesUpper) && (hasLowerArch && !appliesLower)) return
       for (let tray = lot.fromTray; tray <= lot.toTray; tray += 1) {
         if (!map.has(tray)) {
-          map.set(tray, lot.deliveredAt)
+          map.set(tray, lot.deliveredToDoctorAt)
         }
       }
     })
     return map
+  }, [currentCase, hasLowerArch, hasUpperArch])
+  const manualChangeCompletionByTray = useMemo(() => {
+    const map = new Map<number, boolean>()
+    ;(currentCase?.installation?.manualChangeCompletion ?? []).forEach((entry) => {
+      if (entry.trayNumber > 0) map.set(entry.trayNumber, Boolean(entry.completed))
+    })
+    return map
   }, [currentCase])
-  const fallbackPatientDeliveryDate = currentCase?.installation?.installedAt
   const progressUpper = useMemo(() => caseProgress(totalUpper, deliveredUpper), [deliveredUpper, totalUpper])
   const progressLower = useMemo(() => caseProgress(totalLower, deliveredLower), [deliveredLower, totalLower])
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), [])
@@ -418,12 +429,6 @@ export default function CaseDetailPage() {
     const progressed = Math.min(eligibleByDate, Math.max(0, Math.trunc(deliveredLower)))
     return caseProgress(totalLower, progressed)
   }, [changeSchedule, deliveredLower, todayIso, totalLower])
-  const deliveredScheduleCount = useMemo(() => {
-    if (hasUpperArch && hasLowerArch) return Math.max(0, Math.min(progressUpper.delivered, progressLower.delivered))
-    if (hasUpperArch) return Math.max(0, progressUpper.delivered)
-    if (hasLowerArch) return Math.max(0, progressLower.delivered)
-    return 0
-  }, [hasLowerArch, hasUpperArch, progressLower.delivered, progressUpper.delivered])
   const linkedLabItems = useMemo(
     () => (currentCase ? (isSupabaseMode ? supabaseLabItems : db.labItems.filter((item) => item.caseId === currentCase.id)) : []),
     [currentCase, isSupabaseMode, supabaseLabItems, db.labItems],
@@ -1310,6 +1315,40 @@ export default function CaseDetailPage() {
     addToast({ type: 'success', title: 'Troca real atualizada' })
   }
 
+  const saveManualChangeCompletion = (trayNumber: number, completed: boolean) => {
+    if (!canWrite) return
+    if (!currentCase.installation) return
+    const nextCompletion = (currentCase.installation.manualChangeCompletion ?? []).filter(
+      (entry) => entry.trayNumber !== trayNumber,
+    )
+    nextCompletion.push({ trayNumber, completed })
+    if (isSupabaseMode) {
+      void (async () => {
+        const result = await patchCaseDataSupabase(currentCase.id, {
+          installation: {
+            ...currentCase.installation,
+            manualChangeCompletion: nextCompletion,
+          },
+        })
+        if (!result.ok) {
+          addToast({ type: 'error', title: 'Troca concluida', message: result.error })
+          return
+        }
+        setSupabaseRefreshKey((current) => current + 1)
+      })()
+      return
+    }
+    const updated = updateCase(currentCase.id, {
+      installation: {
+        ...currentCase.installation,
+        manualChangeCompletion: nextCompletion,
+      },
+    })
+    if (!updated) {
+      addToast({ type: 'error', title: 'Troca concluida', message: 'Nao foi possivel atualizar status manual.' })
+    }
+  }
+
   const saveChangeEveryDays = async () => {
     if (!canWrite) return
     const parsed = Math.trunc(Number(changeEveryDaysInput))
@@ -1864,9 +1903,8 @@ export default function CaseDetailPage() {
                 ) : (
                   changeSchedule.map((row) => {
                     const dueReached = row.changeDate <= todayIso
-                    const upperCompleted = !hasUpperArch || row.trayNumber > totalUpper || (dueReached && row.trayNumber <= Math.max(0, Math.trunc(deliveredUpper)))
-                    const lowerCompleted = !hasLowerArch || row.trayNumber > totalLower || (dueReached && row.trayNumber <= Math.max(0, Math.trunc(deliveredLower)))
-                    const trocaConcluida = upperCompleted && lowerCompleted
+                    const manualCompleted = manualChangeCompletionByTray.get(row.trayNumber)
+                    const trocaConcluida = typeof manualCompleted === 'boolean' ? manualCompleted : dueReached
 
                     return (
                       <tr key={row.trayNumber} className="border-t border-slate-100">
@@ -1882,14 +1920,35 @@ export default function CaseDetailPage() {
                         </td>
                         {hasUpperArch ? <td className={`px-3 py-2 font-medium ${scheduleStateClass(row.superiorState)}`}>{scheduleStateLabel(row.superiorState)}</td> : null}
                         {hasLowerArch ? <td className={`px-3 py-2 font-medium ${scheduleStateClass(row.inferiorState)}`}>{scheduleStateLabel(row.inferiorState)}</td> : null}
-                        <td className="px-3 py-2 text-slate-700">{trocaConcluida ? 'Sim' : 'Nao'}</td>
                         <td className="px-3 py-2 text-slate-700">
-                          {row.trayNumber <= deliveredScheduleCount
-                            ? (() => {
-                                const deliveredAt = patientDeliveryDateByTray.get(row.trayNumber) ?? fallbackPatientDeliveryDate
-                                return deliveredAt ? new Date(`${deliveredAt}T00:00:00`).toLocaleDateString('pt-BR') : '-'
-                              })()
-                            : '-'}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                trocaConcluida ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                              }`}
+                              onClick={() => saveManualChangeCompletion(row.trayNumber, true)}
+                              disabled={!canWrite}
+                            >
+                              Sim
+                            </button>
+                            <button
+                              type="button"
+                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                !trocaConcluida ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'
+                              }`}
+                              onClick={() => saveManualChangeCompletion(row.trayNumber, false)}
+                              disabled={!canWrite}
+                            >
+                              Nao
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-slate-700">
+                          {(() => {
+                            const deliveredAt = dentistDeliveryDateByTray.get(row.trayNumber)
+                            return deliveredAt ? new Date(`${deliveredAt}T00:00:00`).toLocaleDateString('pt-BR') : '-'
+                          })()}
                         </td>
                       </tr>
                     )

@@ -64,6 +64,10 @@ export type CaseInstallation = {
     trayNumber: number
     changedAt: string
   }>
+  manualChangeCompletion?: Array<{
+    trayNumber: number
+    completed: boolean
+  }>
 }
 
 export type Case = {
