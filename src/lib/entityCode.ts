@@ -8,16 +8,16 @@ function numericFromId(id: string) {
 }
 
 export function patientCode(id: string, shortId?: string) {
-  if (shortId?.trim()) return shortId
+  if (typeof shortId === 'string' && shortId.trim()) return shortId
   return `P${numericFromId(id)}`
 }
 
 export function dentistCode(id: string, shortId?: string) {
-  if (shortId?.trim()) return shortId
+  if (typeof shortId === 'string' && shortId.trim()) return shortId
   return `D${numericFromId(id)}`
 }
 
 export function clinicCode(id: string, shortId?: string) {
-  if (shortId?.trim()) return shortId
+  if (typeof shortId === 'string' && shortId.trim()) return shortId
   return `C${numericFromId(id)}`
 }
