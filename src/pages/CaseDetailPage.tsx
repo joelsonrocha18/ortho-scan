@@ -335,16 +335,16 @@ export default function CaseDetailPage() {
 
   const totalUpper = useMemo(() => {
     if (!currentCase) return 0
+    if (currentCase.arch === 'inferior') return 0
     if (typeof currentCase.totalTraysUpper === 'number') return Math.max(0, currentCase.totalTraysUpper)
     if (typeof currentCase.totalTraysLower === 'number') return 0
-    if (currentCase.arch === 'inferior') return 0
     return Math.max(0, currentCase.totalTrays)
   }, [currentCase])
   const totalLower = useMemo(() => {
     if (!currentCase) return 0
+    if (currentCase.arch === 'superior') return 0
     if (typeof currentCase.totalTraysLower === 'number') return Math.max(0, currentCase.totalTraysLower)
     if (typeof currentCase.totalTraysUpper === 'number') return 0
-    if (currentCase.arch === 'superior') return 0
     return Math.max(0, currentCase.totalTrays)
   }, [currentCase])
   const hasUpperArch = totalUpper > 0
