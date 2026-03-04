@@ -46,6 +46,7 @@ type LabItemModalProps = {
   }) => { ok: boolean; message?: string } | Promise<{ ok: boolean; message?: string }>
   onSave: (id: string, patch: Partial<LabItem>) => { ok: boolean; message?: string } | Promise<{ ok: boolean; message?: string }>
   onDelete: (id: string) => void
+  onReprintGuide?: (item: LabItem) => void
 }
 
 type FormState = {
@@ -113,6 +114,7 @@ export default function LabItemModal({
   onCreate,
   onSave,
   onDelete,
+  onReprintGuide,
 }: LabItemModalProps) {
   const { addToast } = useToast()
   const [form, setForm] = useState<FormState>(defaultForm)
@@ -519,7 +521,12 @@ export default function LabItemModal({
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
         <div className="mt-6 flex items-center justify-between gap-2">
-          <div>
+          <div className="flex items-center gap-2">
+            {!readOnly && mode === 'edit' && item?.status === 'aguardando_iniciar' && item && onReprintGuide ? (
+              <Button variant="secondary" onClick={() => onReprintGuide(item)}>
+                Reimpressao O.S
+              </Button>
+            ) : null}
             {!readOnly && canDelete && allowDelete ? (
               <Button variant="secondary" onClick={handleDelete}>
                 Excluir

@@ -1344,6 +1344,80 @@ export default function LabPage() {
     setAiModalOpen(true)
   }
 
+  const reprintGuideFromModal = (item: LabItem) => {
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;')
+
+    const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
+    const guideCode = formatFriendlyRequestCode(item.requestCode ?? caseItem?.treatmentCode ?? item.id)
+    const issueDateLabel = new Date().toLocaleString('pt-BR')
+    const emittedBy = currentUser?.name || currentUser?.email || 'Sistema'
+    const html = `
+      <!doctype html>
+      <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8" />
+        <title>Guia LAB - ${escapeHtml(guideCode)}</title>
+        <style>
+          @page { size: A4; margin: 14mm; }
+          body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
+          .header { border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
+          .brand { border-right: 1px solid #cbd5e1; padding-right: 10px; }
+          .brand img { max-width: 200px; max-height: 70px; object-fit: contain; display: block; }
+          .doc h1 { margin: 0; font-size: 18px; }
+          .doc p { margin: 4px 0; font-size: 11px; color: #334155; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+          .box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
+          .label { font-size: 10px; color: #475569; text-transform: uppercase; margin-bottom: 2px; }
+          .value { font-weight: 700; }
+          .emit { margin-top: 14px; font-size: 10px; color: #475569; border-top: 1px solid #cbd5e1; padding-top: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="brand"><img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" /></div>
+          <div class="doc">
+            <h1>GUIA DE REIMPRESSAO O.S</h1>
+            <p><strong>Data/Hora:</strong> ${escapeHtml(issueDateLabel)}</p>
+            <p><strong>Guia:</strong> ${escapeHtml(guideCode)}</p>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="box"><div class="label">Paciente</div><div class="value">${escapeHtml(item.patientName)}</div></div>
+          <div class="box"><div class="label">Produto</div><div class="value">${escapeHtml(PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m'])}</div></div>
+          <div class="box"><div class="label">Arcada</div><div class="value">${escapeHtml(item.arch)}</div></div>
+          <div class="box"><div class="label">Placa</div><div class="value">#${escapeHtml(String(item.trayNumber))}</div></div>
+          <div class="box"><div class="label">Qtd Sup</div><div class="value">${escapeHtml(String(item.plannedUpperQty ?? 0))}</div></div>
+          <div class="box"><div class="label">Qtd Inf</div><div class="value">${escapeHtml(String(item.plannedLowerQty ?? 0))}</div></div>
+          <div class="box"><div class="label">Prazo</div><div class="value">${escapeHtml(formatDate(item.dueDate))}</div></div>
+          <div class="box"><div class="label">Status</div><div class="value">${escapeHtml(item.status)}</div></div>
+        </div>
+        <div class="emit">Emitido por ${escapeHtml(emittedBy)} Atraves da plataforma ControleODONTO Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
+      </body>
+      </html>
+    `
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const printUrl = URL.createObjectURL(blob)
+    const popup = window.open(printUrl, '_blank')
+    if (!popup) {
+      addToast({ type: 'error', title: 'Reimpressao O.S', message: 'Nao foi possivel abrir a janela de impressao.' })
+      return
+    }
+    const onLoaded = () => {
+      popup.focus()
+      popup.print()
+      setTimeout(() => URL.revokeObjectURL(printUrl), 10_000)
+    }
+    if (popup.document.readyState === 'complete') onLoaded()
+    else popup.addEventListener('load', onLoaded, { once: true })
+  }
+
   return (
     <AppShell breadcrumb={['Início', 'Laboratório']}>
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1558,6 +1632,7 @@ export default function LabPage() {
         onCreate={handleCreate}
         onSave={handleSave}
         onDelete={handleDelete}
+        onReprintGuide={reprintGuideFromModal}
         allowDelete={canDeleteLab}
       />
       <RegisterDeliveryLotModal
