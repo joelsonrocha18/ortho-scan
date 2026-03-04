@@ -11,6 +11,7 @@ import type { ProductType } from '../types/Product'
 import type { ReplacementBankEntry } from '../types/ReplacementBank'
 import { normalizeProductType } from '../types/Product'
 import { emitDbChanged } from '../lib/events'
+import { nextOrthTreatmentCode, normalizeOrthTreatmentCode } from '../lib/treatmentCode'
 import { DATA_MODE } from './dataMode'
 
 export const DB_KEY = 'arrimo_orthoscan_db_v1'
@@ -195,26 +196,19 @@ function inferCaseOrigin(caseItem: Pick<Case, 'clinicId'>, clinicsById: Map<stri
   return isArrimoClinic(clinicsById.get(caseItem.clinicId) ?? null) ? 'interno' : 'externo'
 }
 
-function nextTreatmentCode(prefix: 'A' | 'C', current: string[]) {
-  const max = current.reduce((acc, item) => {
-    const match = item.match(/^([AC])-([0-9]{4})$/)
-    if (!match || match[1] !== prefix) return acc
-    return Math.max(acc, Number(match[2]))
-  }, 0)
-  return `${prefix}-${String(max + 1).padStart(4, '0')}`
-}
-
 function ensureTreatmentCodes(cases: Case[], clinics: Clinic[]) {
   const clinicsById = new Map(clinics.map((item) => [item.id, item]))
-  const used = cases.map((item) => item.treatmentCode).filter((item): item is string => Boolean(item))
+  const used = cases
+    .map((item) => normalizeOrthTreatmentCode(item.treatmentCode))
+    .filter((item): item is string => Boolean(item))
   const sorted = [...cases].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
   const normalized = new Map<string, Case>()
   sorted.forEach((item) => {
     const origin = item.treatmentOrigin ?? inferCaseOrigin(item, clinicsById)
-    const prefix = origin === 'interno' ? 'A' : 'C'
-    const code = item.treatmentCode ?? nextTreatmentCode(prefix, used)
-    if (!item.treatmentCode) {
+    const persistedCode = normalizeOrthTreatmentCode(item.treatmentCode)
+    const code = persistedCode || nextOrthTreatmentCode(used)
+    if (!persistedCode) {
       used.push(code)
     }
     normalized.set(item.id, { ...item, treatmentOrigin: origin, treatmentCode: code })

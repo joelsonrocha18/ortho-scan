@@ -24,7 +24,7 @@ describe('System scenarios', () => {
     expect(seeded.scans.length).toBeGreaterThan(0)
   })
 
-  it('creates case from approved scan with treatment code (A/C pattern)', () => {
+  it('creates case from approved scan with treatment code (ORTH pattern)', () => {
     const result = createCaseFromScan('qa_scan_1', {
       totalTraysUpper: 12,
       totalTraysLower: 10,
@@ -34,7 +34,7 @@ describe('System scenarios', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     const caseItem = getCase(result.caseId)
-    expect(caseItem?.treatmentCode).toMatch(/^[AC]-\d{4}$/)
+    expect(caseItem?.treatmentCode).toMatch(/^ORTH-\d{5}$/)
   })
 
   it('keeps LAB item in aguardando when qty is zero and auto-moves to em_producao when qty is set', () => {
@@ -97,7 +97,7 @@ describe('System scenarios', () => {
     const advance = createAdvanceLabOrder(replenishment.id, { plannedUpperQty: 2, plannedLowerQty: 1 })
     expect(advance.ok).toBe(true)
     if (!advance.ok) return
-    expect(advance.item.requestCode).toMatch(/^[AC]-\d{4}\/\d+$/)
+    expect(advance.item.requestCode).toMatch(/^ORTH-\d{5}\/\d+$/)
     expect(advance.item.requestKind).toBe('producao')
     expect(advance.item.status).toBe('aguardando_iniciar')
     const after = listLabItems()

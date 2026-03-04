@@ -4,6 +4,7 @@ import type { LabItem } from '../types/Lab'
 import type { ProductType } from '../types/Product'
 import { isAlignerProductType, normalizeProductType } from '../types/Product'
 import type { Scan, ScanAttachment } from '../types/Scan'
+import { nextOrthTreatmentCode, normalizeOrthTreatmentCode } from '../lib/treatmentCode'
 
 export type ProfileRecord = {
   user_id: string
@@ -160,6 +161,26 @@ function nextExamCode() {
   return `EXM-${stamp}${rand}`
 }
 
+async function nextTreatmentCodeSupabase() {
+  if (!supabase) return ''
+  const [casesRes, scansRes] = await Promise.all([
+    supabase.from('cases').select('data').is('deleted_at', null),
+    supabase.from('scans').select('data').is('deleted_at', null),
+  ])
+  const collected: string[] = []
+  ;(casesRes.data ?? []).forEach((row) => {
+    const data = asObject((row as Record<string, unknown>).data)
+    const code = normalizeOrthTreatmentCode(asText(data.treatmentCode))
+    if (code) collected.push(code)
+  })
+  ;(scansRes.data ?? []).forEach((row) => {
+    const data = asObject((row as Record<string, unknown>).data)
+    const code = normalizeOrthTreatmentCode(asText(data.serviceOrderCode))
+    if (code) collected.push(code)
+  })
+  return nextOrthTreatmentCode(collected)
+}
+
 export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
   if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
   const now = new Date().toISOString()
@@ -188,6 +209,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
     return { ok: false as const, error: 'Selecione uma clinica valida antes de salvar o exame.' }
   }
   const shortId = scan.shortId ?? nextExamCode()
+  const serviceOrderCode = normalizeOrthTreatmentCode(scan.serviceOrderCode) || (await nextTreatmentCodeSupabase())
 
   const { data, error } = await supabase
     .from('scans')
@@ -202,7 +224,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
       data: {
         patientName: scan.patientName,
         shortId,
-        serviceOrderCode: scan.serviceOrderCode,
+        serviceOrderCode,
         purposeProductId: scan.purposeProductId,
         purposeProductType: scan.purposeProductType,
         purposeLabel: scan.purposeLabel,
@@ -254,7 +276,7 @@ export async function createCaseFromScanSupabase(
   if (isAlignerFlow && totalTrays <= 0) return { ok: false as const, error: 'Informe total de placas superior e/ou inferior.' }
 
   const now = new Date().toISOString()
-  const treatmentCode = scan.serviceOrderCode ?? undefined
+  const treatmentCode = normalizeOrthTreatmentCode(scan.serviceOrderCode) || (await nextTreatmentCodeSupabase())
   const status = 'planejamento'
   const phase = 'planejamento'
   const nextData = {
@@ -312,7 +334,7 @@ export async function createCaseFromScanSupabase(
 
   const scanDataNext = {
     patientName: scan.patientName,
-    serviceOrderCode: scan.serviceOrderCode,
+    serviceOrderCode: treatmentCode,
     purposeProductId: scan.purposeProductId,
     purposeProductType: scan.purposeProductType,
     purposeLabel: scan.purposeLabel,

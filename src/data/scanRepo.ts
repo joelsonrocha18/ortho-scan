@@ -4,6 +4,7 @@ import type { Case, CaseTray } from '../types/Case'
 import type { Scan, ScanAttachment } from '../types/Scan'
 import { isAlignerProductType, normalizeProductType } from '../types/Product'
 import { uploadFileToStorage } from '../lib/storageUpload'
+import { nextOrthTreatmentCode, normalizeOrthTreatmentCode } from '../lib/treatmentCode'
 
 function nowIso() {
   return new Date().toISOString()
@@ -33,19 +34,12 @@ function isInternalClinic(db: ReturnType<typeof loadDb>, clinicId?: string) {
   return clinic.id === 'clinic_arrimo' || clinic.tradeName.trim().toUpperCase() === 'ARRIMO'
 }
 
-function nextTreatmentCode(db: ReturnType<typeof loadDb>, prefix: 'A' | 'C') {
-  const maxFromCases = db.cases.reduce((acc, item) => {
-    const match = item.treatmentCode?.match(/^([AC])-([0-9]{4})$/)
-    if (!match || match[1] !== prefix) return acc
-    return Math.max(acc, Number(match[2]))
-  }, 0)
-  const maxFromScans = db.scans.reduce((acc, item) => {
-    const match = item.serviceOrderCode?.match(/^([AC])-([0-9]{4})$/)
-    if (!match || match[1] !== prefix) return acc
-    return Math.max(acc, Number(match[2]))
-  }, 0)
-  const max = Math.max(maxFromCases, maxFromScans)
-  return `${prefix}-${String(max + 1).padStart(4, '0')}`
+function nextTreatmentCode(db: ReturnType<typeof loadDb>) {
+  const existing = [
+    ...db.cases.map((item) => item.treatmentCode ?? ''),
+    ...db.scans.map((item) => item.serviceOrderCode ?? ''),
+  ]
+  return nextOrthTreatmentCode(existing)
 }
 
 export function listScans() {
@@ -69,8 +63,7 @@ async function fileFromAttachment(att: ScanAttachment) {
 
 export async function createScan(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = loadDb()
-  const internal = isInternalClinic(db, scan.clinicId)
-  const serviceOrderCode = scan.serviceOrderCode ?? nextTreatmentCode(db, internal ? 'A' : 'C')
+  const serviceOrderCode = normalizeOrthTreatmentCode(scan.serviceOrderCode) || nextTreatmentCode(db)
   const attachments: ScanAttachment[] = []
 
   for (const att of scan.attachments) {
@@ -276,7 +269,7 @@ export function createCaseFromScan(
   if (isAlignerFlow && fallback <= 0) return { ok: false, error: 'Informe total de placas superior e/ou inferior.' }
 
   const internal = isInternalClinic(db, scan.clinicId)
-  const treatmentCode = scan.serviceOrderCode ?? nextTreatmentCode(db, internal ? 'A' : 'C')
+  const treatmentCode = normalizeOrthTreatmentCode(scan.serviceOrderCode) || nextTreatmentCode(db)
   const caseId = treatmentCode
   if (db.cases.some((item) => item.id === caseId)) {
     return { ok: false, error: `Ja existe um caso com o codigo ${caseId}.` }

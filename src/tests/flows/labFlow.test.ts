@@ -72,7 +72,7 @@ describe('LAB flow and commercial gate', () => {
 
     expect(bankItem).toBeTruthy()
     expect(bankItem?.status).toBe('aguardando_iniciar')
-    expect(bankItem?.requestCode).toMatch(/^[AC]-\d{4}\/\d+$/)
+    expect(bankItem?.requestCode).toMatch(/^ORTH-\d{5}\/\d+$/)
   })
 
   it('creates advance OS using the first pending tray number', () => {
