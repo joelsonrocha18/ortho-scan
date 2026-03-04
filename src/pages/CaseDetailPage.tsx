@@ -1220,8 +1220,8 @@ export default function CaseDetailPage() {
       return
     }
 
-    const escapeHtml = (value: string) =>
-      value
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '')
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
@@ -1351,17 +1351,31 @@ export default function CaseDetailPage() {
       </html>
     `
 
-    const popup = window.open('', '_blank', 'noopener,noreferrer')
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const printUrl = URL.createObjectURL(blob)
+    const popup = window.open(printUrl, '_blank')
     if (!popup) {
       addToast({ type: 'error', title: 'Imprimir OS', message: 'Nao foi possivel abrir a janela de impressao.' })
       return
     }
 
-    popup.document.open()
-    popup.document.write(html)
-    popup.document.close()
-    popup.focus()
-    popup.print()
+    const releaseUrl = () => {
+      try {
+        URL.revokeObjectURL(printUrl)
+      } catch {
+        // noop
+      }
+    }
+    const onLoaded = () => {
+      popup.focus()
+      popup.print()
+      setTimeout(releaseUrl, 10_000)
+    }
+    if (popup.document.readyState === 'complete') {
+      onLoaded()
+    } else {
+      popup.addEventListener('load', onLoaded, { once: true })
+    }
   }
 
   const markCaseFileError = (fileId: string) => {
