@@ -46,6 +46,7 @@ type PatientOption = {
   id: string
   shortId?: string
   name: string
+  birthDate?: string
   dentistId?: string
   clinicId?: string
   dentistName?: string
@@ -317,7 +318,7 @@ export default function LabPage() {
           .from('lab_items')
           .select('id, clinic_id, case_id, tray_number, status, priority, notes, created_at, deleted_at, data')
           .is('deleted_at', null),
-        supabase.from('patients').select('id, name, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
+        supabase.from('patients').select('id, name, birth_date, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
         supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
       ])
@@ -329,10 +330,11 @@ export default function LabPage() {
       const clinicsById = new Map(
         ((clinicsRes.data ?? []) as Array<{ id: string; trade_name?: string }>).map((row) => [row.id, row.trade_name ?? '-']),
       )
-      const patientOptions = ((patientsRes.data ?? []) as Array<{ id: string; name?: string; clinic_id?: string; primary_dentist_id?: string }>).map((row) => ({
+      const patientOptions = ((patientsRes.data ?? []) as Array<{ id: string; name?: string; birth_date?: string; clinic_id?: string; primary_dentist_id?: string }>).map((row) => ({
         id: row.id,
         shortId: undefined,
         name: row.name ?? '-',
+        birthDate: row.birth_date ?? undefined,
         clinicId: row.clinic_id ?? undefined,
         dentistId: row.primary_dentist_id ?? undefined,
         clinicName: row.clinic_id ? clinicsById.get(row.clinic_id) : undefined,
@@ -528,6 +530,7 @@ export default function LabPage() {
               id: patient.id,
               shortId: patient.shortId,
               name: patient.name,
+              birthDate: patient.birthDate,
               dentistId: patient.primaryDentistId,
               clinicId: patient.clinicId,
               dentistName: dentist?.name,
@@ -1375,6 +1378,8 @@ export default function LabPage() {
     const dentistName = caseItem?.dentistId
       ? patientOption?.dentistName || db.dentists.find((entry) => entry.id === caseItem.dentistId)?.name || '-'
       : '-'
+    const patientBirthDateRaw = patientOption?.birthDate || (caseItem?.patientId ? db.patients.find((entry) => entry.id === caseItem.patientId)?.birthDate : undefined)
+    const patientBirthDateLabel = patientBirthDateRaw ? new Date(`${patientBirthDateRaw}T00:00:00`).toLocaleDateString('pt-BR') : '-'
     const deliveryExpectedLabel = item.dueDate ? formatDate(item.dueDate) : formatDate(new Date().toISOString().slice(0, 10))
     const changeDaysLabel = String(caseItem?.changeEveryDays ?? 10)
     const productLabel = isAlignerProductType(item.productType ?? caseItem?.productType) ? 'Alinhadores' : PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']
@@ -1418,7 +1423,7 @@ export default function LabPage() {
         </div>
         <div class="meta">
           <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(item.patientName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">-</div></div>
+          <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">${escapeHtml(patientBirthDateLabel)}</div></div>
           <div class="meta-box"><div class="meta-label">Clinica</div><div class="meta-value">${escapeHtml(clinicName)}</div></div>
           <div class="meta-box"><div class="meta-label">Dentista responsavel</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
           <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
