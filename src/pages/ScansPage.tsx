@@ -22,7 +22,7 @@ import {
   updateScan,
 } from '../data/scanRepo'
 import { updatePatient } from '../repo/patientRepo'
-import { createCaseFromScanSupabase, createScanSupabase, deleteScanSupabase, updateScanStatusSupabase } from '../repo/profileRepo'
+import { createCaseFromScanSupabase, createScanSupabase, deleteScanSupabase, normalizeTreatmentIdsSupabase, updateScanStatusSupabase } from '../repo/profileRepo'
 import AppShell from '../layouts/AppShell'
 import type { Scan, ScanAttachment } from '../types/Scan'
 import { useDb } from '../lib/useDb'
@@ -119,6 +119,14 @@ export default function ScansPage() {
     let active = true
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
+      const migrationKey = 'orth_treatment_id_migration_v1_done'
+      const hasMigrated = typeof window !== 'undefined' && localStorage.getItem(migrationKey) === 'done'
+      if (!hasMigrated) {
+        const migrated = await normalizeTreatmentIdsSupabase()
+        if (migrated.ok && typeof window !== 'undefined') {
+          localStorage.setItem(migrationKey, 'done')
+        }
+      }
       const [scansRes, casesRes, patientsRes, dentistsRes, clinicsRes] = await Promise.all([
         supabase.from('scans').select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, deleted_at, data').is('deleted_at', null),
         supabase.from('cases').select('id, deleted_at, data').is('deleted_at', null),

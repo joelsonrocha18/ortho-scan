@@ -1442,10 +1442,24 @@ function normalizeDb(raw: unknown): AppDb {
   }))
   const casesWithCode = ensureTreatmentCodes(linkedCases, clinics)
   const caseCodeById = new Map(casesWithCode.map((item) => [item.id, item.treatmentCode]))
+  const usedCodes = casesWithCode
+    .map((item) => normalizeOrthTreatmentCode(item.treatmentCode))
+    .filter((item): item is string => Boolean(item))
+  const scansSortedByCreated = [...scans].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const generatedByScanId = new Map<string, string>()
+  scansSortedByCreated.forEach((scan) => {
+    const linked = scan.linkedCaseId ? caseCodeById.get(scan.linkedCaseId) : undefined
+    const normalizedCurrent = normalizeOrthTreatmentCode(scan.serviceOrderCode)
+    const resolved = linked || normalizedCurrent || nextOrthTreatmentCode(usedCodes)
+    if (!linked && !normalizedCurrent) {
+      usedCodes.push(resolved)
+    }
+    generatedByScanId.set(scan.id, resolved)
+  })
   const linkedScans = scans.map((item) => ({
     ...item,
     patientId: item.patientId ?? byName.get(item.patientName.toLowerCase()),
-    serviceOrderCode: item.serviceOrderCode ?? (item.linkedCaseId ? caseCodeById.get(item.linkedCaseId) : undefined),
+    serviceOrderCode: generatedByScanId.get(item.id),
   }))
 
   return {

@@ -16,6 +16,7 @@ import { can } from '../auth/permissions'
 import { listCasesForUser, listLabItemsForUser } from '../auth/scope'
 import { supabase } from '../lib/supabaseClient'
 import { runAiEndpoint as runAiRequest } from '../repo/aiRepo'
+import { normalizeTreatmentIdsSupabase } from '../repo/profileRepo'
 import { useAiModuleEnabled } from '../lib/useAiModuleEnabled'
 
 const phaseLabelMap: Record<CasePhase, string> = {
@@ -125,6 +126,14 @@ export default function CasesPage() {
     let active = true
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
+      const migrationKey = 'orth_treatment_id_migration_v1_done'
+      const hasMigrated = typeof window !== 'undefined' && localStorage.getItem(migrationKey) === 'done'
+      if (!hasMigrated) {
+        const migrated = await normalizeTreatmentIdsSupabase()
+        if (migrated.ok && typeof window !== 'undefined') {
+          localStorage.setItem(migrationKey, 'done')
+        }
+      }
       const [casesRes, patientsRes, dentistsRes, labRes] = await Promise.all([
         supabase
           .from('cases')

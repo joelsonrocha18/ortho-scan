@@ -780,3 +780,125 @@ export async function inviteUser(payload: {
   }
   return { ok: true as const, data: first.raw }
 }
+
+export async function normalizeTreatmentIdsSupabase() {
+  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+
+  const [scansRes, casesRes] = await Promise.all([
+    supabase
+      .from('scans')
+      .select('id, created_at, data')
+      .is('deleted_at', null),
+    supabase
+      .from('cases')
+      .select('id, scan_id, created_at, data')
+      .is('deleted_at', null),
+  ])
+
+  if (scansRes.error) return { ok: false as const, error: scansRes.error.message }
+  if (casesRes.error) return { ok: false as const, error: casesRes.error.message }
+
+  const scans = (scansRes.data ?? []) as Array<Record<string, unknown>>
+  const cases = (casesRes.data ?? []) as Array<Record<string, unknown>>
+
+  const linkedCaseByScanId = new Map<string, string>()
+  const scanCreatedAt = new Map<string, string>()
+  scans.forEach((row) => {
+    const scanId = asText(row.id)
+    const data = asObject(row.data)
+    const linkedCaseId = asText(data.linkedCaseId)
+    if (scanId) {
+      scanCreatedAt.set(scanId, asText(row.created_at, new Date().toISOString()))
+    }
+    if (scanId && linkedCaseId) {
+      linkedCaseByScanId.set(scanId, linkedCaseId)
+    }
+  })
+  cases.forEach((row) => {
+    const caseId = asText(row.id)
+    const scanId = asText(row.scan_id)
+    if (scanId && caseId) linkedCaseByScanId.set(scanId, caseId)
+  })
+
+  const sortedScanIds = [...scanCreatedAt.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([id]) => id)
+
+  const nextCodes: string[] = []
+  const codeByScanId = new Map<string, string>()
+  const codeByCaseId = new Map<string, string>()
+
+  sortedScanIds.forEach((scanId) => {
+    const code = nextOrthTreatmentCode(nextCodes)
+    nextCodes.push(code)
+    codeByScanId.set(scanId, code)
+    const linkedCaseId = linkedCaseByScanId.get(scanId)
+    if (linkedCaseId) codeByCaseId.set(linkedCaseId, code)
+  })
+
+  const caseRowsById = new Map<string, Record<string, unknown>>()
+  cases.forEach((row) => caseRowsById.set(asText(row.id), row))
+
+  const missingCases = cases
+    .map((row) => asText(row.id))
+    .filter((id) => id && !codeByCaseId.has(id))
+    .map((id) => ({
+      id,
+      createdAt: asText(caseRowsById.get(id)?.created_at, new Date().toISOString()),
+    }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+  missingCases.forEach((row) => {
+    const code = nextOrthTreatmentCode(nextCodes)
+    nextCodes.push(code)
+    codeByCaseId.set(row.id, code)
+  })
+
+  let updatedScans = 0
+  for (const row of scans) {
+    const scanId = asText(row.id)
+    if (!scanId) continue
+    const currentData = asObject(row.data)
+    const targetCode = codeByScanId.get(scanId) ?? normalizeOrthTreatmentCode(asText(currentData.serviceOrderCode))
+    if (!targetCode) continue
+    const currentCode = normalizeOrthTreatmentCode(asText(currentData.serviceOrderCode))
+    if (currentCode === targetCode) continue
+    const nextData = {
+      ...currentData,
+      serviceOrderCode: targetCode,
+      updatedAt: new Date().toISOString(),
+    }
+    const { error } = await supabase
+      .from('scans')
+      .update({ data: nextData, updated_at: new Date().toISOString() })
+      .eq('id', scanId)
+    if (!error) updatedScans += 1
+  }
+
+  let updatedCases = 0
+  for (const row of cases) {
+    const caseId = asText(row.id)
+    if (!caseId) continue
+    const currentData = asObject(row.data)
+    const targetCode = codeByCaseId.get(caseId)
+    if (!targetCode) continue
+    const currentCode = normalizeOrthTreatmentCode(asText(currentData.treatmentCode))
+    if (currentCode === targetCode) continue
+    const nextData = {
+      ...currentData,
+      treatmentCode: targetCode,
+      updatedAt: new Date().toISOString(),
+    }
+    const { error } = await supabase
+      .from('cases')
+      .update({ data: nextData, updated_at: new Date().toISOString() })
+      .eq('id', caseId)
+    if (!error) updatedCases += 1
+  }
+
+  return {
+    ok: true as const,
+    updatedScans,
+    updatedCases,
+  }
+}
