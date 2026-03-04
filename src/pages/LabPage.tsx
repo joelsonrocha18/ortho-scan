@@ -1354,50 +1354,94 @@ export default function LabPage() {
         .replaceAll("'", '&#39;')
 
     const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
-    const guideCode = formatFriendlyRequestCode(item.requestCode ?? caseItem?.treatmentCode ?? item.id)
+    const patientOption = caseItem?.patientId ? patientOptions.find((option) => option.id === caseItem.patientId) : undefined
+    const hasUpperArch = (caseItem?.arch ?? item.arch ?? 'ambos') !== 'inferior'
+    const hasLowerArch = (caseItem?.arch ?? item.arch ?? 'ambos') !== 'superior'
+    const totalUpper = hasUpperArch ? toNonNegativeInt(caseItem?.totalTraysUpper ?? caseItem?.totalTrays) : 0
+    const totalLower = hasLowerArch ? toNonNegativeInt(caseItem?.totalTraysLower ?? caseItem?.totalTrays) : 0
+    const planLabel = hasUpperArch && hasLowerArch
+      ? `Superior ${totalUpper} | Inferior ${totalLower}`
+      : hasUpperArch
+        ? `Superior ${totalUpper}`
+        : hasLowerArch
+          ? `Inferior ${totalLower}`
+          : '-'
+    const caseLabel = formatFriendlyRequestCode(caseItem?.treatmentCode ?? item.requestCode ?? caseItem?.id ?? item.id)
     const issueDateLabel = new Date().toLocaleString('pt-BR')
     const emittedBy = currentUser?.name || currentUser?.email || 'Sistema'
+    const clinicName = caseItem?.clinicId
+      ? patientOption?.clinicName || db.clinics.find((entry) => entry.id === caseItem.clinicId)?.tradeName || '-'
+      : '-'
+    const dentistName = caseItem?.dentistId
+      ? patientOption?.dentistName || db.dentists.find((entry) => entry.id === caseItem.dentistId)?.name || '-'
+      : '-'
+    const deliveryExpectedLabel = item.dueDate ? formatDate(item.dueDate) : formatDate(new Date().toISOString().slice(0, 10))
+    const changeDaysLabel = String(caseItem?.changeEveryDays ?? 10)
+    const productLabel = isAlignerProductType(item.productType ?? caseItem?.productType) ? 'Alinhadores' : PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']
     const html = `
       <!doctype html>
       <html lang="pt-BR">
       <head>
         <meta charset="utf-8" />
-        <title>Guia LAB - ${escapeHtml(guideCode)}</title>
+        <title>Ordem de Servico LAB - ${escapeHtml(caseLabel)}</title>
         <style>
           @page { size: A4; margin: 14mm; }
           body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
-          .header { border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
+          .header { display: grid; grid-template-columns: 250px 1fr; gap: 12px; border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; }
           .brand { border-right: 1px solid #cbd5e1; padding-right: 10px; }
-          .brand img { max-width: 200px; max-height: 70px; object-fit: contain; display: block; }
-          .doc h1 { margin: 0; font-size: 18px; }
-          .doc p { margin: 4px 0; font-size: 11px; color: #334155; }
-          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-          .box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
-          .label { font-size: 10px; color: #475569; text-transform: uppercase; margin-bottom: 2px; }
-          .value { font-weight: 700; }
+          .brand img { max-width: 225px; max-height: 72px; object-fit: contain; display: block; margin-bottom: 6px; }
+          .brand p { margin: 2px 0; font-size: 11px; color: #475569; }
+          .doc h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
+          .doc p { margin: 3px 0; color: #334155; font-size: 11px; }
+          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+          .meta-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
+          .meta-label { font-size: 10px; text-transform: uppercase; color: #475569; margin-bottom: 2px; letter-spacing: .3px; }
+          .meta-value { font-weight: 700; color: #0f172a; }
+          .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+          .sign-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 92px; }
+          .sign-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
+          .line { margin-top: 26px; border-top: 1px solid #64748b; font-size: 11px; padding-top: 4px; color: #334155; }
           .emit { margin-top: 14px; font-size: 10px; color: #475569; border-top: 1px solid #cbd5e1; padding-top: 8px; }
         </style>
       </head>
       <body>
         <div class="header">
-          <div class="brand"><img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" /></div>
+          <div class="brand">
+            <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
+            <p>Odontologia Digital</p>
+          </div>
           <div class="doc">
-            <h1>GUIA DE REIMPRESSAO O.S</h1>
+            <h1>ORDEM DE SERVICO INICIAL (O.S)</h1>
             <p><strong>Data/Hora:</strong> ${escapeHtml(issueDateLabel)}</p>
-            <p><strong>Guia:</strong> ${escapeHtml(guideCode)}</p>
+            <p><strong>Nº Caso:</strong> ${escapeHtml(caseLabel)}</p>
           </div>
         </div>
-        <div class="grid">
-          <div class="box"><div class="label">Paciente</div><div class="value">${escapeHtml(item.patientName)}</div></div>
-          <div class="box"><div class="label">Produto</div><div class="value">${escapeHtml(PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m'])}</div></div>
-          <div class="box"><div class="label">Arcada</div><div class="value">${escapeHtml(item.arch)}</div></div>
-          <div class="box"><div class="label">Placa</div><div class="value">#${escapeHtml(String(item.trayNumber))}</div></div>
-          <div class="box"><div class="label">Qtd Sup</div><div class="value">${escapeHtml(String(item.plannedUpperQty ?? 0))}</div></div>
-          <div class="box"><div class="label">Qtd Inf</div><div class="value">${escapeHtml(String(item.plannedLowerQty ?? 0))}</div></div>
-          <div class="box"><div class="label">Prazo</div><div class="value">${escapeHtml(formatDate(item.dueDate))}</div></div>
-          <div class="box"><div class="label">Status</div><div class="value">${escapeHtml(item.status)}</div></div>
+        <div class="meta">
+          <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(item.patientName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">-</div></div>
+          <div class="meta-box"><div class="meta-label">Clinica</div><div class="meta-value">${escapeHtml(clinicName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Dentista responsavel</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Produto</div><div class="meta-value">${escapeHtml(productLabel)}</div></div>
+          <div class="meta-box"><div class="meta-label">Planejamento</div><div class="meta-value">${escapeHtml(planLabel)}</div></div>
+          <div class="meta-box"><div class="meta-label">Troca</div><div class="meta-value">${escapeHtml(changeDaysLabel)} dias</div></div>
+          <div class="meta-box"><div class="meta-label">Data prevista entrega ao profissional</div><div class="meta-value">${escapeHtml(deliveryExpectedLabel)}</div></div>
         </div>
-        <div class="emit">Emitido por ${escapeHtml(emittedBy)} Atraves da plataforma ControleODONTO Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
+
+        <div class="sign-grid">
+          <div class="sign-box">
+            <p class="sign-title">Entrega ao laboratorio</p>
+            <div class="line">Assinatura: ____________________________________</div>
+            <div class="line">Data: ____/____/________</div>
+          </div>
+          <div class="sign-box">
+            <p class="sign-title">Entrega ao dentista</p>
+            <div class="line">Assinatura: ____________________________________</div>
+            <div class="line">Data: ____/____/________</div>
+          </div>
+        </div>
+
+        <div class="emit">Emitido por "${escapeHtml(emittedBy)}" Atraves da plataforma "ControleODONTO(orthoscan laboratorio)" Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
       </body>
       </html>
     `
