@@ -29,6 +29,7 @@ import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { useAiModuleEnabled } from '../lib/useAiModuleEnabled'
 import { deleteLabItemSupabase } from '../repo/profileRepo'
 import { runAiEndpoint as runAiRequest } from '../repo/aiRepo'
+import { normalizeOrthTreatmentCode } from '../lib/treatmentCode'
 
 type ModalState =
   | { open: false; mode: 'create' | 'edit'; item: null }
@@ -310,7 +311,7 @@ export default function LabPage() {
     }
     let active = true
     void (async () => {
-      const [casesRes, labRes, patientsRes, dentistsRes, clinicsRes] = await Promise.all([
+      const [casesRes, labRes, patientsRes, dentistsRes, clinicsRes, scansRes] = await Promise.all([
         supabase
           .from('cases')
           .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, status, data, deleted_at')
@@ -322,6 +323,7 @@ export default function LabPage() {
         supabase.from('patients').select('id, name, birth_date, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
         supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
+        supabase.from('scans').select('id, data').is('deleted_at', null),
       ])
       if (!active) return
 
@@ -343,9 +345,18 @@ export default function LabPage() {
       }))
       setSupabasePatientOptions(patientOptions)
 
+      const serviceCodeByScanId = new Map(
+        ((scansRes.data ?? []) as Array<Record<string, unknown>>).map((row) => {
+          const data = asObject(row.data)
+          return [asText(row.id), normalizeOrthTreatmentCode(asText(data.serviceOrderCode)) || '']
+        }),
+      )
+
       const mappedCases = ((casesRes.data ?? []) as Array<Record<string, unknown>>).map((row) => {
         const data = asObject(row.data)
         const createdAt = new Date().toISOString()
+        const sourceScanId = asText(data.sourceScanId)
+        const treatmentCodeFromScan = sourceScanId ? (serviceCodeByScanId.get(sourceScanId) || '') : ''
         return {
           id: asText(row.id),
           shortId: asText(data.shortId) || undefined,
@@ -354,7 +365,7 @@ export default function LabPage() {
           patientId: asText(data.patientId, asText(row.patient_id)) || undefined,
           dentistId: asText(data.dentistId, asText(row.dentist_id)) || undefined,
           clinicId: asText(data.clinicId, asText(row.clinic_id)) || undefined,
-          treatmentCode: asText(data.treatmentCode) || undefined,
+          treatmentCode: normalizeOrthTreatmentCode(asText(data.treatmentCode)) || treatmentCodeFromScan || undefined,
           treatmentOrigin: (asText(data.treatmentOrigin, 'externo') as 'interno' | 'externo'),
           patientName: asText(data.patientName, '-'),
           requestedByDentistId: asText(row.requested_by_dentist_id) || undefined,
