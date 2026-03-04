@@ -1591,7 +1591,9 @@ export default function LabPage() {
                   <tbody>
                     {reworkItems.map((item) => (
                       <tr key={item.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2">{formatFriendlyRequestCode(item.requestCode ?? (item.caseId ? caseById.get(item.caseId)?.treatmentCode : undefined))}</td>
+                        <td className="px-3 py-2">
+                          {formatFriendlyRequestCode((item.caseId ? caseById.get(item.caseId)?.treatmentCode : undefined) ?? item.requestCode)}
+                        </td>
                         <td className="px-3 py-2">{item.patientName}</td>
                         <td className="px-3 py-2">#{item.trayNumber}</td>
                         <td className="px-3 py-2">{item.arch}</td>
@@ -1650,7 +1652,7 @@ export default function LabPage() {
 
                       return (
                         <tr key={item.id} className="border-t border-slate-100">
-                          <td className="px-3 py-2">{formatFriendlyRequestCode(item.requestCode ?? caseItem?.treatmentCode)}</td>
+                          <td className="px-3 py-2">{formatFriendlyRequestCode(caseItem?.treatmentCode ?? item.requestCode)}</td>
                           <td className="px-3 py-2">{item.patientName}</td>
                           <td className="px-3 py-2">{PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</td>
                           <td className="px-3 py-2">{formatInfSupByArch(totals, treatmentArch)}</td>
