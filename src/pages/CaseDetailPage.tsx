@@ -172,6 +172,18 @@ function scheduleStateClass(state: TrayState | 'nao_aplica') {
   return 'text-slate-700'
 }
 
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((value ?? '').trim())
+}
+
+function toReadableCaseCode(value?: string) {
+  const raw = (value ?? '').trim()
+  if (!raw) return '-'
+  if (isUuidLike(raw)) return `CASO-${raw.slice(0, 8).toUpperCase()}`
+  if (raw.length > 24 && /^[0-9a-f-]+$/i.test(raw)) return `CASO-${raw.slice(0, 8).toUpperCase()}`
+  return raw
+}
+
 function timelineStateForTray(
   tray: CaseTray,
   deliveredUpper: number,
@@ -726,6 +738,10 @@ export default function CaseDetailPage() {
   const requester = currentCase?.requestedByDentistId ? dentistsById.get(currentCase.requestedByDentistId) : undefined
   const dentistPrefix = dentist?.gender === 'feminino' ? 'Dra.' : dentist ? 'Dr.' : ''
   const requesterPrefix = requester?.gender === 'feminino' ? 'Dra.' : requester ? 'Dr.' : ''
+  const displayProductLabel = currentCase
+    ? (isAlignerCase ? 'Alinhadores' : PRODUCT_TYPE_LABEL[currentCase.productType ?? 'alinhador_12m'])
+    : '-'
+  const displayCaseCode = currentCase ? toReadableCaseCode(currentCase.treatmentCode ?? currentCase.id) : '-'
 
   const removeTrayFromDeliveryLots = (
     lots: NonNullable<Case['deliveryLots']>,
@@ -1228,7 +1244,7 @@ export default function CaseDetailPage() {
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;')
 
-    const caseLabel = currentCase.treatmentCode ?? currentCase.id
+    const caseLabel = displayCaseCode
     const planLabel = hasUpperArch && hasLowerArch
       ? `Superior ${totalUpper} | Inferior ${totalLower}`
       : hasUpperArch
@@ -1262,7 +1278,7 @@ export default function CaseDetailPage() {
       `
 
     const issueDateLabel = new Date().toLocaleString('pt-BR')
-    const productLabel = PRODUCT_TYPE_LABEL[currentCase.productType ?? 'alinhador_12m']
+    const productLabel = displayProductLabel
     const dentistLabel = dentist ? `${dentistPrefix} ${dentist.name}`.trim() : '-'
     const requesterLabel = requester ? `${requesterPrefix} ${requester.name}`.trim() : dentistLabel
 
@@ -1713,11 +1729,11 @@ export default function CaseDetailPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Paciente: {patientDisplayName}</h1>
           {currentCase.treatmentCode ? (
             <p className="mt-1 text-sm font-semibold text-slate-700">
-              Identificacao: {currentCase.treatmentCode} ({currentCase.treatmentOrigin === 'interno' ? 'Interno ARRIMO' : 'Externo'})
+              Identificacao: {displayCaseCode} ({currentCase.treatmentOrigin === 'interno' ? 'Interno ARRIMO' : 'Externo'})
             </p>
           ) : null}
           <p className="mt-1 text-sm font-medium text-slate-600">
-            Produto: {PRODUCT_TYPE_LABEL[currentCase.productType ?? 'alinhador_12m']} | Nº Caso: {currentCase.treatmentCode ?? currentCase.id}
+            Produto: {displayProductLabel} | Nº Caso: {displayCaseCode}
           </p>
           <p className="mt-2 text-sm font-medium text-slate-600">
             Planejamento:{' '}
