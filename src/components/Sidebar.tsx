@@ -43,11 +43,11 @@ export default function Sidebar({ isOpen, onCloseMobile, onLogout }: SidebarProp
       ].join(' ')}
     >
       <div className="flex h-full flex-col">
-        <div className="border-b border-slate-700 px-6 py-6">
+        <div className="border-b border-slate-700 px-2 py-3">
           <img
             src={`${import.meta.env.BASE_URL}brand/orthoscan.png`}
             alt="OrthoScan"
-            className="mx-auto h-28 w-auto object-contain sm:h-28 md:h-28"
+            className="mx-auto block h-auto w-full max-w-[220px] object-contain"
           />
         </div>
 
