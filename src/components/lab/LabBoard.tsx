@@ -9,6 +9,7 @@ type LabBoardProps = {
   caseLabel: (item: LabItem) => string | undefined
   onItemsChange: () => void
   onDetails: (item: LabItem) => void
+  onPrintLabel?: (item: LabItem) => void
   onSyncMessage?: (message: string) => void
   onMoveStatus?: (id: string, status: LabStatus) => Promise<{ ok: true } | { ok: false; error: string }>
   canEdit?: boolean
@@ -28,7 +29,17 @@ function isOverdue(item: LabItem) {
   return dueDate < new Date(today.toISOString().slice(0, 10))
 }
 
-export default function LabBoard({ items, guideTone, caseLabel, onItemsChange, onDetails, onSyncMessage, onMoveStatus, canEdit = true }: LabBoardProps) {
+export default function LabBoard({
+  items,
+  guideTone,
+  caseLabel,
+  onItemsChange,
+  onDetails,
+  onPrintLabel,
+  onSyncMessage,
+  onMoveStatus,
+  canEdit = true,
+}: LabBoardProps) {
   const { addToast } = useToast()
 
   const handlePrevious = (id: string) => {
@@ -109,6 +120,7 @@ export default function LabBoard({ items, guideTone, caseLabel, onItemsChange, o
             onPrevious={handlePrevious}
             onNext={handleNext}
             onDetails={onDetails}
+            onPrintLabel={onPrintLabel}
             hasPreviousStatus={hasPreviousStatus}
             hasNextStatus={hasNextStatus}
           />

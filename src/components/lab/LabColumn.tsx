@@ -11,6 +11,7 @@ type LabColumnProps = {
   onPrevious: (id: string) => void
   onNext: (id: string) => void
   onDetails: (item: LabItem) => void
+  onPrintLabel?: (item: LabItem) => void
   hasPreviousStatus: (status: LabStatus) => boolean
   hasNextStatus: (status: LabStatus) => boolean
 }
@@ -32,6 +33,7 @@ export default function LabColumn({
   onPrevious,
   onNext,
   onDetails,
+  onPrintLabel,
   hasPreviousStatus,
   hasNextStatus,
 }: LabColumnProps) {
@@ -53,6 +55,7 @@ export default function LabColumn({
             onPrevious={onPrevious}
             onNext={onNext}
             onDetails={onDetails}
+            onPrintLabel={onPrintLabel}
             hasPrevious={hasPreviousStatus(status)}
             hasNext={hasNextStatus(status)}
           />

@@ -60,6 +60,35 @@ type CasePrintFallback = {
   patientBirthDate?: string
 }
 
+const BROTHER_PRINTER_STORAGE_KEY = 'orthoscan.lab.brother_printer_name'
+
+function escapeHtml(value: unknown) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function normalizeSpaces(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function stripProfessionalTitle(value: string) {
+  return normalizeSpaces(value).replace(/^(dr|dra)\.?\s+/i, '').trim()
+}
+
+function firstWord(value: string) {
+  return normalizeSpaces(value).split(' ')[0] ?? ''
+}
+
+function toDentistShortLabel(value: string) {
+  const clean = stripProfessionalTitle(value)
+  const firstName = firstWord(clean)
+  return firstName ? `Dr. ${firstName}` : 'Dr.'
+}
+
 function isOverdue(item: LabItem) {
   if (item.status === 'prontas') {
     return false
@@ -266,6 +295,7 @@ export default function LabPage() {
     archLabel: '',
     resolver: null,
   })
+  const [preferredBrotherPrinter, setPreferredBrotherPrinter] = useState('')
   const labSyncSignature = `${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}`
   const automationSettings = loadSystemSettings().guideAutomation
   const guideAutomationEnabled = automationSettings?.enabled !== false
@@ -275,6 +305,22 @@ export default function LabPage() {
   const [aiDraft, setAiDraft] = useState('')
   const aiLoading = false
   const [aiAlerts, setAiAlerts] = useState<string[]>([])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = window.localStorage.getItem(BROTHER_PRINTER_STORAGE_KEY) ?? ''
+    setPreferredBrotherPrinter(saved)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const normalized = preferredBrotherPrinter.trim()
+    if (!normalized) {
+      window.localStorage.removeItem(BROTHER_PRINTER_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(BROTHER_PRINTER_STORAGE_KEY, normalized)
+  }, [preferredBrotherPrinter])
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -1399,15 +1445,115 @@ export default function LabPage() {
     setAiModalOpen(true)
   }
 
-  const reprintGuideFromModal = (item: LabItem) => {
-    const escapeHtml = (value: unknown) =>
-      String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;')
+  const handleConfigureBrotherPrinter = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const suggested = preferredBrotherPrinter.trim() || 'Brother QL-800'
+    const typed = window.prompt('Nome da impressora Brother (como aparece no Windows):', suggested)
+    if (typed === null) return
+    const normalized = typed.trim()
+    setPreferredBrotherPrinter(normalized)
+    addToast({
+      type: 'success',
+      title: 'Impressora de adesivo',
+      message: normalized
+        ? `Impressora vinculada: ${normalized}`
+        : 'Vinculo removido. O navegador usara a impressora padrao.',
+    })
+  }, [addToast, preferredBrotherPrinter])
 
+  const printStickerFromCard = useCallback(
+    (item: LabItem) => {
+      const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
+      const patientId = caseItem?.patientId ?? item.patientId
+      const patientOption = patientId ? patientOptionById.get(patientId) : undefined
+      const dentistsById = new Map(
+        (isSupabaseMode
+          ? supabaseDentists
+          : db.dentists.map((entry) => ({ id: entry.id, name: entry.name ?? '-' }))
+        ).map((entry) => [entry.id, entry.name]),
+      )
+      const casePrintFallback = caseItem ? supabaseCasePrintFallbackByCaseId[caseItem.id] : undefined
+      const dentistId = caseItem?.dentistId ?? patientOption?.dentistId ?? item.dentistId
+      const dentistNameRaw = dentistId
+        ? dentistsById.get(dentistId) || patientOption?.dentistName || casePrintFallback?.dentistName || ''
+        : patientOption?.dentistName || casePrintFallback?.dentistName || ''
+      const dentistShort = toDentistShortLabel(dentistNameRaw)
+      const patientName = normalizeSpaces(item.patientName || '-')
+      const alignerLabel = `Alinhador #${Math.max(0, Math.trunc(item.trayNumber || 0))}`
+      const printerHint = preferredBrotherPrinter.trim() || 'Brother'
+      const html = `
+        <!doctype html>
+        <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <title>Etiqueta - ${escapeHtml(patientName)}</title>
+          <style>
+            @page { size: 62mm 100mm; margin: 2mm; }
+            body { margin: 0; font-family: Arial, sans-serif; color: #0f172a; }
+            .label { border: 1px solid #0f172a; border-radius: 6px; padding: 6px; display: grid; grid-template-rows: auto 1fr auto; min-height: 90mm; box-sizing: border-box; }
+            .head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-bottom: 8px; }
+            .head img { width: 26mm; max-height: 12mm; object-fit: contain; }
+            .head .title { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
+            .line { margin: 4px 0; }
+            .k { font-size: 8px; text-transform: uppercase; color: #334155; letter-spacing: .3px; }
+            .v { font-size: 12px; font-weight: 700; }
+            .tray .v { font-size: 14px; }
+            .foot { margin-top: 8px; border-top: 1px dashed #94a3b8; padding-top: 6px; font-size: 8px; color: #475569; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <div class="head">
+              <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
+              <div class="title">ORTHOSCAN LAB</div>
+            </div>
+            <div>
+              <div class="line">
+                <div class="k">Dentista</div>
+                <div class="v">${escapeHtml(dentistShort)}</div>
+              </div>
+              <div class="line">
+                <div class="k">Paciente</div>
+                <div class="v">${escapeHtml(patientName)}</div>
+              </div>
+              <div class="line tray">
+                <div class="k">Alinhador</div>
+                <div class="v">${escapeHtml(alignerLabel)}</div>
+              </div>
+            </div>
+            <div class="foot">Impressora sugerida: ${escapeHtml(printerHint)}</div>
+          </div>
+        </body>
+        </html>
+      `
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const printUrl = URL.createObjectURL(blob)
+      const popup = window.open(printUrl, '_blank')
+      if (!popup) {
+        addToast({ type: 'error', title: 'Imprimir adesivo', message: 'Nao foi possivel abrir a janela de impressao.' })
+        return
+      }
+      const onLoaded = () => {
+        popup.focus()
+        popup.print()
+        setTimeout(() => URL.revokeObjectURL(printUrl), 10_000)
+      }
+      if (popup.document.readyState === 'complete') onLoaded()
+      else popup.addEventListener('load', onLoaded, { once: true })
+    },
+    [
+      addToast,
+      caseById,
+      db.dentists,
+      isSupabaseMode,
+      patientOptionById,
+      preferredBrotherPrinter,
+      supabaseCasePrintFallbackByCaseId,
+      supabaseDentists,
+    ],
+  )
+
+  const reprintGuideFromModal = (item: LabItem) => {
     const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
     const patientId = caseItem?.patientId ?? item.patientId
     const patientOption = patientId ? patientOptions.find((option) => option.id === patientId) : undefined
@@ -1558,6 +1704,11 @@ export default function LabPage() {
           <p className="mt-2 text-sm text-slate-500">Fila de produção e entregas</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          {canWrite ? (
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={handleConfigureBrotherPrinter}>
+              Impressora Brother
+            </Button>
+          ) : null}
           {canAiLab ? (
             <Button className="w-full sm:w-auto" variant="secondary" onClick={() => void runLabAi('/lab/auditoria-solicitacao', 'Auditar solicitação')}>
               Auditar solicitação
@@ -1575,6 +1726,14 @@ export default function LabPage() {
           ) : null}
         </div>
       </section>
+
+      {canWrite ? (
+        <section className="mt-2">
+          <p className="text-xs text-slate-500">
+            Impressora vinculada: {preferredBrotherPrinter.trim() || 'Nao definida (sera usada a padrao do navegador)'}
+          </p>
+        </section>
+      ) : null}
 
       {canAiLab ? (
         <section className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
@@ -1633,6 +1792,7 @@ export default function LabPage() {
               if (isSupabaseMode) setSupabaseRefreshKey((current) => current + 1)
             }}
             onDetails={(item) => setModal({ open: true, mode: 'edit', item })}
+            onPrintLabel={printStickerFromCard}
             onMoveStatus={canWrite ? (isSupabaseMode ? handleMoveStatusSupabase : handleMoveStatusLocal) : undefined}
             canEdit={canWrite}
           />

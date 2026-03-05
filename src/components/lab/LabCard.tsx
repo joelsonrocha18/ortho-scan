@@ -13,6 +13,7 @@ type LabCardProps = {
   onPrevious: (id: string) => void
   onNext: (id: string) => void
   onDetails: (item: LabItem) => void
+  onPrintLabel?: (item: LabItem) => void
   hasPrevious: boolean
   hasNext: boolean
 }
@@ -49,6 +50,7 @@ export default function LabCard({
   onPrevious,
   onNext,
   onDetails,
+  onPrintLabel,
   hasPrevious,
   hasNext,
 }: LabCardProps) {
@@ -110,9 +112,16 @@ export default function LabCard({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => onDetails(item)}>
-          Detalhes
-        </Button>
+        <div className="flex items-center gap-2">
+          {item.status === 'prontas' && onPrintLabel ? (
+            <Button size="sm" variant="secondary" onClick={() => onPrintLabel(item)}>
+              Imprimir adesivo
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => onDetails(item)}>
+            Detalhes
+          </Button>
+        </div>
       </div>
     </Card>
   )
