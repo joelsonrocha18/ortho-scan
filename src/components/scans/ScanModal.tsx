@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { DATA_MODE } from '../../data/dataMode'
 import { buildPhotoSlotsFromItems, loadDevPhotoSlots, mergePhotoSlots } from '../../lib/photoSlots'
@@ -24,6 +24,7 @@ type ScanModalProps = {
     payload: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>,
     options?: { setPrimaryDentist?: boolean },
   ) => boolean | void | Promise<boolean | void>
+  onPrintServiceOrder?: (payload: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) => void
 }
 
 type FormState = {
@@ -110,6 +111,7 @@ export default function ScanModal({
   clinics = [],
   onClose,
   onSubmit,
+  onPrintServiceOrder,
 }: ScanModalProps) {
   const [form, setForm] = useState<FormState>(emptyForm)
   const [error, setError] = useState('')
@@ -360,7 +362,7 @@ export default function ScanModal({
       return
     }
 
-    const saved = await onSubmit({
+    const payload: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'> = {
       purposeProductId: form.purposeProductId,
       purposeProductType: form.purposeProductType,
       purposeLabel: form.purposeLabel,
@@ -381,10 +383,47 @@ export default function ScanModal({
       attachments: form.attachments,
       status: mode === 'edit' && initialScan ? initialScan.status : 'pendente',
       linkedCaseId: mode === 'edit' && initialScan ? initialScan.linkedCaseId : undefined,
-    }, { setPrimaryDentist })
+    }
+
+    const saved = await onSubmit(payload, { setPrimaryDentist })
     if (saved !== false) {
       onClose()
     }
+  }
+
+  const printServiceOrder = () => {
+    if (!onPrintServiceOrder) return
+    if (!form.patientName.trim() || !form.scanDate) {
+      setError('Paciente e data do scan sao obrigatorios para imprimir a O.S.')
+      return
+    }
+    if (!form.purposeProductId || !form.purposeLabel) {
+      setError('Cadastre pelo menos um produto ativo na Politica de preco para definir a finalidade do exame.')
+      return
+    }
+    setError('')
+    onPrintServiceOrder({
+      purposeProductId: form.purposeProductId,
+      purposeProductType: form.purposeProductType,
+      purposeLabel: form.purposeLabel,
+      patientName: form.patientName.trim(),
+      patientId: form.patientId,
+      dentistId: form.dentistId,
+      requestedByDentistId: form.requestedByDentistId,
+      clinicId: form.clinicId,
+      scanDate: form.scanDate,
+      arch: form.arch,
+      complaint: form.complaint.trim() || undefined,
+      dentistGuidance: form.dentistGuidance.trim() || undefined,
+      notes: form.notes.trim() || undefined,
+      planningDetectedUpperTrays: form.planningDetectedUpperTrays,
+      planningDetectedLowerTrays: form.planningDetectedLowerTrays,
+      planningDetectedAt: form.planningDetectedAt,
+      planningDetectedSource: form.planningDetectedSource,
+      attachments: form.attachments,
+      status: mode === 'edit' && initialScan ? initialScan.status : 'pendente',
+      linkedCaseId: mode === 'edit' && initialScan ? initialScan.linkedCaseId : undefined,
+    })
   }
 
   const bySlot = (slotId: string) => form.attachments.find((item) => item.slotId === slotId)
@@ -555,10 +594,10 @@ export default function ScanModal({
         </div>
 
         <div className="mt-5 rounded-xl border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-900">Vinculos</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Vínculos</h3>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Clinica</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Clínica</label>
               <select
                 value={form.clinicId ?? ''}
                 onChange={(event) => setForm((c) => ({ ...c, clinicId: event.target.value || undefined }))}
@@ -573,7 +612,7 @@ export default function ScanModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Dentista responsavel</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Dentista responsável</label>
               <select
                 value={form.dentistId ?? ''}
                 onChange={(event) => {
@@ -660,8 +699,8 @@ export default function ScanModal({
               const requesterPrefix = requester?.gender === 'feminino' ? 'Dra.' : requester ? 'Dr.' : ''
               return (
                 <>
-                  Responsavel: {dentist ? `${dentistPrefix} ${dentist.name}` : '-'}
-                  {' | '}Clinica: {clinic ? clinic.name : '-'}
+                  Responsável: {dentist ? `${dentistPrefix} ${dentist.name}` : '-'}
+                  {' | '}Clínica: {clinic ? clinic.name : '-'}
                   {requester ? ` | Solicitante: ${requesterPrefix} ${requester.name}` : ''}
                 </>
               )
@@ -729,7 +768,7 @@ export default function ScanModal({
               checked={setPrimaryDentist}
               onChange={(event) => setSetPrimaryDentist(event.target.checked)}
             />
-            <span>Definir como responsavel do paciente</span>
+            <span>Definir como responsável do paciente</span>
           </div>
         ) : null}
 
@@ -743,7 +782,7 @@ export default function ScanModal({
             <textarea rows={3} value={form.dentistGuidance} onChange={(event) => setForm((c) => ({ ...c, dentistGuidance: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Observacoes internas</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Observações internas</label>
             <textarea rows={3} value={form.notes} onChange={(event) => setForm((c) => ({ ...c, notes: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20" />
           </div>
         </div>
@@ -805,13 +844,23 @@ export default function ScanModal({
         {stlWarning ? <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{stlWarning}</p> : null}
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-6 flex items-center justify-between gap-2">
+          <div>
+            {onPrintServiceOrder ? (
+              <Button variant="secondary" onClick={printServiceOrder}>
+                Imprimir O.S. Escaneamento
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex gap-2">
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
           <Button onClick={submit}>Salvar Exame</Button>
+          </div>
         </div>
       </Card>
     </div>
   )
 }
+

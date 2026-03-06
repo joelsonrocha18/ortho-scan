@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { useToast } from '../app/ToastProvider'
@@ -285,6 +285,145 @@ export default function ScansPage() {
     () => clinics.map((item) => ({ id: item.id, name: item.tradeName })),
     [clinics],
   )
+  const printScanServiceOrder = (payload: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;')
+
+    const dentist = payload.dentistId ? dentists.find((item) => item.id === payload.dentistId) : undefined
+    const requester = payload.requestedByDentistId
+      ? dentists.find((item) => item.id === payload.requestedByDentistId)
+      : undefined
+    const clinic = payload.clinicId ? clinicsForModal.find((item) => item.id === payload.clinicId) : undefined
+    const archLabel = payload.arch === 'ambos' ? 'Ambos' : payload.arch === 'superior' ? 'Superior' : 'Inferior'
+    const issueDate = new Date()
+    const issueDateLabel = issueDate.toLocaleString('pt-BR')
+    const scanDateLabel = payload.scanDate ? new Date(`${payload.scanDate}T00:00:00`).toLocaleDateString('pt-BR') : '-'
+    const dentistPrefix = dentist?.gender === 'feminino' ? 'Dra.' : dentist ? 'Dr.' : ''
+    const requesterPrefix = requester?.gender === 'feminino' ? 'Dra.' : requester ? 'Dr.' : ''
+    const dentistLabel = dentist ? `${dentistPrefix} ${dentist.name}` : '-'
+    const requesterLabel = requester ? `${requesterPrefix} ${requester.name}` : dentistLabel
+    const serviceOrderCode = `OS-SCAN-${issueDate.toISOString().replaceAll(':', '').slice(0, 16).replace('T', '-')}`
+    const emittedByRaw = currentUser?.name || currentUser?.email || 'Sistema'
+    const emittedBy = emittedByRaw.includes('@') ? emittedByRaw.split('@')[0] : emittedByRaw
+    const emitOrigin = window.location.origin
+
+    const html = `
+      <!doctype html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <title>Ordem de Serviço de Escaneamento</title>
+          <style>
+            @page { size: A4; margin: 14mm; }
+            body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
+            .header { display: grid; grid-template-columns: 250px 1fr; gap: 12px; border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; }
+            .brand { border-right: 1px solid #cbd5e1; padding-right: 10px; }
+            .brand img { max-width: 225px; max-height: 72px; object-fit: contain; display: block; margin-bottom: 6px; }
+            .brand p { margin: 2px 0; font-size: 11px; color: #475569; }
+            .doc h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
+            .doc p { margin: 3px 0; color: #334155; font-size: 11px; }
+            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+            .meta-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
+            .meta-label { font-size: 10px; text-transform: uppercase; color: #475569; margin-bottom: 2px; letter-spacing: .3px; }
+            .meta-value { font-weight: 700; color: #0f172a; }
+            .notes-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 72px; margin-top: 8px; }
+            .notes-title { margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
+            .notes-value { margin: 0; white-space: pre-wrap; color: #0f172a; line-height: 1.45; }
+            .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+            .sign-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 92px; }
+            .sign-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
+            .line { margin-top: 26px; border-top: 1px solid #64748b; font-size: 11px; padding-top: 4px; color: #334155; }
+            .emit { margin-top: 14px; font-size: 10px; color: #475569; text-align: left; border-top: 1px solid #cbd5e1; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="brand">
+              <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
+              <p>Odontologia Digital</p>
+            </div>
+            <div class="doc">
+              <h1>ORDEM DE SERVICO DE ESCANEAMENTO (O.S)</h1>
+              <p><strong>Data/Hora:</strong> ${escapeHtml(issueDateLabel)}</p>
+              <p><strong>Nº O.S:</strong> ${escapeHtml(serviceOrderCode)}</p>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(payload.patientName)}</div></div>
+            <div class="meta-box"><div class="meta-label">Data do scan</div><div class="meta-value">${escapeHtml(scanDateLabel)}</div></div>
+            <div class="meta-box"><div class="meta-label">Clínica</div><div class="meta-value">${escapeHtml(clinic?.name ?? '-')}</div></div>
+            <div class="meta-box"><div class="meta-label">Dentista responsável</div><div class="meta-value">${escapeHtml(dentistLabel)}</div></div>
+            <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(requesterLabel)}</div></div>
+            <div class="meta-box"><div class="meta-label">Finalidade</div><div class="meta-value">${escapeHtml(payload.purposeLabel ?? payload.purposeProductType ?? 'Alinhador')}</div></div>
+            <div class="meta-box"><div class="meta-label">Arcada</div><div class="meta-value">${escapeHtml(archLabel)}</div></div>
+            <div class="meta-box"><div class="meta-label">Status inicial</div><div class="meta-value">Pendente</div></div>
+          </div>
+
+          <div class="notes-box">
+            <p class="notes-title">Queixa do paciente</p>
+            <p class="notes-value">${escapeHtml(payload.complaint || '-')}</p>
+          </div>
+
+          <div class="notes-box">
+            <p class="notes-title">Orientação do dentista</p>
+            <p class="notes-value">${escapeHtml(payload.dentistGuidance || '-')}</p>
+          </div>
+
+          <div class="notes-box">
+            <p class="notes-title">Observações internas</p>
+            <p class="notes-value">${escapeHtml(payload.notes || '-')}</p>
+          </div>
+
+          <div class="sign-grid">
+            <div class="sign-box">
+              <p class="sign-title">Entrega para escaneamento</p>
+              <div class="line">Assinatura: ____________________________________</div>
+              <div class="line">Data: ____/____/________</div>
+            </div>
+            <div class="sign-box">
+              <p class="sign-title">Conferência e recebimento</p>
+              <div class="line">Assinatura: ____________________________________</div>
+              <div class="line">Data: ____/____/________</div>
+            </div>
+          </div>
+
+          <div class="emit">Emitido por ${escapeHtml(emittedBy)} através da plataforma Orthoscan em ${escapeHtml(issueDateLabel)} - ${escapeHtml(emitOrigin)}</div>
+        </body>
+      </html>
+    `
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const printUrl = URL.createObjectURL(blob)
+    const popup = window.open(printUrl, '_blank')
+    if (!popup) {
+      addToast({ type: 'error', title: 'Imprimir O.S.', message: 'Não foi possível abrir a janela de impressão.' })
+      return
+    }
+
+    const releaseUrl = () => {
+      try {
+        URL.revokeObjectURL(printUrl)
+      } catch {
+        // noop
+      }
+    }
+    const onLoaded = () => {
+      popup.focus()
+      popup.print()
+      setTimeout(releaseUrl, 10_000)
+    }
+    if (popup.document.readyState === 'complete') {
+      onLoaded()
+    } else {
+      popup.addEventListener('load', onLoaded, { once: true })
+    }
+  }
 
   const handleApprove = async (id: string) => {
     if (isSupabaseMode) {
@@ -313,7 +452,7 @@ export default function ScansPage() {
   const handleDelete = async (scan: Scan) => {
     if (!canDelete) return
     const confirmed = window.confirm(
-      `Confirma excluir permanentemente este exame de ${scan.patientName}? Esta acao sera registrada no historico do paciente.`,
+      `Confirma excluir permanentemente este exame de ${scan.patientName}? Esta ação será registrada no historico do paciente.`,
     )
     if (!confirmed) return
     if (isSupabaseMode) {
@@ -345,7 +484,7 @@ export default function ScansPage() {
     },
   ) => {
     if (!canWrite) {
-      addToast({ type: 'error', title: 'Sem permissao para adicionar anexos' })
+      addToast({ type: 'error', title: 'Sem permissão para adicionar anexos' })
       return
     }
     const validation = validateScanAttachmentFile(payload.file, payload.kind)
@@ -364,7 +503,7 @@ export default function ScansPage() {
         : undefined
       const clinicId = targetScan?.clinicId || patientClinicId || currentUser?.linkedClinicId
       if (!clinicId) {
-        addToast({ type: 'error', title: 'Nao foi possivel determinar a clinica para upload.' })
+        addToast({ type: 'error', title: 'Não foi possível determinar a clinica para upload.' })
         return
       }
       filePath = buildScanAttachmentPath({
@@ -725,9 +864,16 @@ export default function ScansPage() {
         dentists={dentists.map((item) => ({ id: item.id, name: item.name, gender: item.gender, clinicId: item.clinicId }))}
         clinics={clinicsForModal}
         onClose={() => setCreateOpen(false)}
+        onPrintServiceOrder={(payload) => {
+          if (!canWrite) {
+            addToast({ type: 'error', title: 'Sem permissão para imprimir O.S.' })
+            return
+          }
+          printScanServiceOrder(payload)
+        }}
         onSubmit={async (payload, options) => {
           if (!canWrite) {
-            addToast({ type: 'error', title: 'Sem permissao para criar exames' })
+            addToast({ type: 'error', title: 'Sem permissão para criar exames' })
             return false
           }
           if (isSupabaseMode) {
@@ -779,14 +925,14 @@ export default function ScansPage() {
         onConfirm={(payload) => {
           if (!createCaseTarget) return
           if (!canCreateCase) {
-            addToast({ type: 'error', title: 'Sem permissao para criar caso' })
+            addToast({ type: 'error', title: 'Sem permissão para criar caso' })
             return
           }
           if (isSupabaseMode) {
             void (async () => {
               const result = await createCaseFromScanSupabase(createCaseTarget, payload)
               if (!result.ok) {
-                addToast({ type: 'error', title: 'Nao foi possivel criar o caso', message: result.error })
+                addToast({ type: 'error', title: 'Não foi possível criar o caso', message: result.error })
                 return
               }
               setSupabaseRefreshKey((current) => current + 1)
@@ -797,7 +943,7 @@ export default function ScansPage() {
           }
           const result = createCaseFromScan(createCaseTarget.id, payload)
           if (!result.ok) {
-            addToast({ type: 'error', title: 'Nao foi possivel criar o caso', message: result.error })
+            addToast({ type: 'error', title: 'Não foi possível criar o caso', message: result.error })
             return
           }
           addToast({ type: 'success', title: 'Caso criado a partir do scan' })
@@ -807,3 +953,4 @@ export default function ScansPage() {
     </AppShell>
   )
 }
+
