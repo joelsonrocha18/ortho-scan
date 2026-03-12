@@ -43,6 +43,8 @@ type CaseListItem = {
   id: string
   shortId?: string
   productType: ProductType
+  treatmentOrigin?: 'interno' | 'externo'
+  clinicId?: string
   patientId?: string
   patientName: string
   dentistId?: string
@@ -65,6 +67,17 @@ function isConcluded(item: CaseListItem) {
 
 function isInProductionFlow(item: CaseListItem) {
   return !isConcluded(item)
+}
+
+function inferTreatmentOrigin(
+  item: Pick<CaseListItem, 'treatmentOrigin' | 'clinicId'>,
+  clinicsById?: Map<string, { tradeName?: string }>,
+) {
+  if (item.treatmentOrigin === 'interno' || item.treatmentOrigin === 'externo') return item.treatmentOrigin
+  if (!item.clinicId) return 'externo' as const
+  if (item.clinicId === 'clinic_arrimo') return 'interno' as const
+  const tradeName = clinicsById?.get(item.clinicId)?.tradeName?.trim().toUpperCase()
+  return tradeName === 'ARRIMO' ? ('interno' as const) : ('externo' as const)
 }
 
 function buildLabStatusByCase(items: Array<{ caseId?: string; status?: string }>) {
@@ -116,6 +129,7 @@ export default function CasesPage() {
   const [supabaseLabStatusByCase, setSupabaseLabStatusByCase] = useState<Map<string, LiveLabStatus>>(new Map())
   const [supabaseHasLabOrderByCase, setSupabaseHasLabOrderByCase] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+  const [originFilter, setOriginFilter] = useState<'todos' | 'interno' | 'externo'>('todos')
   const [showInTreatment, setShowInTreatment] = useState(true)
   const [showConcluded, setShowConcluded] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
@@ -134,14 +148,15 @@ export default function CasesPage() {
           localStorage.setItem(migrationKey, 'done')
         }
       }
-      const [casesRes, patientsRes, dentistsRes, labRes] = await Promise.all([
+      const [casesRes, patientsRes, dentistsRes, clinicsRes, labRes] = await Promise.all([
         supabase
           .from('cases')
-          .select('id, patient_id, dentist_id, status, data, created_at, deleted_at')
+          .select('id, clinic_id, patient_id, dentist_id, status, data, created_at, deleted_at')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
         supabase.from('patients').select('id, name, deleted_at').is('deleted_at', null),
         supabase.from('dentists').select('id, name, gender, deleted_at').is('deleted_at', null),
+        supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
         supabase.from('lab_items').select('case_id, status, deleted_at').is('deleted_at', null),
       ])
       if (!active) return
@@ -157,6 +172,11 @@ export default function CasesPage() {
         dentistsMap.set(row.id, { name: row.name ?? '', shortId: undefined, gender: row.gender })
       }
       setSupabaseDentistsById(dentistsMap)
+
+      const clinicsMap = new Map<string, { tradeName?: string }>()
+      for (const row of (clinicsRes.data ?? []) as Array<{ id: string; trade_name?: string }>) {
+        clinicsMap.set(row.id, { tradeName: row.trade_name ?? '' })
+      }
 
       setSupabaseLabStatusByCase(
         buildLabStatusByCase(
@@ -174,7 +194,7 @@ export default function CasesPage() {
         ),
       )
 
-      const mapped = ((casesRes.data ?? []) as Array<{ id: string; patient_id?: string; dentist_id?: string; status?: string; created_at?: string; data?: Record<string, unknown> }>).map((row) => {
+      const mapped = ((casesRes.data ?? []) as Array<{ id: string; clinic_id?: string; patient_id?: string; dentist_id?: string; status?: string; created_at?: string; data?: Record<string, unknown> }>).map((row) => {
         const data = row.data ?? {}
         const status = (data.status as string | undefined) ?? row.status ?? 'planejamento'
         const phaseRaw = (data.phase as string | undefined) ?? ''
@@ -199,6 +219,14 @@ export default function CasesPage() {
           id: row.id,
           shortId: (data.shortId as string | undefined) ?? undefined,
           productType: normalizeProductType(data.productId ?? data.productType),
+          treatmentOrigin: inferTreatmentOrigin(
+            {
+              treatmentOrigin: (data.treatmentOrigin as 'interno' | 'externo' | undefined) ?? undefined,
+              clinicId: row.clinic_id,
+            },
+            clinicsMap,
+          ),
+          clinicId: row.clinic_id,
           patientId: row.patient_id,
           patientName,
           dentistId: row.dentist_id,
@@ -225,6 +253,10 @@ export default function CasesPage() {
   const localPatientsById = useMemo(
     () => new Map(db.patients.map((item) => [item.id, { name: item.name, shortId: item.shortId }])),
     [db.patients],
+  )
+  const localClinicsById = useMemo(
+    () => new Map(db.clinics.map((item) => [item.id, { tradeName: item.tradeName }])),
+    [db.clinics],
   )
   const localDentistsById = useMemo(
     () => new Map(db.dentists.map((item) => [item.id, { name: item.name, shortId: item.shortId, gender: item.gender }])),
@@ -254,9 +286,13 @@ export default function CasesPage() {
       listCasesForUser(db, currentUser).map((item) => ({
         ...item,
         productType: normalizeProductType(item.productId ?? item.productType),
+        treatmentOrigin: inferTreatmentOrigin(
+          { treatmentOrigin: item.treatmentOrigin, clinicId: item.clinicId },
+          localClinicsById,
+        ),
         caseDate: item.scanDate ?? item.createdAt.slice(0, 10),
       })) as CaseListItem[],
-    [db, currentUser],
+    [currentUser, db, localClinicsById],
   )
 
   const cases: CaseListItem[] = isSupabaseMode ? supabaseCases : localCases
@@ -281,6 +317,7 @@ export default function CasesPage() {
           (item.shortId ?? '').toLowerCase().includes(query) ||
           (item.treatmentCode ?? item.id).toLowerCase().includes(query)
         const matchesProduct = isAlignerProductType(item.productType)
+        const matchesOrigin = originFilter === 'todos' || inferTreatmentOrigin(item) === originFilter
 
         const concluded = isConcluded(item)
         const inProduction = isInProductionFlow(item)
@@ -289,14 +326,14 @@ export default function CasesPage() {
           (showInTreatment && inProduction && !concluded) ||
           (showConcluded && concluded)
 
-        return matchesSearch && matchesStatus && matchesProduct
+        return matchesSearch && matchesStatus && matchesProduct && matchesOrigin
       })
       .sort((a, b) => {
         const aa = a.caseDate || ''
         const bb = b.caseDate || ''
         return bb.localeCompare(aa)
       })
-  }, [cases, dentistsById, patientsById, search, showConcluded, showInTreatment])
+  }, [cases, dentistsById, originFilter, patientsById, search, showConcluded, showInTreatment])
 
   const toggleInTreatment = () => {
     if (showInTreatment && !showConcluded) return
@@ -336,19 +373,20 @@ export default function CasesPage() {
       </section>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_240px_auto_auto] md:items-center">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px_auto_auto] md:items-center">
           <Input
             placeholder="Buscar por codigo, paciente ou Nº Caso"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
           <select
-            value="alinhadores"
-            onChange={() => undefined}
-            disabled
+            value={originFilter}
+            onChange={(event) => setOriginFilter(event.target.value as 'todos' | 'interno' | 'externo')}
             className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
           >
-            <option value="alinhadores">Alinhadores</option>
+            <option value="todos">Todos</option>
+            <option value="interno">Interno</option>
+            <option value="externo">Externo</option>
           </select>
           <Button
             variant={showInTreatment ? 'primary' : 'secondary'}
@@ -389,7 +427,7 @@ export default function CasesPage() {
                 <tr>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Nº Caso</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Paciente</th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Produto</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Interno/Externo</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Placas Sup/Inf</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Troca (dias)</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Etapa do tratamento</th>
@@ -424,6 +462,7 @@ export default function CasesPage() {
                     liveLabStatusByCase.get(item.id) ?? null,
                     hasLabOrderByCase.has(item.id),
                   )
+                  const originLabel = inferTreatmentOrigin(item) === 'interno' ? 'Interno' : 'Externo'
                   return (
                     <tr key={item.id} className="bg-white">
                       <td className="px-5 py-4 text-sm font-semibold text-slate-800">{item.treatmentCode ?? item.id}</td>
@@ -437,7 +476,7 @@ export default function CasesPage() {
                         ) : null}
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">
-                        Alinhadores
+                        {originLabel}
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">
                         {traysLabel}
