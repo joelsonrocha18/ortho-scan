@@ -1,4 +1,4 @@
-import { loadDb, saveDb } from './db'
+﻿import { loadDb, saveDb } from './db'
 import { pushAudit } from './audit'
 import type { Case, CaseTray } from '../types/Case'
 import type { Scan, ScanAttachment } from '../types/Scan'
@@ -257,7 +257,7 @@ export function createCaseFromScan(
 ): { ok: true; caseId: string } | { ok: false; error: string } {
   const db = loadDb()
   const scan = db.scans.find((item) => item.id === scanId)
-  if (!scan) return { ok: false, error: 'Scan nao encontrado.' }
+  if (!scan) return { ok: false, error: 'Scan não encontrado.' }
   if (scan.status !== 'aprovado') return { ok: false, error: 'Apenas scans aprovados podem gerar caso.' }
   if (scan.linkedCaseId) return { ok: false, error: 'Este scan ja foi convertido em caso.' }
   const selectedProductType = normalizeProductType(scan.purposeProductType, 'alinhador_12m')
@@ -297,6 +297,8 @@ export function createCaseFromScan(
     id: caseId,
     productType: selectedProductType,
     productId: selectedProductType,
+    requestedProductId: scan.purposeProductId,
+    requestedProductLabel: scan.purposeLabel,
     treatmentCode,
     treatmentOrigin: internal ? 'interno' : 'externo',
     patientName: scan.patientName,
@@ -343,3 +345,4 @@ export function createCaseFromScan(
   saveDb(db)
   return { ok: true, caseId }
 }
+

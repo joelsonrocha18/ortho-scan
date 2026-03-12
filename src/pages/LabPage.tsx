@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../app/ToastProvider'
 import RegisterDeliveryLotModal from '../components/cases/RegisterDeliveryLotModal'
@@ -18,13 +18,14 @@ import { getNextDeliveryDueDate, getReplenishmentAlerts } from '../domain/replen
 import AppShell from '../layouts/AppShell'
 import type { LabItem, LabStatus } from '../types/Lab'
 import type { ProductType } from '../types/Product'
-import { isAlignerProductType, normalizeProductType, PRODUCT_TYPE_LABEL } from '../types/Product'
+import { isAlignerProductType, normalizeProductType } from '../types/Product'
 import { useDb } from '../lib/useDb'
 import { getCurrentUser } from '../lib/auth'
 import { can } from '../auth/permissions'
 import { listCasesForUser, listLabItemsForUser } from '../auth/scope'
 import { supabase } from '../lib/supabaseClient'
 import { loadSystemSettings } from '../lib/systemSettings'
+import { resolveRequestedProductLabel } from '../lib/productLabel'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { useAiModuleEnabled } from '../lib/useAiModuleEnabled'
 import { deleteLabItemSupabase } from '../repo/profileRepo'
@@ -83,10 +84,18 @@ function firstWord(value: string) {
   return normalizeSpaces(value).split(' ')[0] ?? ''
 }
 
-function toDentistShortLabel(value: string) {
+function toDentistShortLabelByGender(value: string, gender?: 'masculino' | 'feminino') {
   const clean = stripProfessionalTitle(value)
   const firstName = firstWord(clean)
-  return firstName ? `Dr. ${firstName}` : 'Dr.'
+  const prefix = gender === 'feminino' ? 'Dra.' : 'Dr.'
+  return firstName ? `${prefix} ${firstName}` : prefix
+}
+
+function toPatientStickerName(value: string) {
+  const parts = normalizeSpaces(value).split(' ').filter(Boolean)
+  if (parts.length <= 1) return parts[0] ?? '-'
+  if (parts.length >= 3) return `${parts[0]} ${parts[1]}`
+  return `${parts[0]} ${parts[parts.length - 1]}`
 }
 
 function isOverdue(item: LabItem) {
@@ -284,7 +293,7 @@ export default function LabPage() {
   const [supabaseItems, setSupabaseItems] = useState<LabItem[]>([])
   const [supabaseCases, setSupabaseCases] = useState<typeof db.cases>([])
   const [supabasePatientOptions, setSupabasePatientOptions] = useState<PatientOption[]>([])
-  const [supabaseDentists, setSupabaseDentists] = useState<Array<{ id: string; name: string }>>([])
+  const [supabaseDentists, setSupabaseDentists] = useState<Array<{ id: string; name: string; gender?: 'masculino' | 'feminino' }>>([])
   const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [supabaseCasePrintFallbackByCaseId, setSupabaseCasePrintFallbackByCaseId] = useState<Record<string, CasePrintFallback>>({})
   const [supabaseRefreshKey, setSupabaseRefreshKey] = useState(0)
@@ -379,19 +388,20 @@ export default function LabPage() {
           .select('id, clinic_id, case_id, tray_number, status, priority, notes, created_at, deleted_at, data')
           .is('deleted_at', null),
         supabase.from('patients').select('id, name, birth_date, clinic_id, primary_dentist_id, deleted_at').is('deleted_at', null),
-        supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
+        supabase.from('dentists').select('id, name, gender, deleted_at').is('deleted_at', null),
         supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
         supabase.from('scans').select('id, data').is('deleted_at', null),
       ])
       if (!active) return
 
       const dentistsById = new Map(
-        ((dentistsRes.data ?? []) as Array<{ id: string; name?: string }>).map((row) => [row.id, row.name ?? '-']),
+        ((dentistsRes.data ?? []) as Array<{ id: string; name?: string; gender?: 'masculino' | 'feminino' }>).map((row) => [row.id, row.name ?? '-']),
       )
       setSupabaseDentists(
-        ((dentistsRes.data ?? []) as Array<{ id: string; name?: string }>).map((row) => ({
+        ((dentistsRes.data ?? []) as Array<{ id: string; name?: string; gender?: 'masculino' | 'feminino' }>).map((row) => ({
           id: row.id,
           name: row.name ?? '-',
+          gender: row.gender ?? undefined,
         })),
       )
       const clinicsById = new Map(
@@ -447,6 +457,8 @@ export default function LabPage() {
           shortId: asText(data.shortId) || undefined,
           productType: normalizeProductType(data.productType ?? data.productId),
           productId: normalizeProductType(data.productId ?? data.productType),
+          requestedProductId: asText(data.requestedProductId, asText(sourceScanData.purposeProductId)) || undefined,
+          requestedProductLabel: asText(data.requestedProductLabel, asText(sourceScanData.purposeLabel)) || undefined,
           patientId: asText(data.patientId, asText(row.patient_id)) || undefined,
           dentistId: asText(data.dentistId, asText(row.dentist_id)) || undefined,
           clinicId: asText(data.clinicId, asText(row.clinic_id)) || undefined,
@@ -461,7 +473,7 @@ export default function LabPage() {
           totalTraysLower: asNumber(data.totalTraysLower, asNumber(data.totalTrays, 0)),
           attachmentBondingTray: Boolean(data.attachmentBondingTray),
           status: (asText(data.status, 'planejamento') as 'planejamento' | 'em_producao' | 'em_entrega' | 'em_tratamento' | 'aguardando_reposicao' | 'finalizado'),
-          phase: (asText(data.phase, 'planejamento') as 'planejamento' | 'orcamento' | 'contrato_pendente' | 'contrato_aprovado' | 'em_producao' | 'finalizado'),
+          phase: (asText(data.phase, 'planejamento') as 'planejamento' | 'orçamento' | 'contrato_pendente' | 'contrato_aprovado' | 'em_producao' | 'finalizado'),
           budget: data.budget as typeof db.cases[number]['budget'],
           contract: data.contract as typeof db.cases[number]['contract'],
           deliveryLots: (data.deliveryLots as typeof db.cases[number]['deliveryLots']) ?? [],
@@ -486,6 +498,8 @@ export default function LabPage() {
           id: asText(row.id),
           productType: normalizeProductType(data.productType ?? data.productId),
           productId: normalizeProductType(data.productId ?? data.productType),
+          requestedProductId: asText(data.requestedProductId) || undefined,
+          requestedProductLabel: asText(data.requestedProductLabel) || undefined,
           patientId: asText(data.patientId) || undefined,
           dentistId: asText(data.dentistId) || undefined,
           clinicId: asText(row.clinic_id, asText(data.clinicId)) || undefined,
@@ -559,13 +573,15 @@ export default function LabPage() {
 
           const nowIso = new Date().toISOString()
           const resolvedProductType = normalizeProductType(caseItem.productId ?? caseItem.productType)
-          const notes = `Solicitacao automatica de reposicao programada (${caseItem.id}_${tray.trayNumber}_${expected}).`
+          const notes = `Solicitacao automatica de reposição programada (${caseItem.id}_${tray.trayNumber}_${expected}).`
           const data = {
             requestCode,
             requestKind: 'reposicao_programada',
             expectedReplacementDate: expected,
             productType: resolvedProductType,
             productId: resolvedProductType,
+            requestedProductId: caseItem.requestedProductId,
+            requestedProductLabel: caseItem.requestedProductLabel,
             arch: caseItem.arch ?? 'ambos',
             plannedUpperQty: 0,
             plannedLowerQty: 0,
@@ -617,6 +633,31 @@ export default function LabPage() {
     [isSupabaseMode, supabaseCases, db, currentUser],
   )
   const caseById = useMemo(() => new Map(caseSource.map((item) => [item.id, item])), [caseSource])
+  const resolveLabProductLabel = useCallback(
+    (
+      item: Pick<LabItem, 'caseId' | 'requestedProductId' | 'requestedProductLabel' | 'productType' | 'productId'>,
+      caseItemOverride?: {
+        requestedProductId?: string
+        requestedProductLabel?: string
+        productType?: ProductType
+        productId?: ProductType
+        sourceScanId?: string
+      },
+    ) => {
+      const linkedCase = caseItemOverride ?? (item.caseId ? caseById.get(item.caseId) : undefined)
+      const sourceScan =
+        !isSupabaseMode && linkedCase?.sourceScanId
+          ? db.scans.find((scan) => scan.id === linkedCase.sourceScanId)
+          : undefined
+      return resolveRequestedProductLabel({
+        requestedProductLabel: item.requestedProductLabel ?? linkedCase?.requestedProductLabel ?? sourceScan?.purposeLabel,
+        requestedProductId: item.requestedProductId ?? linkedCase?.requestedProductId ?? sourceScan?.purposeProductId,
+        productType: item.productType ?? linkedCase?.productType ?? sourceScan?.purposeProductType,
+        productId: item.productId ?? linkedCase?.productId ?? sourceScan?.purposeProductId,
+      })
+    },
+    [caseById, db.scans, isSupabaseMode],
+  )
   const patientOptions = useMemo<PatientOption[]>(
     () =>
       isSupabaseMode
@@ -839,7 +880,7 @@ export default function LabPage() {
   }) => {
     if (!canWrite) return { ok: false, message: 'Sem permissão para criar solicitações.' }
     if (isSupabaseMode) {
-      if (!supabase) return { ok: false, message: 'Supabase nao configurado.' }
+      if (!supabase) return { ok: false, message: 'Supabase não configurado.' }
       const nowIso = new Date().toISOString()
       const today = nowIso.slice(0, 10)
       const resolvedProductType = normalizeProductType(payload.productId ?? payload.productType)
@@ -892,7 +933,7 @@ export default function LabPage() {
           data: nextData as Record<string, unknown>,
         })
         if (!seed.ok) {
-          addToast({ type: 'info', title: 'Reposicao inicial', message: seed.error })
+          addToast({ type: 'info', title: 'Reposição inicial', message: seed.error })
         }
       }
       setSupabaseRefreshKey((currentKey) => currentKey + 1)
@@ -1020,7 +1061,7 @@ export default function LabPage() {
           data: nextData as Record<string, unknown>,
         })
         if (!seed.ok) {
-          addToast({ type: 'info', title: 'Reposicao inicial', message: seed.error })
+          addToast({ type: 'info', title: 'Reposição inicial', message: seed.error })
         }
       }
       setSupabaseRefreshKey((currentKey) => currentKey + 1)
@@ -1041,17 +1082,17 @@ export default function LabPage() {
 
   const handleDelete = (id: string) => {
     if (!canWrite || !canDeleteLab) return
-    const confirmed = window.confirm('Confirma excluir esta OS? O evento sera registrado no historico do paciente.')
+    const confirmed = window.confirm('Confirma excluir esta OS? O evento será registrado no historico do paciente.')
     if (!confirmed) return
     if (isSupabaseMode) {
       if (!supabase) {
-        addToast({ type: 'error', title: 'Exclusao', message: 'Supabase nao configurado.' })
+        addToast({ type: 'error', title: 'Exclusão', message: 'Supabase não configurado.' })
         return
       }
       void (async () => {
         const result = await deleteLabItemSupabase(id)
         if (!result.ok) {
-          addToast({ type: 'error', title: 'Exclusao', message: result.error })
+          addToast({ type: 'error', title: 'Exclusão', message: result.error })
           return
         }
         setSupabaseItems((current) => current.filter((item) => item.id !== id))
@@ -1088,7 +1129,7 @@ export default function LabPage() {
       sourceLabItemId: string,
       payload: { plannedUpperQty: number; plannedLowerQty: number; dueDate?: string },
     ) => {
-      if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+      if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
       const { data: source, error: sourceError } = await supabase
         .from('lab_items')
         .select('id, case_id, tray_number, status, priority, notes, product_type, product_id, data')
@@ -1096,7 +1137,7 @@ export default function LabPage() {
         .is('deleted_at', null)
         .maybeSingle()
       if (sourceError || !source) {
-        return { ok: false as const, error: sourceError?.message ?? 'OS de origem nao encontrada.' }
+        return { ok: false as const, error: sourceError?.message ?? 'OS de origem não encontrada.' }
       }
 
       const sourceCaseId = asText((source as Record<string, unknown>).case_id)
@@ -1108,13 +1149,13 @@ export default function LabPage() {
         .is('deleted_at', null)
         .maybeSingle()
       if (caseError || !linkedCaseRow) {
-        return { ok: false as const, error: caseError?.message ?? 'Caso vinculado nao encontrado.' }
+        return { ok: false as const, error: caseError?.message ?? 'Caso vinculado não encontrado.' }
       }
 
       const linkedCase = asObject(linkedCaseRow.data)
       const contractStatus = asText(asObject(linkedCase.contract).status, 'pendente')
       if (contractStatus !== 'aprovado') {
-        return { ok: false as const, error: 'Contrato nao aprovado para gerar reposicao.' }
+        return { ok: false as const, error: 'Contrato não aprovado para gerar reposição.' }
       }
 
       const treatmentArch = asText(linkedCase.arch, 'ambos') as 'superior' | 'inferior' | 'ambos'
@@ -1145,7 +1186,7 @@ export default function LabPage() {
       if (treatmentArch === 'superior') plannedLowerQty = 0
       if (treatmentArch === 'inferior') plannedUpperQty = 0
       if (plannedUpperQty + plannedLowerQty <= 0) {
-        return { ok: false as const, error: 'Informe quantidade maior que zero para gerar reposicao.' }
+        return { ok: false as const, error: 'Informe quantidade maior que zero para gerar reposição.' }
       }
       if (plannedUpperQty > remaining.upper || plannedLowerQty > remaining.lower) {
         return { ok: false as const, error: 'Quantidade solicitada maior que o saldo disponivel no banco.' }
@@ -1159,7 +1200,7 @@ export default function LabPage() {
         .sort((a, b) => a - b)
       const nextTrayNumber = pendingTrays[0]
       if (!nextTrayNumber) {
-        return { ok: false as const, error: 'Nao ha placas pendentes para gerar reposicao.' }
+        return { ok: false as const, error: 'Não ha placas pendentes para gerar reposição.' }
       }
 
       const { data: caseRows, error: rowsError } = await supabase
@@ -1201,7 +1242,7 @@ export default function LabPage() {
         dueDate,
         status: 'aguardando_iniciar',
         priority: 'Urgente',
-        notes: `Reposicao solicitada manualmente a partir de ${sourceRequestCode || source.id}.`,
+        notes: `Reposição solicitada manualmente a partir de ${sourceRequestCode || source.id}.`,
       }
 
       const { error: insertError } = await supabase
@@ -1243,7 +1284,7 @@ export default function LabPage() {
       priority?: 'Baixo' | 'Medio' | 'Urgente'
       data: Record<string, unknown>
     }) => {
-      if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+      if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
       if (!source.caseId) return { ok: true as const }
       if (asText(source.data.requestKind, 'producao') !== 'producao') return { ok: true as const }
       if (source.status !== 'em_producao') return { ok: true as const }
@@ -1254,7 +1295,7 @@ export default function LabPage() {
         supabase.from('lab_items').select('id, tray_number, data').eq('case_id', source.caseId),
       ])
       if (caseRes.error || !caseRes.data) {
-        return { ok: false as const, error: caseRes.error?.message ?? 'Caso vinculado nao encontrado.' }
+        return { ok: false as const, error: caseRes.error?.message ?? 'Caso vinculado não encontrado.' }
       }
       if (rowsRes.error) {
         return { ok: false as const, error: rowsRes.error.message }
@@ -1302,7 +1343,7 @@ export default function LabPage() {
         plannedDate: today,
         dueDate: expectedReplacementDate,
         status: 'aguardando_iniciar',
-        notes: `Reposicao inicial gerada no inicio da confeccao da placa #${trayNumber}.`,
+        notes: `Reposição inicial gerada no início da confeccao da placa #${trayNumber}.`,
       }
 
       const { error } = await supabase.from('lab_items').insert({
@@ -1325,15 +1366,17 @@ export default function LabPage() {
 
   const handleMoveStatusSupabase = useCallback(
     async (id: string, next: LabStatus) => {
-      if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+      if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
       const { data: current, error: readError } = await supabase
         .from('lab_items')
         .select('id, case_id, tray_number, status, priority, product_type, product_id, data')
         .eq('id', id)
         .maybeSingle()
-      if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Item LAB nao encontrado.' }
+      if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Item LAB não encontrado.' }
 
       const currentData = asObject(current.data)
+      const currentCaseId = asText((current as Record<string, unknown>).case_id)
+      const currentCase = currentCaseId ? caseById.get(currentCaseId) : undefined
       const nextArch = asText(currentData.arch, '')
       const nextProductType = normalizeProductType(
         current.product_id ?? current.product_type ?? currentData.productId ?? currentData.productType,
@@ -1354,11 +1397,20 @@ export default function LabPage() {
           return { ok: false as const, error: 'Defina quantidades por arcada antes de iniciar producao.' }
         }
         const confirmed = await askProductionConfirmation(
-          PRODUCT_TYPE_LABEL[nextProductType],
+          resolveLabProductLabel(
+            {
+              caseId: currentCaseId || undefined,
+              requestedProductId: asText(currentData.requestedProductId) || undefined,
+              requestedProductLabel: asText(currentData.requestedProductLabel) || undefined,
+              productType: nextProductType,
+              productId: nextProductType,
+            },
+            currentCase,
+          ),
           archLabel(nextArch as 'superior' | 'inferior' | 'ambos'),
         )
         if (!confirmed) {
-          return { ok: false as const, error: 'Producao cancelada pelo usuario.' }
+          return { ok: false as const, error: 'Producao cancelada pelo usuário.' }
         }
       }
 
@@ -1378,19 +1430,19 @@ export default function LabPage() {
           data: currentData,
         })
         if (!seed.ok) {
-          addToast({ type: 'info', title: 'Reposicao inicial', message: seed.error })
+          addToast({ type: 'info', title: 'Reposição inicial', message: seed.error })
         }
       }
       setSupabaseRefreshKey((currentKey) => currentKey + 1)
       return { ok: true as const }
     },
-    [addToast, askProductionConfirmation, seedInitialReplenishmentSupabase],
+    [addToast, askProductionConfirmation, caseById, resolveLabProductLabel, seedInitialReplenishmentSupabase],
   )
 
   const handleMoveStatusLocal = useCallback(
     async (id: string, next: LabStatus) => {
       const current = items.find((item) => item.id === id)
-      if (!current) return { ok: false as const, error: 'Item LAB nao encontrado.' }
+      if (!current) return { ok: false as const, error: 'Item LAB não encontrado.' }
       if (next === 'em_producao') {
         if (!current.arch) {
           return { ok: false as const, error: 'Defina a arcada do produto antes de iniciar producao.' }
@@ -1400,24 +1452,24 @@ export default function LabPage() {
           return { ok: false as const, error: 'Defina quantidades por arcada antes de iniciar producao.' }
         }
         const confirmed = await askProductionConfirmation(
-          PRODUCT_TYPE_LABEL[currentProductType],
+          resolveLabProductLabel(current),
           archLabel(current.arch),
         )
         if (!confirmed) {
-          return { ok: false as const, error: 'Producao cancelada pelo usuario.' }
+          return { ok: false as const, error: 'Producao cancelada pelo usuário.' }
         }
       }
       const result = moveLabItem(id, next)
       if (result.error) return { ok: false as const, error: result.error }
       return { ok: true as const }
     },
-    [askProductionConfirmation, items],
+    [askProductionConfirmation, items, resolveLabProductLabel],
   )
 
   const runLabAi = async (endpoint: '/lab/auditoria-solicitacao' | '/lab/previsao-entrega', title: string) => {
     if (!canAiLab) return
     if (!aiClinicId) {
-      addToast({ type: 'error', title: 'IA Laboratorio', message: 'Nao foi possivel identificar a clinica do contexto atual.' })
+      addToast({ type: 'error', title: 'IA Laboratório', message: 'Não foi possível identificar a clinica do contexto atual.' })
       return
     }
     const highlighted = pipelineItems.slice(0, 8).map((item) => ({
@@ -1437,7 +1489,7 @@ export default function LabPage() {
       },
     })
     if (!result.ok) {
-      addToast({ type: 'error', title: 'IA Laboratorio', message: result.error })
+      addToast({ type: 'error', title: 'IA Laboratório', message: result.error })
       return
     }
     setAiModalTitle(title)
@@ -1447,7 +1499,7 @@ export default function LabPage() {
 
   const handleConfigureBrotherPrinter = useCallback(() => {
     if (typeof window === 'undefined') return
-    const suggested = preferredBrotherPrinter.trim() || 'Brother QL-800'
+    const suggested = preferredBrotherPrinter.trim() || 'Brother QL-810W'
     const typed = window.prompt('Nome da impressora Brother (como aparece no Windows):', suggested)
     if (typed === null) return
     const normalized = typed.trim()
@@ -1457,7 +1509,7 @@ export default function LabPage() {
       title: 'Impressora de adesivo',
       message: normalized
         ? `Impressora vinculada: ${normalized}`
-        : 'Vinculo removido. O navegador usara a impressora padrao.',
+        : 'Vinculo removido. O navegador usara a impressora padrão.',
     })
   }, [addToast, preferredBrotherPrinter])
 
@@ -1469,60 +1521,169 @@ export default function LabPage() {
       const dentistsById = new Map(
         (isSupabaseMode
           ? supabaseDentists
-          : db.dentists.map((entry) => ({ id: entry.id, name: entry.name ?? '-' }))
-        ).map((entry) => [entry.id, entry.name]),
+          : db.dentists.map((entry) => ({ id: entry.id, name: entry.name ?? '-', gender: entry.gender }))
+        ).map((entry) => [entry.id, { name: entry.name, gender: entry.gender }]),
+      )
+      const clinicsById = new Map(
+        (isSupabaseMode
+          ? supabaseClinics
+          : db.clinics.map((entry) => ({ id: entry.id, tradeName: entry.tradeName ?? '-' }))
+        ).map((entry) => [entry.id, entry.tradeName]),
       )
       const casePrintFallback = caseItem ? supabaseCasePrintFallbackByCaseId[caseItem.id] : undefined
       const dentistId = caseItem?.dentistId ?? patientOption?.dentistId ?? item.dentistId
+      const dentistRef = dentistId ? dentistsById.get(dentistId) : undefined
       const dentistNameRaw = dentistId
-        ? dentistsById.get(dentistId) || patientOption?.dentistName || casePrintFallback?.dentistName || ''
+        ? dentistRef?.name || patientOption?.dentistName || casePrintFallback?.dentistName || ''
         : patientOption?.dentistName || casePrintFallback?.dentistName || ''
-      const dentistShort = toDentistShortLabel(dentistNameRaw)
-      const patientName = normalizeSpaces(item.patientName || '-')
-      const alignerLabel = `Alinhador #${Math.max(0, Math.trunc(item.trayNumber || 0))}`
-      const printerHint = preferredBrotherPrinter.trim() || 'Brother'
+      const dentistShort = toDentistShortLabelByGender(dentistNameRaw, dentistRef?.gender)
+      const patientName = toPatientStickerName(item.patientName || '-')
+      const upperQty = Math.max(0, Math.trunc(item.plannedUpperQty ?? 0))
+      const lowerQty = Math.max(0, Math.trunc(item.plannedLowerQty ?? 0))
+      const trayQty = Math.max(0, Math.trunc(item.trayNumber || 0))
+      const totalLabels = Math.max(upperQty, lowerQty, trayQty, 1)
+      const clinicId = caseItem?.clinicId ?? item.clinicId ?? patientOption?.clinicId ?? ''
+      const normalizedClinicId = clinicId.trim().toLowerCase()
+      const clinicTradeName = normalizeSpaces(clinicsById.get(clinicId) || patientOption?.clinicName || casePrintFallback?.clinicName || '').toUpperCase()
+      const isInternalArrimo =
+        caseItem?.treatmentOrigin === 'interno' ||
+        normalizedClinicId === 'clinic_arrimo' ||
+        normalizedClinicId === 'cli-0001' ||
+        clinicTradeName === 'ARRIMO'
+      const backgroundImage = isInternalArrimo ? 'sticker-arrimo-interno.png' : 'sticker-orthoscan-externo.png'
+      const complementRaw = item.notes?.trim() || ''
+      const complement = complementRaw.length > 0 && complementRaw.length <= 26 ? complementRaw : ''
+      const labelBlock = (alignerNumber: number) => `
+          <div class="label ${isInternalArrimo ? 'is-internal' : 'is-external'}">
+            <div class="art">
+              <img class="bg" src="${window.location.origin}/brand/${backgroundImage}" alt="Etiqueta" />
+              <div class="content">
+                <div class="line">${escapeHtml(dentistShort)}</div>
+                <div class="line">${escapeHtml(patientName)}</div>
+                <div class="line">${escapeHtml(`Alinhador ${alignerNumber}`)}</div>
+                ${complement ? `<div class="line small">${escapeHtml(complement)}</div>` : ''}
+              </div>
+            </div>
+          </div>
+      `
+      const labelsHtml = Array.from({ length: totalLabels }, (_, index) => labelBlock(index + 1)).join('')
       const html = `
         <!doctype html>
         <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Etiqueta - ${escapeHtml(patientName)}</title>
+          <title>Etiquetas - ${escapeHtml(patientName)}</title>
           <style>
-            @page { size: 62mm 100mm; margin: 2mm; }
-            body { margin: 0; font-family: Arial, sans-serif; color: #0f172a; }
-            .label { border: 1px solid #0f172a; border-radius: 6px; padding: 6px; display: grid; grid-template-rows: auto 1fr auto; min-height: 90mm; box-sizing: border-box; }
-            .head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-bottom: 8px; }
-            .head img { width: 26mm; max-height: 12mm; object-fit: contain; }
-            .head .title { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
-            .line { margin: 4px 0; }
-            .k { font-size: 8px; text-transform: uppercase; color: #334155; letter-spacing: .3px; }
-            .v { font-size: 12px; font-weight: 700; }
-            .tray .v { font-size: 14px; }
-            .foot { margin-top: 8px; border-top: 1px dashed #94a3b8; padding-top: 6px; font-size: 8px; color: #475569; }
+            :root {
+              --label-size: 62mm;
+              --safe-inset-x: 2.4mm;
+              --safe-inset-y: 3.8mm;
+              --text-x: 3.2mm;
+              --text-y: 20.2mm;
+              --text-w: 52.4mm;
+              --text-h: 17.2mm;
+              --font-main: 3.20mm;
+              --font-small: 2.70mm;
+              --line-gap: 0.48mm;
+            }
+            @media print {
+              @page { size: 62mm 62mm; margin: 0; }
+              html, body { margin: 0; padding: 0; width: var(--label-size); }
+              .screen-only { display: none !important; }
+            }
+            @media screen {
+              html, body { margin: 0; padding: 0; }
+              body { background: #e5e7eb; }
+              .sheet { padding: 4mm; }
+            }
+            body {
+              font-family: Verdana, Arial, sans-serif;
+              color: #000;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              overflow: visible;
+              background: #fff;
+            }
+            .sheet {
+              width: var(--label-size);
+            }
+            .label {
+              position: relative;
+              display: block;
+              width: var(--label-size);
+              height: var(--label-size);
+              overflow: hidden;
+              background: #fff;
+              page-break-after: always;
+              break-after: page;
+            }
+            .label:last-child { page-break-after: auto; break-after: auto; }
+            .label.is-internal {
+              --text-x: 3.0mm;
+              --text-y: 19.2mm;
+              --text-w: 52.8mm;
+              --text-h: 18.2mm;
+              --font-main: 4.10mm;
+              --font-small: 3.00mm;
+              --line-gap: 0.62mm;
+            }
+            .label.is-external {
+              --text-x: 3.2mm;
+              --text-y: 20.2mm;
+              --text-w: 52.4mm;
+              --text-h: 17.2mm;
+              --font-main: 2.95mm;
+              --font-small: 2.70mm;
+              --line-gap: 0.42mm;
+            }
+            .art {
+              position: absolute;
+              left: var(--safe-inset-x);
+              top: var(--safe-inset-y);
+              width: calc(var(--label-size) - (var(--safe-inset-x) * 2));
+              height: calc(var(--label-size) - (var(--safe-inset-y) * 2));
+              overflow: hidden;
+              background: #fff;
+            }
+            .bg {
+              width: 100%;
+              height: 100%;
+              display: block;
+              object-fit: fill;
+              image-rendering: -webkit-optimize-contrast;
+            }
+            .content {
+              position: absolute;
+              left: var(--text-x);
+              top: var(--text-y);
+              width: var(--text-w);
+              height: var(--text-h);
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              text-align: center;
+              line-height: 1.18;
+              font-weight: 700;
+              font-size: var(--font-main);
+              letter-spacing: 0;
+              text-rendering: geometricPrecision;
+              -webkit-font-smoothing: none;
+            }
+            .content .line {
+              margin: var(--line-gap) 0;
+              max-width: 100%;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .content .small { font-size: var(--font-small); }
           </style>
         </head>
         <body>
-          <div class="label">
-            <div class="head">
-              <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
-              <div class="title">ORTHOSCAN LAB</div>
-            </div>
-            <div>
-              <div class="line">
-                <div class="k">Dentista</div>
-                <div class="v">${escapeHtml(dentistShort)}</div>
-              </div>
-              <div class="line">
-                <div class="k">Paciente</div>
-                <div class="v">${escapeHtml(patientName)}</div>
-              </div>
-              <div class="line tray">
-                <div class="k">Alinhador</div>
-                <div class="v">${escapeHtml(alignerLabel)}</div>
-              </div>
-            </div>
-            <div class="foot">Impressora sugerida: ${escapeHtml(printerHint)}</div>
-          </div>
+          <main class="sheet">
+            ${labelsHtml}
+          </main>
         </body>
         </html>
       `
@@ -1530,7 +1691,7 @@ export default function LabPage() {
       const printUrl = URL.createObjectURL(blob)
       const popup = window.open(printUrl, '_blank')
       if (!popup) {
-        addToast({ type: 'error', title: 'Imprimir adesivo', message: 'Nao foi possivel abrir a janela de impressao.' })
+        addToast({ type: 'error', title: 'Imprimir adesivo', message: 'Não foi possível abrir a janela de impressão.' })
         return
       }
       const onLoaded = () => {
@@ -1545,9 +1706,10 @@ export default function LabPage() {
       addToast,
       caseById,
       db.dentists,
+      db.clinics,
       isSupabaseMode,
       patientOptionById,
-      preferredBrotherPrinter,
+      supabaseClinics,
       supabaseCasePrintFallbackByCaseId,
       supabaseDentists,
     ],
@@ -1611,13 +1773,13 @@ export default function LabPage() {
     deliveryExpectedDate.setDate(deliveryExpectedDate.getDate() + 10)
     const deliveryExpectedLabel = deliveryExpectedDate.toLocaleDateString('pt-BR')
     const changeDaysLabel = String(caseItem?.changeEveryDays ?? 10)
-    const productLabel = isAlignerProductType(item.productType ?? caseItem?.productType) ? 'Alinhadores' : PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']
+    const productLabel = resolveLabProductLabel(item, caseItem)
     const html = `
       <!doctype html>
       <html lang="pt-BR">
       <head>
         <meta charset="utf-8" />
-        <title>Ordem de Servico Inicial</title>
+        <title>Ordem de Serviço Inicial</title>
         <style>
           @page { size: A4; margin: 14mm; }
           body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
@@ -1647,14 +1809,14 @@ export default function LabPage() {
           <div class="doc">
             <h1>ORDEM DE SERVICO INICIAL (O.S)</h1>
             <p><strong>Data/Hora:</strong> ${escapeHtml(issueDateLabel)}</p>
-            <p><strong>Nº Caso:</strong> ${escapeHtml(caseLabel)}</p>
+            <p><strong>NÂº Caso:</strong> ${escapeHtml(caseLabel)}</p>
           </div>
         </div>
         <div class="meta">
           <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(item.patientName)}</div></div>
           <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">${escapeHtml(patientBirthDateLabel)}</div></div>
-          <div class="meta-box"><div class="meta-label">Clinica</div><div class="meta-value">${escapeHtml(clinicName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Dentista responsavel</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Clínica</div><div class="meta-value">${escapeHtml(clinicName)}</div></div>
+          <div class="meta-box"><div class="meta-label">Dentista responsável</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
           <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(requesterName)}</div></div>
           <div class="meta-box"><div class="meta-label">Produto</div><div class="meta-value">${escapeHtml(productLabel)}</div></div>
           <div class="meta-box"><div class="meta-label">Planejamento</div><div class="meta-value">${escapeHtml(planLabel)}</div></div>
@@ -1675,7 +1837,7 @@ export default function LabPage() {
           </div>
         </div>
 
-        <div class="emit">Emitido por ${escapeHtml(emittedBy)} Atraves da plataforma Orthoscan Laboratorio Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
+        <div class="emit">Emitido por ${escapeHtml(emittedBy)} Através da plataforma Orthoscan Laboratório Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
       </body>
       </html>
     `
@@ -1684,7 +1846,7 @@ export default function LabPage() {
     const printUrl = URL.createObjectURL(blob)
     const popup = window.open(printUrl, '_blank')
     if (!popup) {
-      addToast({ type: 'error', title: 'Reimpressao O.S', message: 'Nao foi possivel abrir a janela de impressao.' })
+      addToast({ type: 'error', title: 'Reimpressao O.S', message: 'Não foi possível abrir a janela de impressão.' })
       return
     }
     const onLoaded = () => {
@@ -1730,7 +1892,7 @@ export default function LabPage() {
       {canWrite ? (
         <section className="mt-2">
           <p className="text-xs text-slate-500">
-            Impressora vinculada: {preferredBrotherPrinter.trim() || 'Nao definida (sera usada a padrao do navegador)'}
+            Impressora vinculada: {preferredBrotherPrinter.trim() || 'Não definida (será usada a padrão do navegador)'}
           </p>
         </section>
       ) : null}
@@ -1788,6 +1950,7 @@ export default function LabPage() {
             items={pipelineItems}
             guideTone={guideTone}
             caseLabel={caseLabel}
+            productLabel={resolveLabProductLabel}
             onItemsChange={() => {
               if (isSupabaseMode) setSupabaseRefreshKey((current) => current + 1)
             }}
@@ -1879,7 +2042,7 @@ export default function LabPage() {
                         <tr key={item.id} className="border-t border-slate-100">
                           <td className="px-3 py-2">{formatFriendlyRequestCode(caseItem?.treatmentCode ?? item.requestCode)}</td>
                           <td className="px-3 py-2">{item.patientName}</td>
-                          <td className="px-3 py-2">{PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</td>
+                          <td className="px-3 py-2">{resolveLabProductLabel(item, caseItem)}</td>
                           <td className="px-3 py-2">{formatInfSupByArch(totals, treatmentArch)}</td>
                           <td className="px-3 py-2">{formatInfSupByArch(delivered, treatmentArch)}</td>
                           <td className="px-3 py-2">{formatInfSupByArch(remaining, treatmentArch)}</td>
@@ -1900,7 +2063,7 @@ export default function LabPage() {
                                   setAdvanceModalOpen(true)
                                 }}
                               >
-                                Solicitar reposicao
+                                Solicitar reposição
                               </Button>
                             ) : null}
                           </td>
@@ -1953,7 +2116,7 @@ export default function LabPage() {
             if (!selectedReadyItem.caseId) {
               if (isSupabaseMode) {
                 if (!supabase) {
-                  addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase nao configurado.' })
+                  addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase não configurado.' })
                   return
                 }
                 const { data: current, error: readError } = await supabase
@@ -1962,7 +2125,7 @@ export default function LabPage() {
                   .eq('id', selectedReadyItem.id)
                   .maybeSingle()
                 if (readError || !current) {
-                  addToast({ type: 'error', title: 'Entrega de lote', message: readError?.message ?? 'OS nao encontrada.' })
+                  addToast({ type: 'error', title: 'Entrega de lote', message: readError?.message ?? 'OS não encontrada.' })
                   return
                 }
                 const currentData = asObject((current as Record<string, unknown>).data)
@@ -2005,7 +2168,7 @@ export default function LabPage() {
             const selectedCaseId = selectedReadyItem.caseId
             const caseItem = caseById.get(selectedCaseId)
             if (!caseItem) {
-              addToast({ type: 'error', title: 'Entrega de lote', message: 'Pedido nao encontrado.' })
+              addToast({ type: 'error', title: 'Entrega de lote', message: 'Pedido não encontrado.' })
               return
             }
             const caseTotals = getCaseTotalsByArch(caseItem)
@@ -2049,7 +2212,7 @@ export default function LabPage() {
 
             if (isSupabaseMode) {
               if (!supabase) {
-                addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase nao configurado.' })
+                addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase não configurado.' })
                 return
               }
               const nextLots = [...(caseItem.deliveryLots ?? [])]
@@ -2124,7 +2287,7 @@ export default function LabPage() {
       {productionConfirm.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
           <Card className="w-full max-w-lg">
-            <h3 className="text-lg font-semibold text-slate-900">Confirmar inicio da producao</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Confirmar início da producao</h3>
             <p className="mt-2 text-sm text-slate-600">
               Confirmar producao de {productionConfirm.productLabel} para arcada {productionConfirm.archLabel}?
             </p>
@@ -2143,7 +2306,7 @@ export default function LabPage() {
       {advanceModalOpen && advanceTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
           <Card className="w-full max-w-md">
-            <h3 className="text-lg font-semibold text-slate-900">Solicitar reposicao</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Solicitar reposição</h3>
             <p className="mt-1 text-sm text-slate-500">
               {advanceTarget.patientName} - {advanceTarget.requestCode ?? `Placa #${advanceTarget.trayNumber}`}
             </p>
@@ -2170,7 +2333,7 @@ export default function LabPage() {
                         plannedLowerQty: Number(advanceLowerQty),
                       })
                       if (!result.ok) {
-                        addToast({ type: 'error', title: 'Solicitacao de reposicao', message: result.error })
+                        addToast({ type: 'error', title: 'Solicitacao de reposição', message: result.error })
                         return
                       }
                       setSupabaseRefreshKey((current) => current + 1)
@@ -2185,11 +2348,11 @@ export default function LabPage() {
                       plannedLowerQty: Number(advanceLowerQty),
                     })
                     if (!result.ok) {
-                      addToast({ type: 'error', title: 'Solicitacao de reposicao', message: result.error })
+                      addToast({ type: 'error', title: 'Solicitacao de reposição', message: result.error })
                       return
                     }
                     if (!result.sync.ok) {
-                      addToast({ type: 'error', title: 'Solicitacao de reposicao', message: result.sync.message })
+                      addToast({ type: 'error', title: 'Solicitacao de reposição', message: result.sync.message })
                       return
                     }
                     setAdvanceModalOpen(false)
@@ -2221,6 +2384,7 @@ export default function LabPage() {
     </AppShell>
   )
 }
+
 
 
 

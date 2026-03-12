@@ -20,15 +20,16 @@ import { listCasesForUser } from '../auth/scope'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { deleteCaseSupabase, generateCaseLabOrderSupabase, listCaseLabItemsSupabase, patchCaseDataSupabase } from '../repo/profileRepo'
+import { resolveRequestedProductLabel } from '../lib/productLabel'
 import type { LabItem } from '../types/Lab'
-import { isAlignerProductType, normalizeProductType, PRODUCT_TYPE_LABEL } from '../types/Product'
+import { isAlignerProductType, normalizeProductType } from '../types/Product'
 
 const caseStatusLabelMap: Record<Case['status'], string> = {
   planejamento: 'Planejamento',
   em_producao: 'Em producao',
   em_entrega: 'Em entrega',
   em_tratamento: 'Em tratamento',
-  aguardando_reposicao: 'Aguardando reposicao',
+  aguardando_reposicao: 'Aguardando reposição',
   finalizado: 'Finalizado',
 }
 
@@ -100,8 +101,8 @@ function deriveTreatmentStatus(payload: {
   const completedLower = Math.max(0, Math.trunc(payload.completedLower ?? deliveredLower))
   const deliveredAny = deliveredUpper > 0 || deliveredLower > 0
   const finished = completedUpper >= totalUpper && completedLower >= totalLower
-  // Nao finaliza automaticamente o tratamento.
-  // A finalizacao deve ser confirmada manualmente pelo usuario.
+  // Não finaliza automaticamente o tratamento.
+  // A finalizacao deve ser confirmada manualmente pelo usuário.
   if (finished) return 'em_tratamento' as const
   if (!payload.installedAt || !deliveredAny) return 'em_entrega' as const
 
@@ -215,25 +216,58 @@ function buildChangeSchedule(
   deliveredUpper: number,
   deliveredLower: number,
   trays: CaseTray[],
-  actualChangeDateByTray: Map<number, string>,
-): Array<{ trayNumber: number; changeDate: string; actualChangeDate?: string; superiorState: TrayState | 'nao_aplica'; inferiorState: TrayState | 'nao_aplica' }> {
+  actualUpperByTray: Map<number, string>,
+  actualLowerByTray: Map<number, string>,
+): Array<{
+  trayNumber: number
+  upperPlannedDate?: string
+  lowerPlannedDate?: string
+  upperChangeDate?: string
+  lowerChangeDate?: string
+  changeDate: string
+  superiorState: TrayState | 'nao_aplica'
+  inferiorState: TrayState | 'nao_aplica'
+}> {
   if (!installedAt) return []
   const max = Math.max(totalUpper, totalLower)
-  const schedule: Array<{ trayNumber: number; changeDate: string; actualChangeDate?: string; superiorState: TrayState | 'nao_aplica'; inferiorState: TrayState | 'nao_aplica' }> = []
-  let nextPlannedDate = installedAt
+  const schedule: Array<{
+    trayNumber: number
+    upperPlannedDate?: string
+    lowerPlannedDate?: string
+    upperChangeDate?: string
+    lowerChangeDate?: string
+    changeDate: string
+    superiorState: TrayState | 'nao_aplica'
+    inferiorState: TrayState | 'nao_aplica'
+  }> = []
+  let nextUpperDate = installedAt
+  let nextLowerDate = installedAt
   for (let index = 0; index < max; index += 1) {
     const trayNumber = index + 1
-    if (trayNumber > 1) {
-      nextPlannedDate = addDays(nextPlannedDate, changeEveryDays)
+    if (trayNumber > 1 && trayNumber <= totalUpper) {
+      nextUpperDate = addDays(nextUpperDate, changeEveryDays)
     }
-    const actualChangeDate = actualChangeDateByTray.get(trayNumber)
-    if (actualChangeDate) {
-      nextPlannedDate = actualChangeDate
+    if (trayNumber > 1 && trayNumber <= totalLower) {
+      nextLowerDate = addDays(nextLowerDate, changeEveryDays)
     }
+    const upperPlannedDate = trayNumber <= totalUpper ? nextUpperDate : undefined
+    const lowerPlannedDate = trayNumber <= totalLower ? nextLowerDate : undefined
+    const upperChangeDate = trayNumber <= totalUpper ? (actualUpperByTray.get(trayNumber) ?? upperPlannedDate) : undefined
+    const lowerChangeDate = trayNumber <= totalLower ? (actualLowerByTray.get(trayNumber) ?? lowerPlannedDate) : undefined
+    if (trayNumber <= totalUpper && upperChangeDate) {
+      nextUpperDate = upperChangeDate
+    }
+    if (trayNumber <= totalLower && lowerChangeDate) {
+      nextLowerDate = lowerChangeDate
+    }
+    const changeDate = [upperChangeDate, lowerChangeDate].filter((value): value is string => Boolean(value)).sort()[0] ?? installedAt
     schedule.push({
       trayNumber,
-      changeDate: nextPlannedDate,
-      actualChangeDate,
+      upperPlannedDate,
+      lowerPlannedDate,
+      upperChangeDate,
+      lowerChangeDate,
+      changeDate,
       superiorState: scheduleStateForTray(trayNumber, totalUpper, deliveredUpper, trays),
       inferiorState: scheduleStateForTray(trayNumber, totalLower, deliveredLower, trays),
     })
@@ -285,6 +319,8 @@ function mapSupabaseCaseRowToCase(
     id: row.id,
     productType: normalizeProductType(row.product_id ?? row.product_type ?? data.productId ?? data.productType),
     productId: normalizeProductType(row.product_id ?? row.product_type ?? data.productId ?? data.productType),
+    requestedProductId: data.requestedProductId as string | undefined,
+    requestedProductLabel: data.requestedProductLabel as string | undefined,
     treatmentCode: data.treatmentCode as string | undefined,
     treatmentOrigin: data.treatmentOrigin as Case['treatmentOrigin'] | undefined,
     patientName: (data.patientName as string | undefined) ?? '-',
@@ -355,6 +391,8 @@ export default function CaseDetailPage() {
     requesterName?: string
     requesterGender?: string
     patientBirthDate?: string
+    requestedProductId?: string
+    requestedProductLabel?: string
   }>({})
   const [supabaseRefreshKey, setSupabaseRefreshKey] = useState(0)
   const supabaseSyncTick = useSupabaseSyncTick()
@@ -416,6 +454,10 @@ export default function CaseDetailPage() {
     () => (isSupabaseMode ? supabaseCase : params.id ? db.cases.find((item) => item.id === params.id) ?? null : null),
     [isSupabaseMode, supabaseCase, params.id, db.cases],
   )
+  const localSourceScan = useMemo(
+    () => (!isSupabaseMode && currentCase?.sourceScanId ? db.scans.find((item) => item.id === currentCase.sourceScanId) : undefined),
+    [currentCase?.sourceScanId, db.scans, isSupabaseMode],
+  )
   const isAlignerCase = useMemo(
     () => (currentCase ? isAlignerProductType(normalizeProductType(currentCase.productId ?? currentCase.productType)) : false),
     [currentCase],
@@ -429,7 +471,7 @@ export default function CaseDetailPage() {
     }
     let active = true
     void (async () => {
-      const [clinicRes, dentistRes, requesterRes, patientRes] = await Promise.all([
+      const [clinicRes, dentistRes, requesterRes, patientRes, scanRes] = await Promise.all([
         currentCase.clinicId
           ? supabase.from('clinics').select('id, trade_name').eq('id', currentCase.clinicId).maybeSingle()
           : Promise.resolve({ data: null }),
@@ -442,8 +484,12 @@ export default function CaseDetailPage() {
         currentCase.patientId
           ? supabase.from('patients').select('id, birth_date').eq('id', currentCase.patientId).maybeSingle()
           : Promise.resolve({ data: null }),
+        currentCase.sourceScanId
+          ? supabase.from('scans').select('id, data').eq('id', currentCase.sourceScanId).maybeSingle()
+          : Promise.resolve({ data: null }),
       ])
       if (!active) return
+      const scanData = ((scanRes.data as { data?: Record<string, unknown> } | null)?.data ?? {}) as Record<string, unknown>
       setSupabaseCaseRefs({
         clinicName: (clinicRes.data as { trade_name?: string } | null)?.trade_name,
         dentistName: (dentistRes.data as { name?: string } | null)?.name,
@@ -451,6 +497,8 @@ export default function CaseDetailPage() {
         requesterName: (requesterRes.data as { name?: string } | null)?.name,
         requesterGender: (requesterRes.data as { gender?: string } | null)?.gender,
         patientBirthDate: (patientRes.data as { birth_date?: string } | null)?.birth_date,
+        requestedProductId: currentCase.requestedProductId ?? (scanData.purposeProductId as string | undefined),
+        requestedProductLabel: currentCase.requestedProductLabel ?? (scanData.purposeLabel as string | undefined),
       })
     })()
     return () => {
@@ -490,17 +538,29 @@ export default function CaseDetailPage() {
     }),
     [deliveredLower, deliveredToDentist.lower, deliveredToDentist.upper, deliveredUpper],
   )
-  const actualChangeDateByTray = useMemo(() => {
+  const actualChangeDateUpperByTray = useMemo(() => {
     const map = new Map<number, string>()
     ;(currentCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
-      if (entry.trayNumber > 0 && entry.changedAt) {
+      if (!(entry.trayNumber > 0) || !entry.changedAt) return
+      if (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos') {
         map.set(entry.trayNumber, entry.changedAt)
       }
     })
     return map
   }, [currentCase])
-  const dentistDeliveryDateByTray = useMemo(() => {
+  const actualChangeDateLowerByTray = useMemo(() => {
     const map = new Map<number, string>()
+    ;(currentCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
+      if (!(entry.trayNumber > 0) || !entry.changedAt) return
+      if (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos') {
+        map.set(entry.trayNumber, entry.changedAt)
+      }
+    })
+    return map
+  }, [currentCase])
+  const dentistDeliveryDateByArchTray = useMemo(() => {
+    const upper = new Map<number, string>()
+    const lower = new Map<number, string>()
     const lots = [...(currentCase?.deliveryLots ?? [])].sort((a, b) => {
       const aDate = (a.deliveredToDoctorAt ?? '').trim()
       const bDate = (b.deliveredToDoctorAt ?? '').trim()
@@ -511,17 +571,29 @@ export default function CaseDetailPage() {
       const appliesLower = lot.arch === 'inferior' || lot.arch === 'ambos'
       if ((hasUpperArch && !appliesUpper) && (hasLowerArch && !appliesLower)) return
       for (let tray = lot.fromTray; tray <= lot.toTray; tray += 1) {
-        if (!map.has(tray)) {
-          map.set(tray, lot.deliveredToDoctorAt)
-        }
+        if (appliesUpper && !upper.has(tray)) upper.set(tray, lot.deliveredToDoctorAt)
+        if (appliesLower && !lower.has(tray)) lower.set(tray, lot.deliveredToDoctorAt)
+      }
+    })
+    return { upper, lower }
+  }, [currentCase, hasLowerArch, hasUpperArch])
+  const manualChangeCompletionUpperByTray = useMemo(() => {
+    const map = new Map<number, boolean>()
+    ;(currentCase?.installation?.manualChangeCompletion ?? []).forEach((entry) => {
+      if (!(entry.trayNumber > 0)) return
+      if (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos') {
+        map.set(entry.trayNumber, Boolean(entry.completed))
       }
     })
     return map
-  }, [currentCase, hasLowerArch, hasUpperArch])
-  const manualChangeCompletionByTray = useMemo(() => {
+  }, [currentCase])
+  const manualChangeCompletionLowerByTray = useMemo(() => {
     const map = new Map<number, boolean>()
     ;(currentCase?.installation?.manualChangeCompletion ?? []).forEach((entry) => {
-      if (entry.trayNumber > 0) map.set(entry.trayNumber, Boolean(entry.completed))
+      if (!(entry.trayNumber > 0)) return
+      if (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos') {
+        map.set(entry.trayNumber, Boolean(entry.completed))
+      }
     })
     return map
   }, [currentCase])
@@ -539,18 +611,27 @@ export default function CaseDetailPage() {
             progressUpper.delivered,
             progressLower.delivered,
             currentCase.trays,
-            actualChangeDateByTray,
+            actualChangeDateUpperByTray,
+            actualChangeDateLowerByTray,
           )
         : [],
-    [actualChangeDateByTray, currentCase, progressLower.delivered, progressUpper.delivered, totalLower, totalUpper],
+    [
+      actualChangeDateLowerByTray,
+      actualChangeDateUpperByTray,
+      currentCase,
+      progressLower.delivered,
+      progressUpper.delivered,
+      totalLower,
+      totalUpper,
+    ],
   )
   const patientProgressUpper = useMemo(() => {
-    const eligibleByDate = changeSchedule.filter((row) => row.trayNumber <= totalUpper && row.changeDate <= todayIso).length
+    const eligibleByDate = changeSchedule.filter((row) => row.trayNumber <= totalUpper && (row.upperChangeDate ?? '') <= todayIso).length
     const progressed = Math.min(eligibleByDate, Math.max(0, Math.trunc(deliveredUpper)))
     return caseProgress(totalUpper, progressed)
   }, [changeSchedule, deliveredUpper, todayIso, totalUpper])
   const patientProgressLower = useMemo(() => {
-    const eligibleByDate = changeSchedule.filter((row) => row.trayNumber <= totalLower && row.changeDate <= todayIso).length
+    const eligibleByDate = changeSchedule.filter((row) => row.trayNumber <= totalLower && (row.lowerChangeDate ?? '') <= todayIso).length
     const progressed = Math.min(eligibleByDate, Math.max(0, Math.trunc(deliveredLower)))
     return caseProgress(totalLower, progressed)
   }, [changeSchedule, deliveredLower, todayIso, totalLower])
@@ -736,7 +817,7 @@ export default function CaseDetailPage() {
     }
     const updated = updateCase(currentCase.id, { status: 'finalizado', phase: 'finalizado' })
     if (!updated) {
-      addToast({ type: 'error', title: 'Concluir tratamento', message: 'Nao foi possivel concluir o tratamento.' })
+      addToast({ type: 'error', title: 'Concluir tratamento', message: 'Não foi possível concluir o tratamento.' })
       return
     }
     addToast({ type: 'success', title: 'Tratamento concluido manualmente' })
@@ -812,9 +893,16 @@ export default function CaseDetailPage() {
   const requesterGenderResolved = isSupabaseMode ? (supabaseCaseRefs.requesterGender ?? requester?.gender) : requester?.gender
   const dentistPrefix = dentistNameResolved ? (dentistGenderResolved === 'feminino' ? 'Dra.' : 'Dr.') : ''
   const requesterPrefix = requesterNameResolved ? (requesterGenderResolved === 'feminino' ? 'Dra.' : 'Dr.') : ''
-  const displayProductLabel = currentCase
-    ? (isAlignerCase ? 'Alinhadores' : PRODUCT_TYPE_LABEL[currentCase.productType ?? 'alinhador_12m'])
-    : '-'
+  const displayProductLabel = useMemo(() => {
+    if (!currentCase) return '-'
+    return resolveRequestedProductLabel({
+      requestedProductLabel: isSupabaseMode ? supabaseCaseRefs.requestedProductLabel : currentCase.requestedProductLabel ?? localSourceScan?.purposeLabel,
+      requestedProductId: isSupabaseMode ? supabaseCaseRefs.requestedProductId : currentCase.requestedProductId ?? localSourceScan?.purposeProductId,
+      productType: currentCase.productType ?? localSourceScan?.purposeProductType,
+      productId: currentCase.productId ?? localSourceScan?.purposeProductId,
+      alignerFallbackLabel: isAlignerCase ? 'Alinhadores' : undefined,
+    })
+  }, [currentCase, isAlignerCase, isSupabaseMode, localSourceScan, supabaseCaseRefs.requestedProductId, supabaseCaseRefs.requestedProductLabel])
   const displayCaseCode = currentCase ? toReadableCaseCode(currentCase.treatmentCode ?? currentCase.id) : '-'
   const displayTreatmentOrigin = useMemo(() => {
     if (!currentCase) return 'externo' as const
@@ -889,10 +977,10 @@ export default function CaseDetailPage() {
 
   if (!currentCase) {
     return (
-      <AppShell breadcrumb={['Inicio', 'Alinhadores']}>
+      <AppShell breadcrumb={['Início', 'Alinhadores']}>
         <Card>
-          <h1 className="text-xl font-semibold text-slate-900">Pedido nao encontrado</h1>
-          <p className="mt-2 text-sm text-slate-500">O pedido solicitado nao existe ou foi removido.</p>
+          <h1 className="text-xl font-semibold text-slate-900">Pedido não encontrado</h1>
+          <p className="mt-2 text-sm text-slate-500">O pedido solicitado não existe ou foi removido.</p>
           <Button className="mt-4" onClick={() => navigate('/app/cases')}>
             Voltar
           </Button>
@@ -903,10 +991,10 @@ export default function CaseDetailPage() {
 
   if (!isSupabaseMode && !scopedCases.some((item) => item.id === currentCase.id)) {
     return (
-      <AppShell breadcrumb={['Inicio', 'Alinhadores']}>
+      <AppShell breadcrumb={['Início', 'Alinhadores']}>
         <Card>
           <h1 className="text-xl font-semibold text-slate-900">Sem acesso</h1>
-          <p className="mt-2 text-sm text-slate-500">Seu perfil nao permite visualizar este pedido.</p>
+          <p className="mt-2 text-sm text-slate-500">Seu perfil não permite visualizar este pedido.</p>
           <Button className="mt-4" onClick={() => navigate('/app/cases')}>
             Voltar
           </Button>
@@ -1125,7 +1213,7 @@ export default function CaseDetailPage() {
           arch: reworkArch,
         })
         if (!reworkResult.ok) {
-          addToast({ type: 'error', title: 'Rework', message: 'Nao foi possivel devolver a placa ao banco.' })
+          addToast({ type: 'error', title: 'Rework', message: 'Não foi possível devolver a placa ao banco.' })
           return
         }
       }
@@ -1175,7 +1263,7 @@ export default function CaseDetailPage() {
     if (!canWrite) return
     if (isSupabaseMode) {
       void (async () => {
-        const result = await patchCaseDataSupabase(currentCase.id, { phase: 'orcamento', status: 'planejamento' }, { status: 'planejamento', phase: 'orcamento' })
+        const result = await patchCaseDataSupabase(currentCase.id, { phase: 'orçamento', status: 'planejamento' }, { status: 'planejamento', phase: 'orçamento' })
         if (!result.ok) {
           addToast({ type: 'error', title: 'Planejamento', message: result.error })
           return
@@ -1185,7 +1273,7 @@ export default function CaseDetailPage() {
       })()
       return
     }
-    updateCase(currentCase.id, { phase: 'orcamento', status: 'planejamento' })
+    updateCase(currentCase.id, { phase: 'orçamento', status: 'planejamento' })
     addToast({ type: 'success', title: 'Planejamento concluido' })
   }
 
@@ -1193,7 +1281,7 @@ export default function CaseDetailPage() {
     if (!canWrite) return
     const parsed = parseBrlCurrencyInput(budgetValue)
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      addToast({ type: 'error', title: 'Orcamento', message: 'Informe um valor valido para o orcamento.' })
+      addToast({ type: 'error', title: 'Orçamento', message: 'Informe um valor valido para o orçamento.' })
       return
     }
     if (isSupabaseMode) {
@@ -1209,11 +1297,11 @@ export default function CaseDetailPage() {
           { status: 'planejamento', phase: 'contrato_pendente' },
         )
         if (!result.ok) {
-          addToast({ type: 'error', title: 'Orcamento', message: result.error })
+          addToast({ type: 'error', title: 'Orçamento', message: result.error })
           return
         }
         setSupabaseRefreshKey((current) => current + 1)
-        addToast({ type: 'success', title: 'Orcamento fechado' })
+        addToast({ type: 'success', title: 'Orçamento fechado' })
       })()
       return
     }
@@ -1223,7 +1311,7 @@ export default function CaseDetailPage() {
       budget: { value: parsed, notes: budgetNotes.trim() || undefined, createdAt: new Date().toISOString() },
       contract: { ...(currentCase.contract ?? { status: 'pendente' }), status: 'pendente', notes: contractNotes.trim() || undefined },
     })
-    addToast({ type: 'success', title: 'Orcamento fechado' })
+    addToast({ type: 'success', title: 'Orçamento fechado' })
   }
 
   const approveContract = () => {
@@ -1260,7 +1348,7 @@ export default function CaseDetailPage() {
 
   const handleDeleteCase = () => {
     if (!canDeleteCase) return
-    const confirmed = window.confirm('Confirma excluir este pedido? Esta acao remove itens LAB vinculados e registra no historico do paciente.')
+    const confirmed = window.confirm('Confirma excluir este pedido? Esta ação remove itens LAB vinculados e registra no historico do paciente.')
     if (!confirmed) return
     if (isSupabaseMode) {
       void (async () => {
@@ -1361,7 +1449,7 @@ export default function CaseDetailPage() {
       <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Ordem de Servico Inicial</title>
+          <title>Ordem de Serviço Inicial</title>
           <style>
             @page { size: A4; margin: 14mm; }
             body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
@@ -1398,8 +1486,8 @@ export default function CaseDetailPage() {
           <div class="meta">
             <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(currentCase.patientName)}</div></div>
             <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">${escapeHtml(patientBirthDateLabel)}</div></div>
-            <div class="meta-box"><div class="meta-label">Clinica</div><div class="meta-value">${escapeHtml(clinicName ?? '-')}</div></div>
-            <div class="meta-box"><div class="meta-label">Dentista responsavel</div><div class="meta-value">${escapeHtml(dentistLabel)}</div></div>
+            <div class="meta-box"><div class="meta-label">Clínica</div><div class="meta-value">${escapeHtml(clinicName ?? '-')}</div></div>
+            <div class="meta-box"><div class="meta-label">Dentista responsável</div><div class="meta-value">${escapeHtml(dentistLabel)}</div></div>
             <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(requesterLabel)}</div></div>
             <div class="meta-box"><div class="meta-label">Produto</div><div class="meta-value">${escapeHtml(productLabel)}</div></div>
             <div class="meta-box"><div class="meta-label">Planejamento</div><div class="meta-value">${escapeHtml(planLabel)}</div></div>
@@ -1420,7 +1508,7 @@ export default function CaseDetailPage() {
             </div>
           </div>
 
-          <div class="emit">Emitido por ${escapeHtml(emittedBy)} Atraves da plataforma Orthoscan Laboratorio Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(emitOrigin)}</div>
+          <div class="emit">Emitido por ${escapeHtml(emittedBy)} Através da plataforma Orthoscan Laboratório Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(emitOrigin)}</div>
         </body>
       </html>
     `
@@ -1429,7 +1517,7 @@ export default function CaseDetailPage() {
     const printUrl = URL.createObjectURL(blob)
     const popup = window.open(printUrl, '_blank')
     if (!popup) {
-      addToast({ type: 'error', title: 'Imprimir OS', message: 'Nao foi possivel abrir a janela de impressao.' })
+      addToast({ type: 'error', title: 'Imprimir OS', message: 'Não foi possível abrir a janela de impressão.' })
       return
     }
 
@@ -1479,36 +1567,36 @@ export default function CaseDetailPage() {
     const upperCount = hasUpperArch ? Number(installationDeliveredUpper) : 0
     const lowerCount = hasLowerArch ? Number(installationDeliveredLower) : 0
     if (!Number.isFinite(upperCount) || !Number.isFinite(lowerCount) || upperCount < 0 || lowerCount < 0) {
-      addToast({ type: 'error', title: 'Instalacao', message: 'Informe quantidades validas por arcada.' })
+      addToast({ type: 'error', title: 'Instalação', message: 'Informe quantidades validas por arcada.' })
       return
     }
     if (hasUpperArch && Math.trunc(upperCount) > readyToDeliverPatient.upper) {
       addToast({
         type: 'error',
-        title: 'Instalacao',
-        message: `Superior disponivel para paciente: ${readyToDeliverPatient.upper} (entregue pelo LAB ao profissional e ainda nao consumido).`,
+        title: 'Instalação',
+        message: `Superior disponivel para paciente: ${readyToDeliverPatient.upper} (entregue pelo LAB ao profissional e ainda não consumido).`,
       })
       return
     }
     if (hasLowerArch && Math.trunc(lowerCount) > readyToDeliverPatient.lower) {
       addToast({
         type: 'error',
-        title: 'Instalacao',
-        message: `Inferior disponivel para paciente: ${readyToDeliverPatient.lower} (entregue pelo LAB ao profissional e ainda nao consumido).`,
+        title: 'Instalação',
+        message: `Inferior disponivel para paciente: ${readyToDeliverPatient.lower} (entregue pelo LAB ao profissional e ainda não consumido).`,
       })
       return
     }
     if (!currentCase.installation && Math.trunc(upperCount + lowerCount) <= 0) {
       addToast({
         type: 'error',
-        title: 'Instalacao',
-        message: 'Na primeira instalacao, informe ao menos 1 alinhador entregue ao paciente.',
+        title: 'Instalação',
+        message: 'Na primeira instalação, informe ao menos 1 alinhador entregue ao paciente.',
       })
       return
     }
     if (isSupabaseMode) {
       if (!hasProductionOrder) {
-        addToast({ type: 'error', title: 'Instalacao', message: 'Ordem de servico do LAB ainda nao foi gerada para este pedido.' })
+        addToast({ type: 'error', title: 'Instalação', message: 'Ordem de serviço do LAB ainda não foi gerada para este pedido.' })
         return
       }
       const currentInstallation = currentCase.installation
@@ -1574,11 +1662,11 @@ export default function CaseDetailPage() {
           { status: nextStatus, phase: nextPhase },
         )
         if (!result.ok) {
-          addToast({ type: 'error', title: 'Instalacao', message: result.error })
+          addToast({ type: 'error', title: 'Instalação', message: result.error })
           return
         }
         setSupabaseRefreshKey((current) => current + 1)
-        addToast({ type: 'success', title: 'Instalacao registrada' })
+        addToast({ type: 'success', title: 'Instalação registrada' })
       })()
       return
     }
@@ -1589,7 +1677,7 @@ export default function CaseDetailPage() {
       deliveredLower: Math.trunc(lowerCount),
     })
     if (!result.ok) {
-      addToast({ type: 'error', title: 'Instalacao', message: result.error })
+      addToast({ type: 'error', title: 'Instalação', message: result.error })
       return
     }
     const nextDeliveredUpper = (currentCase.installation?.deliveredUpper ?? 0) + Math.trunc(upperCount)
@@ -1618,17 +1706,17 @@ export default function CaseDetailPage() {
       status: nextStatus,
       phase: 'em_producao',
     })
-    addToast({ type: 'success', title: 'Instalacao registrada' })
+    addToast({ type: 'success', title: 'Instalação registrada' })
   }
 
-  const saveActualChangeDate = (trayNumber: number, changedAt: string) => {
+  const saveActualChangeDate = (arch: 'superior' | 'inferior', trayNumber: number, changedAt: string) => {
     if (!canWrite) return
     if (!currentCase.installation) return
     const nextActualDates = (currentCase.installation.actualChangeDates ?? []).filter(
-      (entry) => entry.trayNumber !== trayNumber,
+      (entry) => !(entry.trayNumber === trayNumber && (!entry.arch || entry.arch === arch || entry.arch === 'ambos')),
     )
     if (changedAt) {
-      nextActualDates.push({ trayNumber, changedAt })
+      nextActualDates.push({ trayNumber, changedAt, arch })
     }
     if (isSupabaseMode) {
       void (async () => {
@@ -1654,19 +1742,19 @@ export default function CaseDetailPage() {
       },
     })
     if (!updated) {
-      addToast({ type: 'error', title: 'Troca real', message: 'Nao foi possivel atualizar a data real de troca.' })
+      addToast({ type: 'error', title: 'Troca real', message: 'Não foi possível atualizar a data real de troca.' })
       return
     }
     addToast({ type: 'success', title: 'Troca real atualizada' })
   }
 
-  const saveManualChangeCompletion = (trayNumber: number, completed: boolean) => {
+  const saveManualChangeCompletion = (arch: 'superior' | 'inferior', trayNumber: number, completed: boolean) => {
     if (!canWrite) return
     if (!currentCase.installation) return
     const nextCompletion = (currentCase.installation.manualChangeCompletion ?? []).filter(
-      (entry) => entry.trayNumber !== trayNumber,
+      (entry) => !(entry.trayNumber === trayNumber && (!entry.arch || entry.arch === arch || entry.arch === 'ambos')),
     )
-    nextCompletion.push({ trayNumber, completed })
+    nextCompletion.push({ trayNumber, completed, arch })
     if (isSupabaseMode) {
       void (async () => {
         const result = await patchCaseDataSupabase(currentCase.id, {
@@ -1690,7 +1778,7 @@ export default function CaseDetailPage() {
       },
     })
     if (!updated) {
-      addToast({ type: 'error', title: 'Troca concluida', message: 'Nao foi possivel atualizar status manual.' })
+      addToast({ type: 'error', title: 'Troca concluida', message: 'Não foi possível atualizar status manual.' })
     }
   }
 
@@ -1781,7 +1869,7 @@ export default function CaseDetailPage() {
   )
 
   return (
-    <AppShell breadcrumb={['Inicio', 'Alinhadores', patientDisplayName]}>
+    <AppShell breadcrumb={['Início', 'Alinhadores', patientDisplayName]}>
       <section className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Paciente: {patientDisplayName}</h1>
@@ -1802,7 +1890,7 @@ export default function CaseDetailPage() {
                 : hasLowerArch
                   ? `Inferior ${totalLower}`
                   : '-'}{' '}
-            | Troca {currentCase.changeEveryDays} dias | Attachments: {currentCase.attachmentBondingTray ? 'Sim' : 'Nao'}
+            | Troca {currentCase.changeEveryDays} dias | Attachments: {currentCase.attachmentBondingTray ? 'Sim' : 'Não'}
           </p>
           <div className="mt-3 flex items-center gap-3">
             <Badge tone={caseStatusToneMap[currentCase.status]}>{caseStatusLabelMap[currentCase.status]}</Badge>
@@ -1884,7 +1972,7 @@ export default function CaseDetailPage() {
               </div>
 
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-sm font-semibold text-slate-800">Etapa 2 - Orcamento</p>
+                <p className="text-sm font-semibold text-slate-800">Etapa 2 - Orçamento</p>
                 <div className="mt-2 grid gap-2">
                   <Input
                     type="text"
@@ -1895,13 +1983,13 @@ export default function CaseDetailPage() {
                   />
                   <textarea
                     rows={2}
-                    placeholder="ObservacÃµes do orcamento"
+                    placeholder="Observacões do orçamento"
                     value={budgetNotes}
                     onChange={(event) => setBudgetNotes(event.target.value)}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                   />
-                  <Button size="sm" onClick={closeBudget} disabled={currentCase.phase !== 'orcamento' || !canWrite}>
-                    Fechar orcamento
+                  <Button size="sm" onClick={closeBudget} disabled={currentCase.phase !== 'orçamento' || !canWrite}>
+                    Fechar orçamento
                   </Button>
                 </div>
               </div>
@@ -1914,7 +2002,7 @@ export default function CaseDetailPage() {
                 </p>
                 <textarea
                   rows={2}
-                  placeholder="ObservacÃµes do contrato"
+                  placeholder="Observacões do contrato"
                   value={contractNotes}
                   onChange={(event) => setContractNotes(event.target.value)}
                   className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -1925,7 +2013,7 @@ export default function CaseDetailPage() {
               </div>
 
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-sm font-semibold text-slate-800">Etapa 4 - Ordem de Servico (LAB)</p>
+                <p className="text-sm font-semibold text-slate-800">Etapa 4 - Ordem de Serviço (LAB)</p>
                 <Button
                   className="mt-2"
                   size="sm"
@@ -1942,7 +2030,7 @@ export default function CaseDetailPage() {
 
       <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-semibold text-slate-900">Pedido e reposicao paciente</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Pedido e reposição paciente</h2>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
               Total contratado: <span className="font-semibold">{replacementSummary.totalContratado}</span>
@@ -1981,7 +2069,7 @@ export default function CaseDetailPage() {
             )}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
-                {currentCase.installation ? 'Data da entrega ao paciente' : 'Data da instalacao inicial'}
+                {currentCase.installation ? 'Data da entrega ao paciente' : 'Data da instalação inicial'}
               </label>
               <Input
                 type="date"
@@ -2037,9 +2125,9 @@ export default function CaseDetailPage() {
                       : ''
                 }
               >
-                {currentCase.installation ? 'Registrar reposicao paciente' : 'Registrar instalacao inicial'}
+                {currentCase.installation ? 'Registrar reposição paciente' : 'Registrar instalação inicial'}
               </Button>
-              {!hasProductionOrder ? <p className="mt-2 text-xs text-amber-700">Ordem de servico do LAB ainda nao gerada.</p> : null}
+              {!hasProductionOrder ? <p className="mt-2 text-xs text-amber-700">Ordem de serviço do LAB ainda não gerada.</p> : null}
               {!hasDentistDelivery ? <p className="mt-1 text-xs text-amber-700">Registre antes a entrega ao dentista.</p> : null}
             </div>
           </div>
@@ -2050,7 +2138,7 @@ export default function CaseDetailPage() {
       {isAlignerCase ? (
       <section className="mt-6">
         <Card>
-          <h2 className="text-lg font-semibold text-slate-900">Reposicao prevista</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Reposição prevista</h2>
           <div className="mt-3 space-y-2 text-sm text-slate-700">
             <p>
               Entregue ao paciente:{' '}
@@ -2063,11 +2151,11 @@ export default function CaseDetailPage() {
             <p>Total geral planejado: {Math.max(progressUpper.total, progressLower.total)}</p>
             <p>Proxima placa necessaria: {nextTrayRequired > 0 && nextTrayRequired <= maxPlannedTrays ? `#${nextTrayRequired}` : 'Nenhuma (pedido completo)'}</p>
             <p>
-              Proxima reposicao prevista para:{' '}
+              Proxima reposição prevista para:{' '}
               {nextReplacementDueDate ? new Date(`${nextReplacementDueDate}T00:00:00`).toLocaleDateString('pt-BR') : '-'}
             </p>
             {!currentCase.installation?.installedAt ? (
-              <p className="text-sm text-slate-500">Registre a instalacao para calcular reposicÃµes.</p>
+              <p className="text-sm text-slate-500">Registre a instalação para calcular reposicões.</p>
             ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -2096,7 +2184,7 @@ export default function CaseDetailPage() {
 
       <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-semibold text-slate-900">InformacÃµes clinicas</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Informacões clinicas</h2>
           <div className="mt-3 space-y-2 text-sm text-slate-700">
             <p>
               <span className="font-medium">Arcada:</span> {currentCase.arch ? archLabelMap[currentCase.arch] : '-'}
@@ -2108,12 +2196,12 @@ export default function CaseDetailPage() {
               <span className="font-medium">Orientacao do dentista:</span> {currentCase.dentistGuidance || '-'}
             </p>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Profissional / Clinica</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Profissional / Clínica</p>
               <p className="mt-1">
-                <span className="font-medium">Clinica:</span> {clinicName || '-'}
+                <span className="font-medium">Clínica:</span> {clinicName || '-'}
               </p>
               <p>
-                <span className="font-medium">Dentista responsavel:</span>{' '}
+                <span className="font-medium">Dentista responsável:</span>{' '}
                 {dentist ? `${dentistPrefix} ${dentist.name}` : '-'}
               </p>
               <p>
@@ -2151,16 +2239,16 @@ export default function CaseDetailPage() {
                       : `Inferior: ${totalLower}`}
                 </p>
                 <p>
-                  <span className="font-medium">Placa de attachments:</span> {currentCase.attachmentBondingTray ? 'Sim' : 'Nao'}
+                  <span className="font-medium">Placa de attachments:</span> {currentCase.attachmentBondingTray ? 'Sim' : 'Não'}
                 </p>
               </>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                Produto sem fluxo de placas de alinhadores. Fluxo focado em registro de instalacao.
+                Produto sem fluxo de placas de alinhadores. Fluxo focado em registro de instalação.
               </p>
             )}
             <p>
-              <span className="font-medium">Fonte:</span> {currentCase.sourceScanId ? `Scan ${currentCase.sourceScanId}` : 'Nao vinculado'}
+              <span className="font-medium">Fonte:</span> {currentCase.sourceScanId ? `Scan ${currentCase.sourceScanId}` : 'Não vinculado'}
             </p>
           </div>
         </Card>
@@ -2226,72 +2314,132 @@ export default function CaseDetailPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Placa</th>
-                  <th className="px-3 py-2 font-semibold">Troca prevista</th>
-                  <th className="px-3 py-2 font-semibold">Data real de troca</th>
-                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Superior</th> : null}
-                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Inferior</th> : null}
-                  <th className="px-3 py-2 font-semibold">Troca concluida</th>
-                  <th className="px-3 py-2 font-semibold">Data de entrega</th>
+                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Placa superior</th> : null}
+                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Data entrega (sup)</th> : null}
+                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Data troca (sup)</th> : null}
+                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Status entrega (sup)</th> : null}
+                  {hasUpperArch ? <th className="px-3 py-2 font-semibold">Concluído (sup)</th> : null}
+                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Placa inferior</th> : null}
+                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Data entrega (inf)</th> : null}
+                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Data troca (inf)</th> : null}
+                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Status entrega (inf)</th> : null}
+                  {hasLowerArch ? <th className="px-3 py-2 font-semibold">Concluído (inf)</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {changeSchedule.length === 0 ? (
                   <tr>
-                    <td colSpan={hasUpperArch && hasLowerArch ? 7 : 6} className="px-3 py-4 text-slate-500">
-                      Registre a instalacao para gerar agenda de trocas.
+                    <td colSpan={(hasUpperArch ? 5 : 0) + (hasLowerArch ? 5 : 0)} className="px-3 py-4 text-slate-500">
+                      Registre a instalação para gerar agenda de trocas.
                     </td>
                   </tr>
                 ) : (
                   changeSchedule.map((row) => {
-                    const dueReached = row.changeDate <= todayIso
-                    const manualCompleted = manualChangeCompletionByTray.get(row.trayNumber)
-                    const trocaConcluida = typeof manualCompleted === 'boolean' ? manualCompleted : dueReached
+                    const dueReachedUpper = (row.upperChangeDate ?? '') <= todayIso
+                    const dueReachedLower = (row.lowerChangeDate ?? '') <= todayIso
+                    const manualCompletedUpper = manualChangeCompletionUpperByTray.get(row.trayNumber)
+                    const manualCompletedLower = manualChangeCompletionLowerByTray.get(row.trayNumber)
+                    const trocaConcluidaUpper = typeof manualCompletedUpper === 'boolean' ? manualCompletedUpper : dueReachedUpper
+                    const trocaConcluidaLower = typeof manualCompletedLower === 'boolean' ? manualCompletedLower : dueReachedLower
+                    const deliveredUpperAt = dentistDeliveryDateByArchTray.upper.get(row.trayNumber)
+                    const deliveredLowerAt = dentistDeliveryDateByArchTray.lower.get(row.trayNumber)
 
                     return (
                       <tr key={row.trayNumber} className="border-t border-slate-100">
-                        <td className="px-3 py-2 font-semibold text-slate-800">#{row.trayNumber}</td>
-                        <td className="px-3 py-2 text-slate-700">{new Date(`${row.changeDate}T00:00:00`).toLocaleDateString('pt-BR')}</td>
-                        <td className="px-3 py-2 text-slate-700">
-                          <Input
-                            type="date"
-                            value={row.actualChangeDate ?? row.changeDate}
-                            onChange={(event) => saveActualChangeDate(row.trayNumber, event.target.value)}
-                            disabled={!canWrite}
-                          />
-                        </td>
+                        {hasUpperArch ? <td className="px-3 py-2 font-semibold text-slate-800">#{row.trayNumber <= totalUpper ? row.trayNumber : '-'}</td> : null}
+                        {hasUpperArch ? <td className="px-3 py-2 text-slate-700">{deliveredUpperAt ? new Date(`${deliveredUpperAt}T00:00:00`).toLocaleDateString('pt-BR') : '-'}</td> : null}
+                        {hasUpperArch ? (
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.trayNumber <= totalUpper ? (
+                              <Input
+                                type="date"
+                                value={row.upperChangeDate ?? row.upperPlannedDate ?? ''}
+                                onChange={(event) => saveActualChangeDate('superior', row.trayNumber, event.target.value)}
+                                disabled={!canWrite}
+                              />
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        ) : null}
                         {hasUpperArch ? <td className={`px-3 py-2 font-medium ${scheduleStateClass(row.superiorState)}`}>{scheduleStateLabel(row.superiorState)}</td> : null}
+                        {hasUpperArch ? (
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.trayNumber <= totalUpper ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                    trocaConcluidaUpper ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                  onClick={() => saveManualChangeCompletion('superior', row.trayNumber, true)}
+                                  disabled={!canWrite}
+                                >
+                                  Sim
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                    !trocaConcluidaUpper ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                  onClick={() => saveManualChangeCompletion('superior', row.trayNumber, false)}
+                                  disabled={!canWrite}
+                                >
+                                  Não
+                                </button>
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        ) : null}
+                        {hasLowerArch ? <td className="px-3 py-2 font-semibold text-slate-800">#{row.trayNumber <= totalLower ? row.trayNumber : '-'}</td> : null}
+                        {hasLowerArch ? <td className="px-3 py-2 text-slate-700">{deliveredLowerAt ? new Date(`${deliveredLowerAt}T00:00:00`).toLocaleDateString('pt-BR') : '-'}</td> : null}
+                        {hasLowerArch ? (
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.trayNumber <= totalLower ? (
+                              <Input
+                                type="date"
+                                value={row.lowerChangeDate ?? row.lowerPlannedDate ?? ''}
+                                onChange={(event) => saveActualChangeDate('inferior', row.trayNumber, event.target.value)}
+                                disabled={!canWrite}
+                              />
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        ) : null}
                         {hasLowerArch ? <td className={`px-3 py-2 font-medium ${scheduleStateClass(row.inferiorState)}`}>{scheduleStateLabel(row.inferiorState)}</td> : null}
-                        <td className="px-3 py-2 text-slate-700">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                                trocaConcluida ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                              }`}
-                              onClick={() => saveManualChangeCompletion(row.trayNumber, true)}
-                              disabled={!canWrite}
-                            >
-                              Sim
-                            </button>
-                            <button
-                              type="button"
-                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                                !trocaConcluida ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'
-                              }`}
-                              onClick={() => saveManualChangeCompletion(row.trayNumber, false)}
-                              disabled={!canWrite}
-                            >
-                              Nao
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-slate-700">
-                          {(() => {
-                            const deliveredAt = dentistDeliveryDateByTray.get(row.trayNumber)
-                            return deliveredAt ? new Date(`${deliveredAt}T00:00:00`).toLocaleDateString('pt-BR') : '-'
-                          })()}
-                        </td>
+                        {hasLowerArch ? (
+                          <td className="px-3 py-2 text-slate-700">
+                            {row.trayNumber <= totalLower ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                    trocaConcluidaLower ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                  onClick={() => saveManualChangeCompletion('inferior', row.trayNumber, true)}
+                                  disabled={!canWrite}
+                                >
+                                  Sim
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                    !trocaConcluidaLower ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                  onClick={() => saveManualChangeCompletion('inferior', row.trayNumber, false)}
+                                  disabled={!canWrite}
+                                >
+                                  Não
+                                </button>
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     )
                   })
@@ -2372,7 +2520,7 @@ export default function CaseDetailPage() {
           <Card>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-slate-600">
-                Exclusao administrativa: remove pedido e registros vinculados do fluxo.
+                Exclusão administrativa: remove pedido e registros vinculados do fluxo.
               </p>
               <Button variant="secondary" className="text-red-600 hover:text-red-700" onClick={handleDeleteCase}>
                 Excluir pedido
@@ -2515,6 +2663,7 @@ export default function CaseDetailPage() {
     </AppShell>
   )
 }
+
 
 
 

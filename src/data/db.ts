@@ -1,4 +1,4 @@
-import type { Case, CaseAttachment, CasePhase, CaseStatus, CaseTray, TrayState } from '../types/Case'
+﻿import type { Case, CaseAttachment, CasePhase, CaseStatus, CaseTray, TrayState } from '../types/Case'
 import type { LabItem } from '../types/Lab'
 import type { Patient } from '../types/Patient'
 import type { PatientDocument } from '../types/PatientDocument'
@@ -56,6 +56,8 @@ type LegacyCase = {
   shortId?: string
   productType?: ProductType
   productId?: ProductType
+  requestedProductId?: string
+  requestedProductLabel?: string
   paciente?: { nome?: string }
   data_scan?: string
   planejamento?: { quantidade_total_placas?: number; troca_a_cada_dias?: number }
@@ -414,7 +416,7 @@ function seedCases(): Case[] {
       totalTraysLower: 18,
       changeEveryDays: 10,
       status: 'planejamento',
-      phase: 'orcamento',
+      phase: 'orçamento',
       budget: { value: 9800, notes: 'Aguardando aprovação comercial.', createdAt: now },
       contract: { status: 'pendente' },
       trays: buildPendingTrays(daysFromNow(-20), 18, 10),
@@ -741,8 +743,8 @@ function seedClinics(): Clinic[] {
     },
     {
       id: 'clinic_parceira',
-      tradeName: 'Clinica Parceira Alpha',
-      legalName: 'Clinica Parceira Alpha LTDA',
+      tradeName: 'Clínica Parceira Alpha',
+      legalName: 'Clínica Parceira Alpha LTDA',
       cnpj: '22.222.222/0001-22',
       phone: '(21) 3000-2000',
       whatsapp: '(21) 98888-2000',
@@ -794,7 +796,7 @@ function seedUsers(): User[] {
     },
     {
       id: 'user_clinic_client',
-      name: 'Clinica Cliente',
+      name: 'Clínica Cliente',
       email: 'clinic.client@orthoscan.local',
       password: defaultPassword,
       role: 'clinic_client',
@@ -1105,6 +1107,8 @@ function migrateCase(oldCase: LegacyCase): Case {
     shortId: oldCase.shortId,
     productType: normalizeProductType(oldCase.productType),
     productId: normalizeProductType(oldCase.productId ?? oldCase.productType),
+    requestedProductId: oldCase.requestedProductId,
+    requestedProductLabel: oldCase.requestedProductLabel,
     treatmentCode: oldCase.treatmentCode,
     treatmentOrigin: oldCase.treatmentOrigin,
     patientName,
@@ -1129,7 +1133,7 @@ function migrateCase(oldCase: LegacyCase): Case {
               ? oldCase.contract.approvedAt ?? nowIso()
               : oldCase.contract.approvedAt,
         }
-      : phase === 'planejamento' || phase === 'orcamento' || phase === 'contrato_pendente'
+      : phase === 'planejamento' || phase === 'orçamento' || phase === 'contrato_pendente'
         ? { status: 'pendente' }
         : { status: 'aprovado', approvedAt: nowIso() },
     deliveryLots: Array.isArray(oldCase.deliveryLots) ? oldCase.deliveryLots : [],
@@ -1239,6 +1243,8 @@ function migrateLabItem(raw: LegacyLabItem): LabItem {
     id: raw.id,
     productType: normalizeProductType(raw.productType),
     productId: normalizeProductType(raw.productId ?? raw.productType),
+    requestedProductId: raw.requestedProductId,
+    requestedProductLabel: raw.requestedProductLabel,
     requestCode: raw.requestCode,
     requestKind: raw.requestKind,
     expectedReplacementDate: raw.expectedReplacementDate ?? raw.dueDate ?? toIsoDate(new Date()),
@@ -1288,7 +1294,7 @@ function migrateClinic(raw: LegacyClinic): Clinic {
     id: raw.id,
     shortId: raw.shortId,
     legalName: raw.legalName,
-    tradeName: raw.tradeName?.trim() || 'Clinica',
+    tradeName: raw.tradeName?.trim() || 'Clínica',
     cnpj: raw.cnpj,
     phone: raw.phone,
     whatsapp: raw.whatsapp,
@@ -1307,7 +1313,7 @@ function migrateUser(raw: LegacyUser): User {
   return {
     id: raw.id,
     shortId: raw.shortId,
-    name: raw.name?.trim() || 'Usuario',
+    name: raw.name?.trim() || 'Usuário',
     email: raw.email?.trim() || 'user@orthoscan.local',
     password: raw.password,
     role: raw.role ?? 'receptionist',
@@ -1598,3 +1604,4 @@ export function ensureMasterUserInDb() {
   saveDb(nextDb)
   return nextDb
 }
+

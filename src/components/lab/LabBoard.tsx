@@ -1,4 +1,4 @@
-import type { LabItem, LabStatus } from '../../types/Lab'
+﻿import type { LabItem, LabStatus } from '../../types/Lab'
 import { moveLabItem, nextStatus, previousStatus } from '../../data/labRepo'
 import { useToast } from '../../app/ToastProvider'
 import LabColumn from './LabColumn'
@@ -7,6 +7,7 @@ type LabBoardProps = {
   items: LabItem[]
   guideTone: (item: LabItem) => 'green' | 'yellow' | 'red'
   caseLabel: (item: LabItem) => string | undefined
+  productLabel: (item: LabItem) => string
   onItemsChange: () => void
   onDetails: (item: LabItem) => void
   onPrintLabel?: (item: LabItem) => void
@@ -33,6 +34,7 @@ export default function LabBoard({
   items,
   guideTone,
   caseLabel,
+  productLabel,
   onItemsChange,
   onDetails,
   onPrintLabel,
@@ -67,7 +69,7 @@ export default function LabBoard({
     }
     if (!result.sync.ok) {
       if (onSyncMessage) onSyncMessage(result.sync.message)
-      addToast({ type: 'error', title: 'Nao foi possivel sincronizar', message: result.sync.message })
+      addToast({ type: 'error', title: 'Não foi possível sincronizar', message: result.sync.message })
     }
     onItemsChange()
   }
@@ -97,7 +99,7 @@ export default function LabBoard({
     }
     if (!result.sync.ok) {
       if (onSyncMessage) onSyncMessage(result.sync.message)
-      addToast({ type: 'error', title: 'Nao foi possivel sincronizar', message: result.sync.message })
+      addToast({ type: 'error', title: 'Não foi possível sincronizar', message: result.sync.message })
     }
     onItemsChange()
   }
@@ -117,6 +119,7 @@ export default function LabBoard({
             isOverdue={isOverdue}
             guideTone={guideTone}
             caseLabel={caseLabel}
+            productLabel={productLabel}
             onPrevious={handlePrevious}
             onNext={handleNext}
             onDetails={onDetails}
@@ -129,3 +132,4 @@ export default function LabBoard({
     </div>
   )
 }
+

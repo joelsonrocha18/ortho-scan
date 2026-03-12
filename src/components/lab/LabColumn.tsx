@@ -8,6 +8,7 @@ type LabColumnProps = {
   isOverdue: (item: LabItem) => boolean
   guideTone: (item: LabItem) => 'green' | 'yellow' | 'red'
   caseLabel: (item: LabItem) => string | undefined
+  productLabel: (item: LabItem) => string
   onPrevious: (id: string) => void
   onNext: (id: string) => void
   onDetails: (item: LabItem) => void
@@ -30,6 +31,7 @@ export default function LabColumn({
   isOverdue,
   guideTone,
   caseLabel,
+  productLabel,
   onPrevious,
   onNext,
   onDetails,
@@ -52,6 +54,7 @@ export default function LabColumn({
             isOverdue={isOverdue(item)}
             guideTone={guideTone(item)}
             caseLabel={caseLabel(item)}
+            productLabel={productLabel(item)}
             onPrevious={onPrevious}
             onNext={onNext}
             onDetails={onDetails}

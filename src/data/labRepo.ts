@@ -1,4 +1,4 @@
-import { loadDb, saveDb } from './db'
+﻿import { loadDb, saveDb } from './db'
 import { pushAudit } from './audit'
 import { debitReplacementBankForLabStart } from './replacementBankRepo'
 import { syncLabItemToCaseTray } from './sync'
@@ -117,6 +117,8 @@ function ensureProgrammedReplenishments(db: ReturnType<typeof loadDb>) {
             caseId: caseItem.id,
             productType: normalizeProductType(caseItem.productType),
             productId: normalizeProductType(caseItem.productId ?? caseItem.productType),
+            requestedProductId: caseItem.requestedProductId,
+            requestedProductLabel: caseItem.requestedProductLabel,
             requestCode: `${code}/${revision}`,
             requestKind: 'reposicao_programada',
             expectedReplacementDate: expected,
@@ -130,7 +132,7 @@ function ensureProgrammedReplenishments(db: ReturnType<typeof loadDb>) {
             dueDate: expected,
             status: 'aguardando_iniciar',
             priority: 'Medio',
-            notes: `Solicitacao automatica de reposicao programada (${key}).`,
+            notes: `Solicitacao automatica de reposição programada (${key}).`,
             createdAt: nowIso(),
             updatedAt: nowIso(),
           },
@@ -260,7 +262,7 @@ function ensureInitialReplenishmentSeed(
     plannedDate: now.slice(0, 10),
     dueDate,
     status: 'aguardando_iniciar',
-    notes: `Reposicao inicial gerada no inicio da confeccao da placa #${source.trayNumber}.`,
+    notes: `Reposição inicial gerada no início da confeccao da placa #${source.trayNumber}.`,
     createdAt: now,
     updatedAt: now,
   }
@@ -309,10 +311,10 @@ export function addLabItem(item: Omit<LabItem, 'id' | 'createdAt' | 'updatedAt'>
   if (item.caseId) {
     const caseItem = db.cases.find((current) => current.id === item.caseId)
     if (!caseItem) {
-      return { ok: false as const, error: 'Caso vinculado nao encontrado.' }
+      return { ok: false as const, error: 'Caso vinculado não encontrado.' }
     }
     if (caseItem.contract?.status !== 'aprovado') {
-      return { ok: false as const, error: 'Contrato nao aprovado. Nao e possivel gerar OS para o laboratorio.' }
+      return { ok: false as const, error: 'Contrato não aprovado. Não e possível gerar OS para o laboratorio.' }
     }
     linkedCase = caseItem
   }
@@ -348,6 +350,8 @@ export function addLabItem(item: Omit<LabItem, 'id' | 'createdAt' | 'updatedAt'>
     ...item,
     productType: resolvedProductType,
     productId: normalizeProductType(item.productId ?? item.productType ?? linkedCase?.productId ?? linkedCase?.productType),
+    requestedProductId: item.requestedProductId ?? linkedCase?.requestedProductId,
+    requestedProductLabel: item.requestedProductLabel ?? linkedCase?.requestedProductLabel,
     arch: item.arch ?? 'ambos',
     requestCode: resolvedRequestCode,
     requestKind: item.requestKind ?? 'producao',
@@ -389,7 +393,7 @@ export function addLabItem(item: Omit<LabItem, 'id' | 'createdAt' | 'updatedAt'>
       entity: 'lab',
       entityId: seededReplenishment.id,
       action: 'lab.replenishment_seeded',
-      message: `Reposicao inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
+      message: `Reposição inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
     })
   }
   saveDb(db)
@@ -434,7 +438,7 @@ export function updateLabItem(id: string, patch: Partial<LabItem>) {
       ? (requiresAlignerPlan ? (planDefined ? 'em_producao' : 'aguardando_iniciar') : requestedStatus)
       : (requiresAlignerPlan && !planDefined && requestedStatus === 'em_producao' ? 'aguardando_iniciar' : requestedStatus)
     if (linkedCase && isDeliveredToDentist(linkedCase, patch.trayNumber ?? item.trayNumber) && nextStatus !== item.status) {
-      error = 'Nao e permitido regredir/editar status de placa ja entregue ao dentista.'
+      error = 'Não e permitido regredir/editar status de placa ja entregue ao dentista.'
       return item
     }
     if (!canMoveToStatus(item.status, nextStatus)) {
@@ -503,11 +507,11 @@ export function updateLabItem(id: string, patch: Partial<LabItem>) {
       entity: 'lab',
       entityId: seededReplenishment.id,
       action: 'lab.replenishment_seeded',
-      message: `Reposicao inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
+      message: `Reposição inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
     })
   }
   saveDb(db)
-  return { item: updatedItem, sync, error: changed ? undefined : error ?? 'Nao foi possivel atualizar o item.' }
+  return { item: updatedItem, sync, error: changed ? undefined : error ?? 'Não foi possível atualizar o item.' }
 }
 
 export function moveLabItem(id: string, status: LabStatus) {
@@ -521,7 +525,7 @@ export function moveLabItem(id: string, status: LabStatus) {
     }
     const linkedCase = item.caseId ? db.cases.find((current) => current.id === item.caseId) : null
     if (linkedCase && isDeliveredToDentist(linkedCase, item.trayNumber) && status !== item.status) {
-      error = 'Nao e permitido regredir/editar status de placa ja entregue ao dentista.'
+      error = 'Não e permitido regredir/editar status de placa ja entregue ao dentista.'
       return item
     }
     if (!canMoveToStatus(item.status, status)) {
@@ -571,11 +575,11 @@ export function moveLabItem(id: string, status: LabStatus) {
       entity: 'lab',
       entityId: seededReplenishment.id,
       action: 'lab.replenishment_seeded',
-      message: `Reposicao inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
+      message: `Reposição inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
     })
   }
   saveDb(db)
-  return { item: movedItem, sync, error: changed ? undefined : error ?? 'Nao foi possivel mover o item.' }
+  return { item: movedItem, sync, error: changed ? undefined : error ?? 'Não foi possível mover o item.' }
 }
 
 export function deleteLabItem(id: string) {
@@ -639,10 +643,10 @@ export function generateLabOrder(caseId: string) {
   const db = loadDb()
   const caseItem = db.cases.find((item) => item.id === caseId)
   if (!caseItem) {
-    return { ok: false as const, error: 'Caso nao encontrado.' }
+    return { ok: false as const, error: 'Caso não encontrado.' }
   }
   if (caseItem.contract?.status !== 'aprovado') {
-    return { ok: false as const, error: 'Contrato nao aprovado. Nao e possivel gerar OS para o laboratorio.' }
+    return { ok: false as const, error: 'Contrato não aprovado. Não e possível gerar OS para o laboratorio.' }
   }
 
   const existing = db.labItems.find((item) => item.caseId === caseId && (item.requestKind ?? 'producao') === 'producao')
@@ -686,17 +690,17 @@ export function createAdvanceLabOrder(
   const db = loadDb()
   const source = db.labItems.find((item) => item.id === sourceLabItemId)
   if (!source) {
-    return { ok: false as const, error: 'OS de origem nao encontrada.' }
+    return { ok: false as const, error: 'OS de origem não encontrada.' }
   }
   if (!source.caseId) {
     return { ok: false as const, error: 'OS sem caso vinculado.' }
   }
   const linkedCase = db.cases.find((item) => item.id === source.caseId)
   if (!linkedCase) {
-    return { ok: false as const, error: 'Caso vinculado nao encontrado.' }
+    return { ok: false as const, error: 'Caso vinculado não encontrado.' }
   }
   if (linkedCase.contract?.status !== 'aprovado') {
-    return { ok: false as const, error: 'Contrato nao aprovado para gerar OS antecipada.' }
+    return { ok: false as const, error: 'Contrato não aprovado para gerar OS antecipada.' }
   }
   const plannedUpperQty = Math.max(0, Math.trunc(payload.plannedUpperQty))
   const plannedLowerQty = Math.max(0, Math.trunc(payload.plannedLowerQty))
@@ -709,7 +713,7 @@ export function createAdvanceLabOrder(
   }
   const nextTrayNumber = nextPendingTrayNumber(linkedCase)
   if (!nextTrayNumber) {
-    return { ok: false as const, error: 'Nao ha placas pendentes para gerar OS antecipada.' }
+    return { ok: false as const, error: 'Não ha placas pendentes para gerar OS antecipada.' }
   }
 
   const now = nowIso()
@@ -738,7 +742,7 @@ export function createAdvanceLabOrder(
     planningDefinedAt: now,
     plannedDate: today,
     dueDate,
-    // OS antecipada entra na esteira para inicio manual da producao.
+    // OS antecipada entra na esteira para início manual da producao.
     status: 'aguardando_iniciar',
     priority: 'Urgente',
     notes: `OS antecipada gerada manualmente a partir de ${source.requestCode ?? source.id}.`,
@@ -751,7 +755,7 @@ export function createAdvanceLabOrder(
     entity: 'lab',
     entityId: source.id,
     action: 'lab.advance_source_consumed',
-    message: `Base de reposicao ${source.requestCode ?? source.id} consumida para antecipacao.`,
+    message: `Base de reposição ${source.requestCode ?? source.id} consumida para antecipacao.`,
   })
   pushAudit(db, {
     entity: 'lab',
@@ -762,3 +766,4 @@ export function createAdvanceLabOrder(
   saveDb(db)
   return { ok: true as const, item: newItem, sync }
 }
+

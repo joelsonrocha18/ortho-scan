@@ -1,4 +1,4 @@
-import type { ProductType } from './Product'
+﻿import type { ProductType } from './Product'
 
 export type CaseStatus =
   | 'planejamento'
@@ -9,7 +9,7 @@ export type CaseStatus =
   | 'finalizado'
 export type CasePhase =
   | 'planejamento'
-  | 'orcamento'
+  | 'orçamento'
   | 'contrato_pendente'
   | 'contrato_aprovado'
   | 'em_producao'
@@ -69,10 +69,12 @@ export type CaseInstallation = {
   actualChangeDates?: Array<{
     trayNumber: number
     changedAt: string
+    arch?: 'superior' | 'inferior' | 'ambos'
   }>
   manualChangeCompletion?: Array<{
     trayNumber: number
     completed: boolean
+    arch?: 'superior' | 'inferior' | 'ambos'
   }>
 }
 
@@ -81,6 +83,8 @@ export type Case = {
   shortId?: string
   productType?: ProductType
   productId?: ProductType
+  requestedProductId?: string
+  requestedProductLabel?: string
   treatmentCode?: string
   treatmentOrigin?: 'interno' | 'externo'
   patientName: string
@@ -135,3 +139,4 @@ export type Case = {
   createdAt: string
   updatedAt: string
 }
+

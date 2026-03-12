@@ -10,6 +10,7 @@ type LabCardProps = {
   isOverdue: boolean
   guideTone: 'green' | 'yellow' | 'red'
   caseLabel?: string
+  productLabel?: string
   onPrevious: (id: string) => void
   onNext: (id: string) => void
   onDetails: (item: LabItem) => void
@@ -47,6 +48,7 @@ export default function LabCard({
   isOverdue,
   guideTone: _guideTone,
   caseLabel,
+  productLabel,
   onPrevious,
   onNext,
   onDetails,
@@ -69,7 +71,7 @@ export default function LabCard({
         <div>
           {displayCode ? <p className="text-xs font-medium text-slate-600">Guia: {displayCode}</p> : null}
           <p className="text-sm font-semibold text-slate-900">Paciente: {item.patientName}</p>
-          <p className="mt-1 text-xs text-slate-600">Produto: {PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</p>
+          <p className="mt-1 text-xs text-slate-600">Produto: {productLabel ?? PRODUCT_TYPE_LABEL[item.productType ?? 'alinhador_12m']}</p>
           <p className="mt-1 text-xs text-slate-700">Arcada: {archLabelMap[item.arch]}</p>
           {isAligner && !item.requestCode && !isRework ? (
             <p className="mt-1 text-xs text-slate-500">Placa #{item.trayNumber}</p>

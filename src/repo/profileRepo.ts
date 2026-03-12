@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient'
+﻿import { supabase } from '../lib/supabaseClient'
 import type { CaseTray } from '../types/Case'
 import type { LabItem } from '../types/Lab'
 import type { ProductType } from '../types/Product'
@@ -47,7 +47,7 @@ export async function listProfiles(options?: { includeDeleted?: boolean }) {
 }
 
 export async function setProfileActive(userId: string, isActive: boolean) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { error } = await supabase
     .from('profiles')
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
@@ -57,7 +57,7 @@ export async function setProfileActive(userId: string, isActive: boolean) {
 }
 
 export async function softDeleteProfile(userId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { error } = await supabase
     .from('profiles')
     .update({ deleted_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
@@ -67,7 +67,7 @@ export async function softDeleteProfile(userId: string) {
 }
 
 export async function restoreProfile(userId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { error } = await supabase
     .from('profiles')
     .update({ deleted_at: null, is_active: true, updated_at: new Date().toISOString() })
@@ -80,7 +80,7 @@ export async function updateProfile(
   userId: string,
   patch: Partial<Pick<ProfileRecord, 'full_name' | 'cpf' | 'phone' | 'role' | 'clinic_id' | 'dentist_id' | 'is_active'>>,
 ) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data, error } = await supabase
     .from('profiles')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -88,7 +88,7 @@ export async function updateProfile(
     .select('user_id')
   if (error) return { ok: false as const, error: error.message }
   if (!data || data.length === 0) {
-    return { ok: false as const, error: 'Perfil nao atualizado. Verifique permissoes para editar este usuario.' }
+    return { ok: false as const, error: 'Perfil não atualizado. Verifique permissoes para editar este usuário.' }
   }
   return { ok: true as const }
 }
@@ -198,7 +198,7 @@ async function inferTreatmentOriginSupabase(clinicId?: string | null): Promise<'
 }
 
 export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const now = new Date().toISOString()
   const attachments = normalizeScanAttachments(scan.attachments)
   let resolvedClinicId = scan.clinicId ?? null
@@ -265,7 +265,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
     .maybeSingle()
 
   if (error) return { ok: false as const, error: error.message }
-  if (!data?.id) return { ok: false as const, error: 'Scan nao criado. Verifique permissoes.' }
+  if (!data?.id) return { ok: false as const, error: 'Scan não criado. Verifique permissoes.' }
   return { ok: true as const, id: data.id as string }
 }
 
@@ -279,7 +279,7 @@ export async function createCaseFromScanSupabase(
     planningNote?: string
   },
 ) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   if (scan.status !== 'aprovado') return { ok: false as const, error: 'Apenas scans aprovados podem gerar caso.' }
   if (scan.linkedCaseId) return { ok: false as const, error: 'Este scan ja foi convertido em caso.' }
   const selectedProductType = asProductType(scan.purposeProductType ?? scan.purposeProductId)
@@ -299,6 +299,8 @@ export async function createCaseFromScanSupabase(
   const nextData = {
     productType: selectedProductType as ProductType,
     productId: selectedProductType as ProductType,
+    requestedProductId: scan.purposeProductId,
+    requestedProductLabel: scan.purposeLabel,
     treatmentCode,
     treatmentOrigin,
     patientName: scan.patientName,
@@ -348,7 +350,7 @@ export async function createCaseFromScanSupabase(
     .select('id')
     .maybeSingle()
   if (createError) return { ok: false as const, error: createError.message }
-  if (!created?.id) return { ok: false as const, error: 'Caso nao criado. Verifique permissoes.' }
+  if (!created?.id) return { ok: false as const, error: 'Caso não criado. Verifique permissoes.' }
 
   const scanDataNext = {
     patientName: scan.patientName,
@@ -385,14 +387,14 @@ export async function patchCaseDataSupabase(
   patch: Record<string, unknown>,
   options?: { status?: string; phase?: string },
 ) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const now = new Date().toISOString()
   const { data: current, error: readError } = await supabase
     .from('cases')
     .select('id, status, data')
     .eq('id', caseId)
     .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso nao encontrado.' }
+  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
 
   const currentData = asObject(current.data)
   const nextStatus = options?.status ?? asText(currentData.status, asText(current.status, 'planejamento'))
@@ -415,7 +417,7 @@ export async function patchCaseDataSupabase(
     .eq('id', caseId)
     .select('id')
   if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) return { ok: false as const, error: 'Caso nao atualizado. Verifique permissoes.' }
+  if (!data || data.length === 0) return { ok: false as const, error: 'Caso não atualizado. Verifique permissoes.' }
   return { ok: true as const }
 }
 
@@ -437,6 +439,8 @@ export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[
       requestCode: asText(meta.requestCode) || undefined,
       productType: asProductType(row.product_type ?? row.product_id ?? meta.productType ?? meta.productId),
       productId: asProductType(row.product_id ?? row.product_type ?? meta.productId ?? meta.productType),
+      requestedProductId: asText(meta.requestedProductId) || undefined,
+      requestedProductLabel: asText(meta.requestedProductLabel) || undefined,
       requestKind: asText(meta.requestKind, 'producao') as LabItem['requestKind'],
       expectedReplacementDate: asText(meta.expectedReplacementDate) || undefined,
       caseId: asText(row.case_id) || undefined,
@@ -458,18 +462,18 @@ export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[
 }
 
 export async function generateCaseLabOrderSupabase(caseId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data: current, error: readError } = await supabase
     .from('cases')
     .select('id, clinic_id, patient_id, status, data')
     .eq('id', caseId)
     .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso nao encontrado.' }
+  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
 
   const currentData = asObject(current.data)
   const contract = asObject(currentData.contract)
   if (asText(contract.status, 'pendente') !== 'aprovado') {
-    return { ok: false as const, error: 'Contrato nao aprovado. Nao e possivel gerar OS para o laboratorio.' }
+    return { ok: false as const, error: 'Contrato não aprovado. Não e possível gerar OS para o laboratorio.' }
   }
 
   const existingItems = await listCaseLabItemsSupabase(caseId)
@@ -499,6 +503,8 @@ export async function generateCaseLabOrderSupabase(caseId: string) {
         requestCode,
         productType,
         productId: productType,
+        requestedProductId: asText(currentData.requestedProductId) || undefined,
+        requestedProductLabel: asText(currentData.requestedProductLabel) || undefined,
         requestKind: 'producao',
         expectedReplacementDate: dueDate,
         arch: asText(currentData.arch, 'ambos'),
@@ -516,13 +522,13 @@ export async function generateCaseLabOrderSupabase(caseId: string) {
 }
 
 export async function updateScanStatusSupabase(scanId: string, status: 'aprovado' | 'reprovado') {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data: current, error: readError } = await supabase
     .from('scans')
     .select('id, data')
     .eq('id', scanId)
     .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Scan nao encontrado.' }
+  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Scan não encontrado.' }
   const nextData = { ...asObject(current.data), status }
   const { data, error } = await supabase
     .from('scans')
@@ -530,12 +536,12 @@ export async function updateScanStatusSupabase(scanId: string, status: 'aprovado
     .eq('id', scanId)
     .select('id')
   if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) return { ok: false as const, error: 'Scan nao atualizado. Verifique permissoes.' }
+  if (!data || data.length === 0) return { ok: false as const, error: 'Scan não atualizado. Verifique permissoes.' }
   return { ok: true as const }
 }
 
 export async function deleteScanSupabase(scanId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data: current } = await supabase
     .from('scans')
     .select('id, patient_id, data')
@@ -574,7 +580,7 @@ export async function deleteScanSupabase(scanId: string) {
       .in('id', ids)
       .is('deleted_at', null)
 
-    // Tabela opcional no banco; se nao existir, apenas ignora.
+    // Tabela opcional no banco; se não existir, apenas ignora.
     const replacementDelete = await supabase
       .from('replacement_bank')
       .delete()
@@ -590,7 +596,7 @@ export async function deleteScanSupabase(scanId: string) {
     .eq('id', scanId)
     .select('id')
   if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) return { ok: false as const, error: 'Scan nao excluido. Verifique permissoes.' }
+  if (!data || data.length === 0) return { ok: false as const, error: 'Scan não excluido. Verifique permissoes.' }
   await appendPatientHistorySupabase(
     patientId,
     caseIds.size > 0
@@ -601,13 +607,13 @@ export async function deleteScanSupabase(scanId: string) {
 }
 
 export async function deleteCaseSupabase(caseId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data: current, error: readError } = await supabase
     .from('cases')
     .select('id, patient_id, data')
     .eq('id', caseId)
     .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso nao encontrado.' }
+  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
 
   const currentData = asObject((current as Record<string, unknown>).data)
   const patientId = asText((current as Record<string, unknown>).patient_id, asText(currentData.patientId)) || undefined
@@ -621,7 +627,7 @@ export async function deleteCaseSupabase(caseId: string) {
     .eq('id', caseId)
     .select('id')
   if (error) return { ok: false as const, error: error.message }
-  if (!updated || updated.length === 0) return { ok: false as const, error: 'Caso nao excluido. Verifique permissoes.' }
+  if (!updated || updated.length === 0) return { ok: false as const, error: 'Caso não excluido. Verifique permissoes.' }
 
   await supabase
     .from('lab_items')
@@ -665,13 +671,13 @@ export async function deleteCaseSupabase(caseId: string) {
 }
 
 export async function deleteLabItemSupabase(labItemId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const { data: current, error: readError } = await supabase
     .from('lab_items')
     .select('id, case_id, tray_number, data')
     .eq('id', labItemId)
     .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'OS nao encontrada.' }
+  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'OS não encontrada.' }
 
   const meta = asObject((current as Record<string, unknown>).data)
   const caseId = asText((current as Record<string, unknown>).case_id) || undefined
@@ -698,7 +704,7 @@ export async function deleteLabItemSupabase(labItemId: string) {
     .eq('id', labItemId)
     .select('id')
   if (error) return { ok: false as const, error: error.message }
-  if (!updated || updated.length === 0) return { ok: false as const, error: 'OS nao excluida. Verifique permissoes.' }
+  if (!updated || updated.length === 0) return { ok: false as const, error: 'OS não excluida. Verifique permissoes.' }
 
   await appendPatientHistorySupabase(
     patientId,
@@ -718,7 +724,7 @@ export async function inviteUser(payload: {
   phone?: string
   accessToken: string
 }) {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const accessToken = payload.accessToken?.trim()
   if (!accessToken) return { ok: false as const, error: 'Sessao expirada. Saia e entre novamente.' }
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -793,14 +799,14 @@ export async function inviteUser(payload: {
     const code = first.raw?.code
       ?? (normalizedMessage.includes('invalid jwt') ? 'unauthorized' : undefined)
       ?? (first.response.status === 401 ? 'unauthorized' : first.response.status === 403 ? 'forbidden' : 'invite_failed')
-    const detailed = first.raw?.error ?? first.raw?.message ?? `Falha ao criar usuario (HTTP ${first.response.status}).`
+    const detailed = first.raw?.error ?? first.raw?.message ?? `Falha ao criar usuário (HTTP ${first.response.status}).`
     return { ok: false as const, error: detailed, code }
   }
   return { ok: true as const, data: first.raw }
 }
 
 export async function normalizeTreatmentIdsSupabase() {
-  if (!supabase) return { ok: false as const, error: 'Supabase nao configurado.' }
+  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
 
   const [scansRes, casesRes] = await Promise.all([
     supabase
@@ -920,3 +926,4 @@ export async function normalizeTreatmentIdsSupabase() {
     updatedCases,
   }
 }
+

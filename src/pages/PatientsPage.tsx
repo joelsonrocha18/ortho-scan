@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
@@ -15,6 +15,7 @@ import { listPatientsForUser } from '../auth/scope'
 import { supabase } from '../lib/supabaseClient'
 import { parsePatientsSpreadsheet, readSpreadsheetFileText } from '../lib/spreadsheetImport'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
+import { resolveRequestedProductLabel } from '../lib/productLabel'
 import type { Scan } from '../types/Scan'
 import { patientCode } from '../lib/entityCode'
 
@@ -90,12 +91,14 @@ export default function PatientsPage() {
       }
       setSupabaseDentistsById(dentistsMap)
 
-      const caseById = new Map<string, { patientId?: string; productType?: string }>()
+      const caseById = new Map<string, { patientId?: string; productType?: string; requestedProductId?: string; requestedProductLabel?: string }>()
       for (const row of (casesRes.data ?? []) as Array<{ id: string; patient_id?: string; product_type?: string; data?: Record<string, unknown> }>) {
         const data = row.data ?? {}
         caseById.set(row.id, {
           patientId: row.patient_id,
           productType: row.product_type ?? (data.productType as string | undefined) ?? 'alinhador_12m',
+          requestedProductId: data.requestedProductId as string | undefined,
+          requestedProductLabel: data.requestedProductLabel as string | undefined,
         })
       }
       const history = new Map<string, string[]>()
@@ -105,9 +108,14 @@ export default function PatientsPage() {
         const linkedCase = caseById.get(row.case_id)
         if (!linkedCase?.patientId) continue
         const data = row.data ?? {}
-        const productType = row.product_type ?? (data.productType as string | undefined) ?? linkedCase.productType ?? 'alinhador_12m'
+        const productLabel = resolveRequestedProductLabel({
+          requestedProductLabel: (data.requestedProductLabel as string | undefined) ?? linkedCase.requestedProductLabel,
+          requestedProductId: (data.requestedProductId as string | undefined) ?? linkedCase.requestedProductId,
+          productType: row.product_type ?? (data.productType as string | undefined) ?? linkedCase.productType ?? 'alinhador_12m',
+          productId: (data.productId as string | undefined) ?? row.product_type ?? (data.productType as string | undefined) ?? linkedCase.productType ?? 'alinhador_12m',
+        })
         const current = history.get(linkedCase.patientId) ?? []
-        history.set(linkedCase.patientId, [...current, productType])
+        history.set(linkedCase.patientId, [...current, productLabel])
       }
       setSupabaseProductHistoryByPatient(history)
     })()
@@ -123,17 +131,24 @@ export default function PatientsPage() {
     : new Map(db.dentists.map((dentist) => [dentist.id, dentist.name]))
   const localProductHistoryByPatient = useMemo(() => {
     const caseById = new Map(db.cases.map((item) => [item.id, item]))
+    const scanById = new Map(db.scans.map((item) => [item.id, item]))
     const history = new Map<string, string[]>()
     db.labItems.forEach((item) => {
       if (!item.caseId || item.status !== 'prontas') return
       const linkedCase = caseById.get(item.caseId)
       if (!linkedCase?.patientId) return
-      const productType = item.productType ?? linkedCase.productType ?? 'alinhador_12m'
+      const sourceScan = linkedCase.sourceScanId ? scanById.get(linkedCase.sourceScanId) : undefined
+      const productLabel = resolveRequestedProductLabel({
+        requestedProductLabel: item.requestedProductLabel ?? linkedCase.requestedProductLabel ?? sourceScan?.purposeLabel,
+        requestedProductId: item.requestedProductId ?? linkedCase.requestedProductId ?? sourceScan?.purposeProductId,
+        productType: item.productType ?? linkedCase.productType ?? sourceScan?.purposeProductType ?? 'alinhador_12m',
+        productId: item.productId ?? linkedCase.productId ?? sourceScan?.purposeProductId ?? 'alinhador_12m',
+      })
       const current = history.get(linkedCase.patientId) ?? []
-      history.set(linkedCase.patientId, [...current, productType])
+      history.set(linkedCase.patientId, [...current, productLabel])
     })
     return history
-  }, [db.cases, db.labItems])
+  }, [db.cases, db.labItems, db.scans])
   const productHistoryByPatient = isSupabaseMode ? supabaseProductHistoryByPatient : localProductHistoryByPatient
 
   const patients = useMemo(
@@ -271,11 +286,11 @@ export default function PatientsPage() {
   }
 
   return (
-    <AppShell breadcrumb={['Inicio', 'Pacientes']}>
+    <AppShell breadcrumb={['Início', 'Pacientes']}>
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Pacientes</h1>
-          <p className="mt-2 text-sm text-slate-500">Cadastro centralizado de pacientes e vinculos de tratamento.</p>
+          <p className="mt-2 text-sm text-slate-500">Cadastro centralizado de pacientes e vínculos de tratamento.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {canWrite ? (
@@ -339,11 +354,11 @@ export default function PatientsPage() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Dentista responsavel</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Dentista responsável</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone fixo</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">WhatsApp</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Historico de produtos</th>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Acoes</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -392,3 +407,4 @@ export default function PatientsPage() {
     </AppShell>
   )
 }
+

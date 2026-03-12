@@ -8,6 +8,8 @@ export type LabItem = {
   id: string
   productType?: ProductType
   productId?: ProductType
+  requestedProductId?: string
+  requestedProductLabel?: string
   patientId?: string
   dentistId?: string
   clinicId?: string
