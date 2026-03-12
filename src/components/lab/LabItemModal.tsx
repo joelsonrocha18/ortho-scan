@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { canMoveToStatus } from '../../data/labRepo'
 import type { Case } from '../../types/Case'
 import type { LabItem, LabPriority, LabStatus } from '../../types/Lab'
@@ -228,7 +228,7 @@ export default function LabItemModal({
       return
     }
 
-    if (selectedCase && tray > selectedCase.totalTrays) {
+    if (isAlignerProduct && selectedCase && tray > selectedCase.totalTrays) {
       const message = `A placa deve estar entre 1 e ${selectedCase.totalTrays} para este caso.`
       setError(message)
       addToast({ type: 'error', title: 'Validacao', message })
@@ -424,7 +424,7 @@ export default function LabItemModal({
                   className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                   disabled={readOnly}
                 >
-                  <option value="">Nao vincular paciente</option>
+                  <option value="">Não vincular paciente</option>
                   {filteredPatientOptions.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -433,7 +433,7 @@ export default function LabItemModal({
                 </select>
                 {form.patientId ? (
                   <p className="mt-1 text-xs text-slate-600">
-                    Vinculos: Dentista {patientOptions.find((item) => item.id === form.patientId)?.dentistName ?? '-'} | Clinica {patientOptions.find((item) => item.id === form.patientId)?.clinicName ?? '-'}
+                    Vínculos: Dentista {patientOptions.find((item) => item.id === form.patientId)?.dentistName ?? '-'} | Clínica {patientOptions.find((item) => item.id === form.patientId)?.clinicName ?? '-'}
                   </p>
                 ) : null}
               </div>
@@ -498,7 +498,7 @@ export default function LabItemModal({
             <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
             {(mode === 'create' || item?.status === 'aguardando_iniciar') ? (
               <p className="mb-1 text-xs text-slate-500">
-                Status automatico: fica em "Aguardando iniciar" ate definir quantidade. Ao salvar com quantidade, vai para "Em Producao".
+                Status automático: fica em "Aguardando iniciar" ate definir quantidade. Ao salvar com quantidade, vai para "Em Producao".
               </p>
             ) : null}
             <select
@@ -516,7 +516,7 @@ export default function LabItemModal({
           </div>
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Observacoes</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Observações</label>
             <textarea
               value={form.notes}
               onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
@@ -554,3 +554,4 @@ export default function LabItemModal({
     </div>
   )
 }
+
