@@ -21,15 +21,16 @@ export function findCatalogProductName(requestedProductId?: string | null) {
 }
 
 export function resolveRequestedProductLabel(source: ProductLabelSource) {
+  const resolvedProductType = normalizeProductType(source.productId ?? source.productType, 'alinhador_12m')
+  if (isAlignerProductType(resolvedProductType)) {
+    return source.alignerFallbackLabel?.trim() || 'Alinhador'
+  }
+
   const explicitLabel = (source.requestedProductLabel ?? '').trim()
   if (explicitLabel) return explicitLabel
 
   const catalogLabel = findCatalogProductName(source.requestedProductId)
   if (catalogLabel) return catalogLabel
 
-  const resolvedProductType = normalizeProductType(source.productId ?? source.productType, 'alinhador_12m')
-  if (isAlignerProductType(resolvedProductType)) {
-    return source.alignerFallbackLabel?.trim() || 'Alinhadores'
-  }
   return PRODUCT_TYPE_LABEL[resolvedProductType]
 }
