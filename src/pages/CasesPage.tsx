@@ -97,10 +97,19 @@ function resolveCaseOrigin(
   clinicsById: Map<string, ClinicLookup>,
 ) {
   const patientClinicId = item.patientId ? patientsById.get(item.patientId)?.clinicId : undefined
+  if (patientClinicId) {
+    return inferTreatmentOrigin(
+      {
+        treatmentOrigin: undefined,
+        clinicId: patientClinicId,
+      },
+      clinicsById,
+    )
+  }
   return inferTreatmentOrigin(
     {
       treatmentOrigin: item.treatmentOrigin,
-      clinicId: patientClinicId ?? item.clinicId,
+      clinicId: item.clinicId,
     },
     clinicsById,
   )
