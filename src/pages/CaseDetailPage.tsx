@@ -302,11 +302,11 @@ function parseBrlCurrencyInput(raw: string) {
 
 function buildAlignerWhatsappMessage(patientName: string, trayNumber: number) {
   return [
-    `Olá, ${patientName}! 😊`,
+    `Olá, ${patientName}!`,
     '',
     `Passando para lembrar que hoje é o dia de realizar a troca do seu alinhador para o alinhador nº ${trayNumber}.`,
     '',
-    'Seguir corretamente o período de troca é essencial para que seu tratamento evolua conforme o planejamento. 🦷✨',
+    'Seguir corretamente o período de troca é essencial para que seu tratamento evolua conforme o planejamento.',
     '',
     'Após realizar a troca, se possível, nos confirme por aqui com um “OK”.',
     'Caso tenha qualquer dúvida ou desconforto, nossa equipe está à disposição para te ajudar!',
