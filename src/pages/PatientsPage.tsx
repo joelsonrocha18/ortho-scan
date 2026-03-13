@@ -34,6 +34,8 @@ export default function PatientsPage() {
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'patients.write')
   const [query, setQuery] = useState('')
+  const [dentistFilter, setDentistFilter] = useState('todos')
+  const [clinicFilter, setClinicFilter] = useState('todos')
   const [showDeleted, setShowDeleted] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [importText, setImportText] = useState('')
@@ -49,18 +51,21 @@ export default function PatientsPage() {
     phone?: string
     whatsapp?: string
     primaryDentistId?: string
+    clinicId?: string
     deletedAt?: string
   }>>([])
   const [supabaseDentistsById, setSupabaseDentistsById] = useState<Map<string, string>>(new Map())
+  const [supabaseClinicsById, setSupabaseClinicsById] = useState<Map<string, string>>(new Map())
   const [supabaseProductHistoryByPatient, setSupabaseProductHistoryByPatient] = useState<Map<string, string[]>>(new Map())
 
   useEffect(() => {
     let active = true
     if (!isSupabaseMode || !supabase) return
     ;(async () => {
-      const [patientsRes, dentistsRes, casesRes, labRes] = await Promise.all([
-        supabase.from('patients').select('id, short_id, name, cpf, phone, whatsapp, primary_dentist_id, deleted_at'),
+      const [patientsRes, dentistsRes, clinicsRes, casesRes, labRes] = await Promise.all([
+        supabase.from('patients').select('id, short_id, name, cpf, phone, whatsapp, primary_dentist_id, clinic_id, deleted_at'),
         supabase.from('dentists').select('id, name, deleted_at').is('deleted_at', null),
+        supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
         supabase.from('cases').select('id, patient_id, product_type, data, deleted_at').is('deleted_at', null),
         supabase.from('lab_items').select('id, case_id, status, product_type, data, deleted_at').is('deleted_at', null),
       ])
@@ -73,6 +78,7 @@ export default function PatientsPage() {
         phone?: string
         whatsapp?: string
         primary_dentist_id?: string
+        clinic_id?: string
         deleted_at?: string
       }>).map((row) => ({
         id: row.id,
@@ -82,6 +88,7 @@ export default function PatientsPage() {
         phone: row.phone ?? undefined,
         whatsapp: row.whatsapp ?? undefined,
         primaryDentistId: row.primary_dentist_id ?? undefined,
+        clinicId: row.clinic_id ?? undefined,
         deletedAt: row.deleted_at ?? undefined,
       }))
       setSupabasePatients(patients)
@@ -90,6 +97,11 @@ export default function PatientsPage() {
         dentistsMap.set(row.id, row.name ?? '')
       }
       setSupabaseDentistsById(dentistsMap)
+      const clinicsMap = new Map<string, string>()
+      for (const row of (clinicsRes.data ?? []) as Array<{ id: string; trade_name: string }>) {
+        clinicsMap.set(row.id, row.trade_name ?? '')
+      }
+      setSupabaseClinicsById(clinicsMap)
 
       const caseById = new Map<string, { patientId?: string; productType?: string; requestedProductId?: string; requestedProductLabel?: string }>()
       for (const row of (casesRes.data ?? []) as Array<{ id: string; patient_id?: string; product_type?: string; data?: Record<string, unknown> }>) {
@@ -129,6 +141,25 @@ export default function PatientsPage() {
   const dentistsById = isSupabaseMode
     ? supabaseDentistsById
     : new Map(db.dentists.map((dentist) => [dentist.id, dentist.name]))
+  const clinicsById = isSupabaseMode
+    ? supabaseClinicsById
+    : new Map(db.clinics.filter((clinic) => !clinic.deletedAt).map((clinic) => [clinic.id, clinic.tradeName]))
+  const dentistOptions = useMemo(
+    () =>
+      Array.from(dentistsById.entries())
+        .map(([id, name]) => ({ id, name }))
+        .filter((item) => item.name.trim().length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [dentistsById],
+  )
+  const clinicOptions = useMemo(
+    () =>
+      Array.from(clinicsById.entries())
+        .map(([id, name]) => ({ id, name }))
+        .filter((item) => item.name.trim().length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [clinicsById],
+  )
   const localProductHistoryByPatient = useMemo(() => {
     const caseById = new Map(db.cases.map((item) => [item.id, item]))
     const scanById = new Map(db.scans.map((item) => [item.id, item]))
@@ -166,8 +197,10 @@ export default function PatientsPage() {
             (item.whatsapp ?? '').toLowerCase().includes(q)
           )
         })
+        .filter((item) => dentistFilter === 'todos' || item.primaryDentistId === dentistFilter)
+        .filter((item) => clinicFilter === 'todos' || item.clinicId === clinicFilter)
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [sourcePatients, query, showDeleted],
+    [sourcePatients, query, showDeleted, dentistFilter, clinicFilter],
   )
 
   const handleImportFile = async (file?: File | null) => {
@@ -338,16 +371,38 @@ export default function PatientsPage() {
 
       <section className="mt-6">
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <Input
-              placeholder="Buscar por codigo, nome, CPF, telefone ou WhatsApp"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
-              Mostrar excluidos
-            </label>
+          <div className="border-b border-slate-200 px-5 py-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)_minmax(220px,1fr)_auto]">
+              <Input
+                placeholder="Buscar por codigo, nome, CPF, telefone ou WhatsApp"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <select
+                value={clinicFilter}
+                onChange={(event) => setClinicFilter(event.target.value)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+              >
+                <option value="todos">Clínicas: Todas</option>
+                {clinicOptions.map((clinic) => (
+                  <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
+                ))}
+              </select>
+              <select
+                value={dentistFilter}
+                onChange={(event) => setDentistFilter(event.target.value)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+              >
+                <option value="todos">Dentistas: Todos</option>
+                {dentistOptions.map((dentist) => (
+                  <option key={dentist.id} value={dentist.id}>{dentist.name}</option>
+                ))}
+              </select>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} />
+                Mostrar excluidos
+              </label>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left">
