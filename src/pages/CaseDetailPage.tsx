@@ -23,6 +23,7 @@ import { deleteCaseSupabase, generateCaseLabOrderSupabase, listCaseLabItemsSupab
 import { resolveRequestedProductLabel } from '../lib/productLabel'
 import type { LabItem } from '../types/Lab'
 import { isAlignerProductType, normalizeProductType } from '../types/Product'
+import { buildWhatsappUrl, isValidWhatsapp } from '../lib/whatsapp'
 
 const caseStatusLabelMap: Record<Case['status'], string> = {
   planejamento: 'Planejamento',
@@ -299,6 +300,26 @@ function parseBrlCurrencyInput(raw: string) {
   return Number(digits) / 100
 }
 
+function buildAlignerWhatsappMessage(patientName: string, trayNumber: number) {
+  return [
+    `Olá, ${patientName}! 😊`,
+    '',
+    `Passando para lembrar que hoje é o dia de realizar a troca do seu alinhador para o alinhador nº ${trayNumber}.`,
+    '',
+    'Seguir corretamente o período de troca é essencial para que seu tratamento evolua conforme o planejamento. 🦷✨',
+    '',
+    'Após realizar a troca, se possível, nos confirme por aqui com um “OK”.',
+    'Caso tenha qualquer dúvida ou desconforto, nossa equipe está à disposição para te ajudar!',
+  ].join('\n')
+}
+
+function buildAlignerWhatsappHref(patientWhatsapp: string | undefined, patientName: string, trayNumber: number) {
+  if (!patientWhatsapp || !isValidWhatsapp(patientWhatsapp)) return ''
+  const baseUrl = buildWhatsappUrl(patientWhatsapp)
+  if (!baseUrl) return ''
+  return `${baseUrl}?text=${encodeURIComponent(buildAlignerWhatsappMessage(patientName, trayNumber))}`
+}
+
 function mapSupabaseCaseRowToCase(
   row: {
     id: string
@@ -392,6 +413,7 @@ export default function CaseDetailPage() {
     requesterName?: string
     requesterGender?: string
     patientBirthDate?: string
+    patientWhatsapp?: string
     requestedProductId?: string
     requestedProductLabel?: string
   }>({})
@@ -484,7 +506,7 @@ export default function CaseDetailPage() {
           ? supabase.from('dentists').select('id, name, gender').eq('id', currentCase.requestedByDentistId).maybeSingle()
           : Promise.resolve({ data: null }),
         currentCase.patientId
-          ? supabase.from('patients').select('id, birth_date').eq('id', currentCase.patientId).maybeSingle()
+          ? supabase.from('patients').select('id, birth_date, whatsapp, phone').eq('id', currentCase.patientId).maybeSingle()
           : Promise.resolve({ data: null }),
         currentCase.sourceScanId
           ? supabase.from('scans').select('id, data').eq('id', currentCase.sourceScanId).maybeSingle()
@@ -499,6 +521,8 @@ export default function CaseDetailPage() {
         requesterName: (requesterRes.data as { name?: string } | null)?.name,
         requesterGender: (requesterRes.data as { gender?: string } | null)?.gender,
         patientBirthDate: (patientRes.data as { birth_date?: string } | null)?.birth_date,
+        patientWhatsapp: (patientRes.data as { whatsapp?: string; phone?: string } | null)?.whatsapp
+          ?? (patientRes.data as { whatsapp?: string; phone?: string } | null)?.phone,
         requestedProductId: currentCase.requestedProductId ?? (scanData.purposeProductId as string | undefined),
         requestedProductLabel: currentCase.requestedProductLabel ?? (scanData.purposeLabel as string | undefined),
       })
@@ -882,6 +906,14 @@ export default function CaseDetailPage() {
     if (!currentCase.patientId) return currentCase.patientName
     return db.patients.find((item) => item.id === currentCase.patientId)?.name ?? currentCase.patientName
   }, [currentCase, db.patients])
+  const patientRecord = useMemo(
+    () => (currentCase?.patientId ? db.patients.find((item) => item.id === currentCase.patientId) : undefined),
+    [currentCase?.patientId, db.patients],
+  )
+  const patientWhatsapp = useMemo(() => {
+    if (isSupabaseMode) return supabaseCaseRefs.patientWhatsapp ?? patientRecord?.whatsapp ?? patientRecord?.phone
+    return patientRecord?.whatsapp ?? patientRecord?.phone
+  }, [isSupabaseMode, patientRecord?.phone, patientRecord?.whatsapp, supabaseCaseRefs.patientWhatsapp])
   const dentistsById = useMemo(() => new Map(db.dentists.map((item) => [item.id, item])), [db.dentists])
   const clinicsById = useMemo(() => new Map(db.clinics.map((item) => [item.id, item])), [db.clinics])
   const clinicName = isSupabaseMode
@@ -2326,12 +2358,13 @@ export default function CaseDetailPage() {
                   {hasLowerArch ? <th className="px-3 py-2 font-semibold">Data troca (inf)</th> : null}
                   {hasLowerArch ? <th className="px-3 py-2 font-semibold">Status entrega (inf)</th> : null}
                   {hasLowerArch ? <th className="px-3 py-2 font-semibold">Concluído (inf)</th> : null}
+                  <th className="px-3 py-2 font-semibold">WhatsApp</th>
                 </tr>
               </thead>
               <tbody>
                 {changeSchedule.length === 0 ? (
                   <tr>
-                    <td colSpan={(hasUpperArch ? 5 : 0) + (hasLowerArch ? 5 : 0)} className="px-3 py-4 text-slate-500">
+                    <td colSpan={(hasUpperArch ? 5 : 0) + (hasLowerArch ? 5 : 0) + 1} className="px-3 py-4 text-slate-500">
                       Registre a instalação para gerar agenda de trocas.
                     </td>
                   </tr>
@@ -2345,6 +2378,7 @@ export default function CaseDetailPage() {
                     const trocaConcluidaLower = typeof manualCompletedLower === 'boolean' ? manualCompletedLower : dueReachedLower
                     const deliveredUpperAt = dentistDeliveryDateByArchTray.upper.get(row.trayNumber)
                     const deliveredLowerAt = dentistDeliveryDateByArchTray.lower.get(row.trayNumber)
+                    const whatsappHref = buildAlignerWhatsappHref(patientWhatsapp, patientDisplayName || currentCase.patientName, row.trayNumber)
 
                     return (
                       <tr key={row.trayNumber} className="border-t border-slate-100">
@@ -2442,6 +2476,19 @@ export default function CaseDetailPage() {
                             )}
                           </td>
                         ) : null}
+                        <td className="px-3 py-2 text-slate-700">
+                          {whatsappHref ? (
+                            <button
+                              type="button"
+                              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-700"
+                              onClick={() => window.open(whatsappHref, '_blank', 'noopener,noreferrer')}
+                            >
+                              WhatsApp
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">Sem WhatsApp</span>
+                          )}
+                        </td>
                       </tr>
                     )
                   })
