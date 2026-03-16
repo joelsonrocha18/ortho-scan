@@ -486,6 +486,12 @@ export default function CasesPage() {
       const deliveredToDentist = resolveDeliveredToDentist(item.deliveryLots)
       const deliveredUpper = Math.min(totals.upper, Math.max(0, Math.trunc(item.installation?.deliveredUpper ?? 0)))
       const deliveredLower = Math.min(totals.lower, Math.max(0, Math.trunc(item.installation?.deliveredLower ?? 0)))
+      const badge = caseStatusBadge(
+        item,
+        liveLabStatusByCase.get(item.id) ?? null,
+        hasLabOrderByCase.has(item.id),
+      )
+      const originLabel = resolveCaseOrigin(item, patientsById, clinicsById) === 'interno' ? 'Interno' : 'Externo'
       const upperSchedule = buildArchScheduleDates(
         item.installation?.installedAt,
         item.changeEveryDays,
@@ -509,6 +515,8 @@ export default function CasesPage() {
         dentistName: formatDentistDisplayName(dentist),
         plannedTreatment: formatTrayPair(totals.upper, totals.lower, 'sup', 'inf'),
         changeDays: (item.changeEveryDays ?? 0) > 0 ? Math.trunc(item.changeEveryDays ?? 0) : '',
+        status: badge.label,
+        originLabel,
         deliveredToDentist: formatTrayPair(deliveredToDentist.upper, deliveredToDentist.lower, 'Sup', 'Inf'),
         currentTray: formatTrayPair(deliveredUpper, deliveredLower, 'sup', 'inf'),
         treatmentStartDate: item.installation?.installedAt?.slice(0, 10),
@@ -516,7 +524,7 @@ export default function CasesPage() {
         nextChangeDate: pickMinIsoDate([nextUpperChange, nextLowerChange]),
       }
     })
-  }, [dentistsById, filteredCases, patientsById])
+  }, [clinicsById, dentistsById, filteredCases, hasLabOrderByCase, liveLabStatusByCase, patientsById])
 
   const handleExportExcel = async () => {
     if (reportRows.length === 0) {
@@ -719,5 +727,6 @@ export default function CasesPage() {
     </AppShell>
   )
 }
+
 
 

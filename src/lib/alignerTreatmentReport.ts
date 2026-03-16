@@ -6,6 +6,8 @@ export type AlignerTreatmentReportRow = {
   dentistName: string
   plannedTreatment: string
   changeDays: number | ''
+  status: string
+  originLabel: string
   deliveredToDentist: string
   currentTray: string
   treatmentStartDate?: string
@@ -19,6 +21,8 @@ const COLUMN_HEADERS = [
   'nome do dentista',
   'tratamento planejado',
   'Dias de troca',
+  'Status',
+  'Interno/Externo',
   'placas entregue ao dentista',
   'placa atual',
   'data de inicio tratamento',
@@ -26,7 +30,7 @@ const COLUMN_HEADERS = [
   'data da proxima troca',
 ]
 
-const COLUMN_WIDTHS = [15, 22.71, 16.43, 20.43, 12.57, 25.86, 13.14, 23.57, 19.14, 20.71]
+const COLUMN_WIDTHS = [15, 22.71, 16.43, 20.43, 12.57, 24, 16, 25.86, 13.14, 23.57, 19.14, 20.71]
 
 function toExcelDate(value?: string) {
   if (!value) return ''
@@ -40,7 +44,7 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
 
   worksheet.columns = COLUMN_WIDTHS.map((width) => ({ width }))
 
-  worksheet.mergeCells('A1:J1')
+  worksheet.mergeCells('A1:L1')
   worksheet.getCell('A1').value = 'Pacientes em tratamento'
   worksheet.getCell('A1').alignment = { horizontal: 'center' }
   worksheet.getCell('A1').font = {
@@ -58,6 +62,8 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
       row.dentistName,
       row.plannedTreatment,
       row.changeDays,
+      row.status,
+      row.originLabel,
       row.deliveredToDentist,
       row.currentTray,
       toExcelDate(row.treatmentStartDate),
@@ -66,7 +72,7 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
     ])
     excelRow.height = 16.5
     excelRow.getCell(5).alignment = { horizontal: 'center' }
-    ;[8, 9, 10].forEach((columnIndex) => {
+    ;[10, 11, 12].forEach((columnIndex) => {
       const cell = excelRow.getCell(columnIndex)
       if (cell.value instanceof Date) {
         cell.numFmt = 'mm-dd-yy'
