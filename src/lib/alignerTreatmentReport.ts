@@ -53,10 +53,21 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
     size: 11,
   }
 
-  worksheet.addRow(COLUMN_HEADERS)
-
-  rows.forEach((row) => {
-    const excelRow = worksheet.addRow([
+  worksheet.addTable({
+    name: 'TabelaPacientesEmTratamento',
+    ref: 'A2',
+    headerRow: true,
+    totalsRow: false,
+    style: {
+      theme: 'TableStyleMedium2',
+      showRowStripes: true,
+      showColumnStripes: false,
+    },
+    columns: COLUMN_HEADERS.map((name) => ({
+      name,
+      filterButton: true,
+    })),
+    rows: rows.map((row) => [
       row.caseCode,
       row.patientName,
       row.dentistName,
@@ -69,7 +80,11 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
       toExcelDate(row.treatmentStartDate),
       toExcelDate(row.lastChangeDate),
       toExcelDate(row.nextChangeDate),
-    ])
+    ]),
+  })
+
+  for (let rowIndex = 3; rowIndex <= rows.length + 2; rowIndex += 1) {
+    const excelRow = worksheet.getRow(rowIndex)
     excelRow.height = 16.5
     excelRow.getCell(5).alignment = { horizontal: 'center' }
     ;[10, 11, 12].forEach((columnIndex) => {
@@ -78,7 +93,7 @@ export async function downloadAlignerTreatmentReport(rows: AlignerTreatmentRepor
         cell.numFmt = 'mm-dd-yy'
       }
     })
-  })
+  }
 
   const content = await workbook.xlsx.writeBuffer()
   const blob = new Blob([content], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
