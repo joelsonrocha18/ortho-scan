@@ -24,6 +24,7 @@ import { resolveRequestedProductLabel } from '../lib/productLabel'
 import type { LabItem } from '../types/Lab'
 import { isAlignerProductType, normalizeProductType } from '../types/Product'
 import { buildWhatsappUrl, isValidWhatsapp } from '../lib/whatsapp'
+import { createSignedUrl } from '../repo/storageRepo'
 
 const caseStatusLabelMap: Record<Case['status'], string> = {
   planejamento: 'Planejamento',
@@ -278,6 +279,7 @@ function buildChangeSchedule(
 
 function fileAvailability(item: NonNullable<Case['scanFiles']>[number]) {
   if (item.isLocal && item.url) return { label: 'Abrir', url: item.url }
+  if (item.filePath) return { label: 'Abrir' }
   if (item.isLocal && !item.url) return { label: 'arquivo local (reenvie para abrir)' }
   if (item.url) return { label: 'Abrir', url: item.url }
   return { label: 'arquivo local (reenvie para abrir)' }
@@ -1477,6 +1479,13 @@ export default function CaseDetailPage() {
     const emittedByRaw = currentUser?.name || currentUser?.email || 'Sistema'
     const emittedBy = emittedByRaw.includes('@') ? emittedByRaw.split('@')[0] : emittedByRaw
     const emitOrigin = window.location.origin
+    const deliveryControlRowsHtml = Array.from({ length: 5 }, () => `
+      <div class="delivery-record">
+        <span class="delivery-label">Entregues alinhadores</span>
+        <span class="delivery-qty">____ SUP - ____ INF</span>
+        <span class="delivery-date">____/____/____</span>
+      </div>
+    `).join('')
 
     const html = `
       <!doctype html>
@@ -1501,6 +1510,12 @@ export default function CaseDetailPage() {
             .sign-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 92px; }
             .sign-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
             .line { margin-top: 26px; border-top: 1px solid #64748b; font-size: 11px; padding-top: 4px; color: #334155; }
+            .delivery-records { margin-top: 12px; display: grid; gap: 6px; }
+            .delivery-record { display: flex; align-items: flex-end; gap: 8px; font-size: 10px; color: #334155; white-space: nowrap; }
+            .delivery-label { min-width: 118px; }
+            .delivery-qty, .delivery-date { display: inline-block; border-bottom: 1px solid #64748b; padding-bottom: 2px; line-height: 1.2; }
+            .delivery-qty { min-width: 122px; }
+            .delivery-date { min-width: 92px; text-align: center; }
             .emit { margin-top: 14px; font-size: 10px; color: #475569; text-align: left; border-top: 1px solid #cbd5e1; padding-top: 8px; }
           </style>
         </head>
@@ -1539,6 +1554,7 @@ export default function CaseDetailPage() {
               <p class="sign-title">Entrega ao dentista</p>
               <div class="line">Assinatura: ____________________________________</div>
               <div class="line">Data: ____/____/________</div>
+              <div class="delivery-records">${deliveryControlRowsHtml}</div>
             </div>
           </div>
 
@@ -1839,8 +1855,23 @@ export default function CaseDetailPage() {
       return
     }
 
-    updateCase(currentCase.id, { changeEveryDays: parsed })
-    addToast({ type: 'success', title: 'Troca', message: 'Dias de troca atualizados.' })
+  updateCase(currentCase.id, { changeEveryDays: parsed })
+  addToast({ type: 'success', title: 'Troca', message: 'Dias de troca atualizados.' })
+  }
+
+  const openScanFile = async (item: NonNullable<Case['scanFiles']>[number]) => {
+    if (item.filePath) {
+      const signed = await createSignedUrl(item.filePath, 300)
+      if (!signed.ok) {
+        addToast({ type: 'error', title: 'Arquivos do scan', message: signed.error })
+        return
+      }
+      window.open(signed.url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (item.url) {
+      window.open(item.url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const renderScanFile = (item: NonNullable<Case['scanFiles']>[number], labelOverride?: string) => {
@@ -1867,10 +1898,10 @@ export default function CaseDetailPage() {
           <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${status === 'erro' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
             {status === 'erro' ? 'ERRO' : 'OK'}
           </span>
-        {availability.url ? (
-          <a href={availability.url} target="_blank" rel="noreferrer" className="text-xs text-brand-700">
+        {availability.label === 'Abrir' ? (
+          <button type="button" className="text-xs text-brand-700" onClick={() => void openScanFile(item)}>
             {availability.label}
-          </a>
+          </button>
         ) : (
           <span className="text-xs text-slate-500">{availability.label}</span>
         )}

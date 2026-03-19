@@ -595,7 +595,6 @@ export default function PatientDetailPage() {
     void (async () => {
       const entries = await Promise.all(
         previewableDocs.map(async (doc) => {
-          if (doc.url) return [doc.id, doc.url] as const
           const resolved = await resolvePatientDocUrl(doc)
           return resolved.ok ? ([doc.id, resolved.url] as const) : null
         }),
@@ -624,10 +623,11 @@ export default function PatientDetailPage() {
     void (async () => {
       const entries = await Promise.all(
         orthocamMedia.map(async (item) => {
-          if (item.url) return [item.previewKey, item.url] as const
-          if (!item.filePath) return null
-          const signed = await createSignedUrl(item.filePath, 300)
-          return signed.ok ? ([item.previewKey, signed.url] as const) : null
+          if (item.filePath) {
+            const signed = await createSignedUrl(item.filePath, 300)
+            return signed.ok ? ([item.previewKey, signed.url] as const) : null
+          }
+          return item.url ? ([item.previewKey, item.url] as const) : null
         }),
       )
       if (!active) return

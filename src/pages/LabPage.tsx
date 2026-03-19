@@ -62,6 +62,40 @@ type CasePrintFallback = {
   patientBirthDate?: string
 }
 
+type GuideMetaBox = {
+  label: string
+  value: string
+  full?: boolean
+}
+
+type GuidePrintContext = {
+  caseLabel: string
+  issueDateLabel: string
+  patientName: string
+  patientBirthDateLabel: string
+  clinicName: string
+  dentistName: string
+  requesterName: string
+  productLabel: string
+  planLabel: string
+  changeDaysLabel: string
+  deliveryExpectedLabel: string
+  emittedBy: string
+  emitOrigin: string
+  hasUpperArch: boolean
+  hasLowerArch: boolean
+}
+
+type GuidePrintOptions =
+  | { kind: 'initial' }
+  | {
+      kind: 'delivery_receipt'
+      deliveredToDoctorAt: string
+      deliveredUpperQty: number
+      deliveredLowerQty: number
+      note?: string
+    }
+
 const BROTHER_PRINTER_STORAGE_KEY = 'orthoscan.lab.brother_printer_name'
 
 function escapeHtml(value: unknown) {
@@ -249,6 +283,146 @@ function archLabel(arch: 'superior' | 'inferior' | 'ambos' | '') {
   if (arch === 'inferior') return 'Inferior'
   if (arch === 'ambos') return 'Ambas'
   return ''
+}
+
+function withProfessionalPrefix(name: string) {
+  return name && name !== '-' ? (name.toLowerCase().startsWith('dr.') ? name : `Dr. ${name}`) : '-'
+}
+
+function formatGuideDate(dateIso?: string) {
+  if (!dateIso) return '-'
+  return new Date(`${dateIso}T00:00:00`).toLocaleDateString('pt-BR')
+}
+
+function buildLabGuideHtml(context: GuidePrintContext, options: GuidePrintOptions) {
+  const isDeliveryReceipt = options.kind === 'delivery_receipt'
+  const documentTitle = isDeliveryReceipt ? 'Comprovante de Entrega ao Dentista' : 'Ordem de Servico Inicial'
+  const documentHeading = isDeliveryReceipt ? 'COMPROVANTE DE ENTREGA AO DENTISTA' : 'ORDEM DE SERVICO INICIAL (O.S)'
+  const signatureLeftTitle = isDeliveryReceipt ? 'Conferencia do laboratorio' : 'Entrega ao laboratorio'
+  const signatureRightTitle = isDeliveryReceipt ? 'Recebido pelo dentista' : 'Entrega ao dentista'
+  const deliveryControlRowsHtml = isDeliveryReceipt
+    ? ''
+    : Array.from({ length: 5 }, () => `
+        <div class="delivery-record">
+          <span class="delivery-label">Entregues alinhadores</span>
+          <span class="delivery-qty">____ SUP - ____ INF</span>
+          <span class="delivery-date">____/____/____</span>
+        </div>
+      `).join('')
+  const metaBoxes: GuideMetaBox[] = [
+    { label: 'Paciente', value: context.patientName },
+    { label: 'Data de nascimento', value: context.patientBirthDateLabel },
+    { label: 'Clinica', value: context.clinicName },
+    { label: 'Dentista responsavel', value: context.dentistName },
+    { label: 'Solicitante', value: context.requesterName },
+    { label: 'Produto', value: context.productLabel },
+    { label: 'Planejamento', value: context.planLabel },
+    { label: 'Troca', value: `${context.changeDaysLabel} dias` },
+    { label: 'Data prevista entrega ao profissional', value: context.deliveryExpectedLabel },
+  ]
+
+  if (isDeliveryReceipt) {
+    const hasQuantityInfo = options.deliveredUpperQty > 0 || options.deliveredLowerQty > 0
+    metaBoxes.push({
+      label: 'Data da entrega ao dentista',
+      value: formatGuideDate(options.deliveredToDoctorAt),
+    })
+    if (hasQuantityInfo) {
+      metaBoxes.push(
+        {
+          label: 'Qtd entregue superior',
+          value: context.hasUpperArch && options.deliveredUpperQty > 0 ? String(options.deliveredUpperQty) : '-',
+        },
+        {
+          label: 'Qtd entregue inferior',
+          value: context.hasLowerArch && options.deliveredLowerQty > 0 ? String(options.deliveredLowerQty) : '-',
+        },
+      )
+    }
+    if (options.note?.trim()) {
+      metaBoxes.push({ label: 'Observacao', value: options.note.trim(), full: true })
+    }
+  }
+
+  const metaBoxesHtml = metaBoxes
+    .map(
+      (box) => `
+        <div class="meta-box${box.full ? ' full' : ''}">
+          <div class="meta-label">${escapeHtml(box.label)}</div>
+          <div class="meta-value">${escapeHtml(box.value)}</div>
+        </div>
+      `,
+    )
+    .join('')
+
+  return `
+    <!doctype html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="utf-8" />
+      <title>${escapeHtml(documentTitle)}</title>
+      <style>
+        @page { size: A4; margin: 14mm; }
+        body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
+        .header { display: grid; grid-template-columns: 250px 1fr; gap: 12px; border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; }
+        .brand { border-right: 1px solid #cbd5e1; padding-right: 10px; }
+        .brand img { max-width: 225px; max-height: 72px; object-fit: contain; display: block; margin-bottom: 6px; }
+        .brand p { margin: 2px 0; font-size: 11px; color: #475569; }
+        .doc h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
+        .doc p { margin: 3px 0; color: #334155; font-size: 11px; }
+        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .meta-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
+        .meta-box.full { grid-column: 1 / -1; }
+        .meta-label { font-size: 10px; text-transform: uppercase; color: #475569; margin-bottom: 2px; letter-spacing: .3px; }
+        .meta-value { font-weight: 700; color: #0f172a; white-space: pre-wrap; word-break: break-word; }
+        .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+        .sign-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 92px; }
+        .sign-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
+        .line { margin-top: 26px; border-top: 1px solid #64748b; font-size: 11px; padding-top: 4px; color: #334155; }
+        .delivery-records { margin-top: 12px; display: grid; gap: 6px; }
+        .delivery-record { display: flex; align-items: flex-end; gap: 8px; font-size: 10px; color: #334155; white-space: nowrap; }
+        .delivery-label { min-width: 118px; }
+        .delivery-qty, .delivery-date { display: inline-block; border-bottom: 1px solid #64748b; padding-bottom: 2px; line-height: 1.2; }
+        .delivery-qty { min-width: 122px; }
+        .delivery-date { min-width: 92px; text-align: center; }
+        .emit { margin-top: 14px; font-size: 10px; color: #475569; border-top: 1px solid #cbd5e1; padding-top: 8px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="brand">
+          <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
+          <p>Odontologia Digital</p>
+        </div>
+        <div class="doc">
+          <h1>${escapeHtml(documentHeading)}</h1>
+          <p><strong>Data/Hora:</strong> ${escapeHtml(context.issueDateLabel)}</p>
+          <p><strong>Codigo do caso:</strong> ${escapeHtml(context.caseLabel)}</p>
+        </div>
+      </div>
+
+      <div class="meta">
+        ${metaBoxesHtml}
+      </div>
+
+      <div class="sign-grid">
+        <div class="sign-box">
+          <p class="sign-title">${escapeHtml(signatureLeftTitle)}</p>
+          <div class="line">Assinatura: ____________________________________</div>
+          <div class="line">Data: ____/____/________</div>
+        </div>
+        <div class="sign-box">
+          <p class="sign-title">${escapeHtml(signatureRightTitle)}</p>
+          <div class="line">Assinatura: ____________________________________</div>
+          <div class="line">Data: ____/____/________</div>
+          ${deliveryControlRowsHtml ? `<div class="delivery-records">${deliveryControlRowsHtml}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="emit">Emitido por ${escapeHtml(context.emittedBy)} Através da plataforma Orthoscan Laboratorio Em ${escapeHtml(context.issueDateLabel)} - ${escapeHtml(context.emitOrigin)}</div>
+    </body>
+    </html>
+  `
 }
 
 export default function LabPage() {
@@ -1740,148 +1914,194 @@ export default function LabPage() {
     ],
   )
 
-  const reprintGuideFromModal = (item: LabItem) => {
-    const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
-    const patientId = caseItem?.patientId ?? item.patientId
-    const patientOption = patientId ? patientOptions.find((option) => option.id === patientId) : undefined
-    const dentistsById = new Map(
-      (isSupabaseMode
-        ? supabaseDentists
-        : db.dentists.map((entry) => ({ id: entry.id, name: entry.name ?? '-' }))
-      ).map((entry) => [entry.id, entry.name]),
-    )
-    const clinicsById = new Map(
-      (isSupabaseMode
-        ? supabaseClinics
-        : db.clinics.map((entry) => ({ id: entry.id, tradeName: entry.tradeName ?? '-' }))
-      ).map((entry) => [entry.id, entry.tradeName]),
-    )
-    const casePrintFallback = caseItem ? supabaseCasePrintFallbackByCaseId[caseItem.id] : undefined
-    const hasUpperArch = (caseItem?.arch ?? item.arch ?? 'ambos') !== 'inferior'
-    const hasLowerArch = (caseItem?.arch ?? item.arch ?? 'ambos') !== 'superior'
-    const totalUpper = hasUpperArch ? toNonNegativeInt(caseItem?.totalTraysUpper ?? caseItem?.totalTrays) : 0
-    const totalLower = hasLowerArch ? toNonNegativeInt(caseItem?.totalTraysLower ?? caseItem?.totalTrays) : 0
-    const planLabel = hasUpperArch && hasLowerArch
-      ? `Superior ${totalUpper} | Inferior ${totalLower}`
-      : hasUpperArch
-        ? `Superior ${totalUpper}`
-        : hasLowerArch
-          ? `Inferior ${totalLower}`
-          : '-'
-    const caseLabel = formatFriendlyRequestCode(caseItem?.treatmentCode ?? item.requestCode ?? caseItem?.id ?? item.id)
-    const issueDate = new Date()
-    const issueDateLabel = issueDate.toLocaleString('pt-BR')
-    const emittedByRaw = currentUser?.name || currentUser?.email || 'Sistema'
-    const emittedBy = emittedByRaw.includes('@') ? emittedByRaw.split('@')[0] : emittedByRaw
-    const clinicId = caseItem?.clinicId ?? patientOption?.clinicId ?? item.clinicId
-    const clinicName = clinicId
-      ? clinicsById.get(clinicId) || patientOption?.clinicName || casePrintFallback?.clinicName || '-'
-      : patientOption?.clinicName || casePrintFallback?.clinicName || '-'
-    const dentistId = caseItem?.dentistId ?? patientOption?.dentistId ?? item.dentistId
-    const requesterDentistId = caseItem?.requestedByDentistId ?? dentistId
-    const dentistNameRaw = dentistId
-      ? dentistsById.get(dentistId) || patientOption?.dentistName || casePrintFallback?.dentistName || '-'
-      : patientOption?.dentistName || casePrintFallback?.dentistName || '-'
-    const requesterNameRaw = requesterDentistId
-      ? dentistsById.get(requesterDentistId) || casePrintFallback?.requesterName || dentistNameRaw
-      : casePrintFallback?.requesterName || dentistNameRaw
-    const withDrPrefix = (name: string) => (name && name !== '-' ? (name.toLowerCase().startsWith('dr.') ? name : `Dr. ${name}`) : '-')
-    const dentistName = withDrPrefix(dentistNameRaw)
-    const requesterName = withDrPrefix(requesterNameRaw)
-    const patientBirthDateRaw =
-      patientOption?.birthDate ||
-      casePrintFallback?.patientBirthDate ||
-      (patientId ? db.patients.find((entry) => entry.id === patientId)?.birthDate : undefined)
-    const patientBirthDateLabel = patientBirthDateRaw ? new Date(`${patientBirthDateRaw}T00:00:00`).toLocaleDateString('pt-BR') : '-'
-    const generationDate = item.createdAt ? new Date(item.createdAt) : issueDate
-    const deliveryExpectedDate = new Date(generationDate)
-    deliveryExpectedDate.setDate(deliveryExpectedDate.getDate() + 10)
-    const deliveryExpectedLabel = deliveryExpectedDate.toLocaleDateString('pt-BR')
-    const changeDaysLabel = String(caseItem?.changeEveryDays ?? 10)
-    const productLabel = resolveLabProductLabel(item, caseItem)
-    const html = `
+  const getGuidePrintContext = useCallback(
+    (item: LabItem): GuidePrintContext => {
+      const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
+      const patientId = caseItem?.patientId ?? item.patientId
+      const patientOption = patientId ? patientOptionById.get(patientId) : undefined
+      const dentistsById = new Map(
+        (isSupabaseMode
+          ? supabaseDentists
+          : db.dentists.map((entry) => ({ id: entry.id, name: entry.name ?? '-' }))
+        ).map((entry) => [entry.id, entry.name]),
+      )
+      const clinicsById = new Map(
+        (isSupabaseMode
+          ? supabaseClinics
+          : db.clinics.map((entry) => ({ id: entry.id, tradeName: entry.tradeName ?? '-' }))
+        ).map((entry) => [entry.id, entry.tradeName]),
+      )
+      const casePrintFallback = caseItem ? supabaseCasePrintFallbackByCaseId[caseItem.id] : undefined
+      const treatmentArch = caseItem?.arch ?? item.arch ?? 'ambos'
+      const hasUpperArch = treatmentArch !== 'inferior'
+      const hasLowerArch = treatmentArch !== 'superior'
+      const totalUpper = hasUpperArch ? toNonNegativeInt(caseItem?.totalTraysUpper ?? caseItem?.totalTrays) : 0
+      const totalLower = hasLowerArch ? toNonNegativeInt(caseItem?.totalTraysLower ?? caseItem?.totalTrays) : 0
+      const planLabel = hasUpperArch && hasLowerArch
+        ? `Superior ${totalUpper} | Inferior ${totalLower}`
+        : hasUpperArch
+          ? `Superior ${totalUpper}`
+          : hasLowerArch
+            ? `Inferior ${totalLower}`
+            : '-'
+      const caseLabel = formatFriendlyRequestCode(caseItem?.treatmentCode ?? item.requestCode ?? caseItem?.id ?? item.id)
+      const issueDate = new Date()
+      const issueDateLabel = issueDate.toLocaleString('pt-BR')
+      const emittedByRaw = currentUser?.name || currentUser?.email || 'Sistema'
+      const emittedBy = emittedByRaw.includes('@') ? emittedByRaw.split('@')[0] : emittedByRaw
+      const clinicId = caseItem?.clinicId ?? patientOption?.clinicId ?? item.clinicId
+      const clinicName = clinicId
+        ? clinicsById.get(clinicId) || patientOption?.clinicName || casePrintFallback?.clinicName || '-'
+        : patientOption?.clinicName || casePrintFallback?.clinicName || '-'
+      const dentistId = caseItem?.dentistId ?? patientOption?.dentistId ?? item.dentistId
+      const requesterDentistId = caseItem?.requestedByDentistId ?? dentistId
+      const dentistNameRaw = dentistId
+        ? dentistsById.get(dentistId) || patientOption?.dentistName || casePrintFallback?.dentistName || '-'
+        : patientOption?.dentistName || casePrintFallback?.dentistName || '-'
+      const requesterNameRaw = requesterDentistId
+        ? dentistsById.get(requesterDentistId) || casePrintFallback?.requesterName || dentistNameRaw
+        : casePrintFallback?.requesterName || dentistNameRaw
+      const patientBirthDateRaw =
+        patientOption?.birthDate ||
+        casePrintFallback?.patientBirthDate ||
+        (patientId ? db.patients.find((entry) => entry.id === patientId)?.birthDate : undefined)
+      const generationDate = item.createdAt ? new Date(item.createdAt) : issueDate
+      const deliveryExpectedDate = new Date(generationDate)
+      deliveryExpectedDate.setDate(deliveryExpectedDate.getDate() + 10)
+
+      return {
+        caseLabel,
+        issueDateLabel,
+        patientName: caseItem?.patientName ?? item.patientName,
+        patientBirthDateLabel: patientBirthDateRaw ? formatGuideDate(patientBirthDateRaw) : '-',
+        clinicName,
+        dentistName: withProfessionalPrefix(dentistNameRaw),
+        requesterName: withProfessionalPrefix(requesterNameRaw),
+        productLabel: resolveLabProductLabel(item, caseItem),
+        planLabel,
+        changeDaysLabel: String(caseItem?.changeEveryDays ?? 10),
+        deliveryExpectedLabel: deliveryExpectedDate.toLocaleDateString('pt-BR'),
+        emittedBy,
+        emitOrigin: window.location.origin,
+        hasUpperArch,
+        hasLowerArch,
+      }
+    },
+    [
+      caseById,
+      currentUser,
+      db.clinics,
+      db.dentists,
+      db.patients,
+      isSupabaseMode,
+      patientOptionById,
+      resolveLabProductLabel,
+      supabaseCasePrintFallbackByCaseId,
+      supabaseClinics,
+      supabaseDentists,
+    ],
+  )
+
+  const preparePrintPopup = useCallback((title: string) => {
+    const popup = window.open('', '_blank')
+    if (!popup) return null
+    popup.document.write(`
       <!doctype html>
       <html lang="pt-BR">
       <head>
         <meta charset="utf-8" />
-        <title>Ordem de Serviço Inicial</title>
+        <title>${escapeHtml(title)}</title>
         <style>
-          @page { size: A4; margin: 14mm; }
-          body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; margin: 0; }
-          .header { display: grid; grid-template-columns: 250px 1fr; gap: 12px; border: 1px solid #1e293b; padding: 10px; margin-bottom: 10px; }
-          .brand { border-right: 1px solid #cbd5e1; padding-right: 10px; }
-          .brand img { max-width: 225px; max-height: 72px; object-fit: contain; display: block; margin-bottom: 6px; }
-          .brand p { margin: 2px 0; font-size: 11px; color: #475569; }
-          .doc h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
-          .doc p { margin: 3px 0; color: #334155; font-size: 11px; }
-          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-          .meta-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 7px; }
-          .meta-label { font-size: 10px; text-transform: uppercase; color: #475569; margin-bottom: 2px; letter-spacing: .3px; }
-          .meta-value { font-weight: 700; color: #0f172a; }
-          .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
-          .sign-box { border: 1px solid #94a3b8; border-radius: 4px; padding: 8px; min-height: 92px; }
-          .sign-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; }
-          .line { margin-top: 26px; border-top: 1px solid #64748b; font-size: 11px; padding-top: 4px; color: #334155; }
-          .emit { margin-top: 14px; font-size: 10px; color: #475569; border-top: 1px solid #cbd5e1; padding-top: 8px; }
+          body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+          p { margin: 0; font-size: 14px; }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div class="brand">
-            <img src="${window.location.origin}/brand/orthoscan.png" alt="Orthoscan" />
-            <p>Odontologia Digital</p>
-          </div>
-          <div class="doc">
-            <h1>ORDEM DE SERVICO INICIAL (O.S)</h1>
-            <p><strong>Data/Hora:</strong> ${escapeHtml(issueDateLabel)}</p>
-            <p><strong>NÂº Caso:</strong> ${escapeHtml(caseLabel)}</p>
-          </div>
-        </div>
-        <div class="meta">
-          <div class="meta-box"><div class="meta-label">Paciente</div><div class="meta-value">${escapeHtml(item.patientName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Data de nascimento</div><div class="meta-value">${escapeHtml(patientBirthDateLabel)}</div></div>
-          <div class="meta-box"><div class="meta-label">Clínica</div><div class="meta-value">${escapeHtml(clinicName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Dentista responsável</div><div class="meta-value">${escapeHtml(dentistName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Solicitante</div><div class="meta-value">${escapeHtml(requesterName)}</div></div>
-          <div class="meta-box"><div class="meta-label">Produto</div><div class="meta-value">${escapeHtml(productLabel)}</div></div>
-          <div class="meta-box"><div class="meta-label">Planejamento</div><div class="meta-value">${escapeHtml(planLabel)}</div></div>
-          <div class="meta-box"><div class="meta-label">Troca</div><div class="meta-value">${escapeHtml(changeDaysLabel)} dias</div></div>
-          <div class="meta-box"><div class="meta-label">Data prevista entrega ao profissional</div><div class="meta-value">${escapeHtml(deliveryExpectedLabel)}</div></div>
-        </div>
-
-        <div class="sign-grid">
-          <div class="sign-box">
-            <p class="sign-title">Entrega ao laboratorio</p>
-            <div class="line">Assinatura: ____________________________________</div>
-            <div class="line">Data: ____/____/________</div>
-          </div>
-          <div class="sign-box">
-            <p class="sign-title">Entrega ao dentista</p>
-            <div class="line">Assinatura: ____________________________________</div>
-            <div class="line">Data: ____/____/________</div>
-          </div>
-        </div>
-
-        <div class="emit">Emitido por ${escapeHtml(emittedBy)} Através da plataforma Orthoscan Laboratório Em ${escapeHtml(issueDateLabel)} - ${escapeHtml(window.location.origin)}</div>
+        <p>Gerando impressao...</p>
       </body>
       </html>
-    `
+    `)
+    popup.document.close()
+    return popup
+  }, [])
 
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const printUrl = URL.createObjectURL(blob)
-    const popup = window.open(printUrl, '_blank')
-    if (!popup) {
-      addToast({ type: 'error', title: 'Reimpressao O.S', message: 'Não foi possível abrir a janela de impressão.' })
-      return
-    }
-    const onLoaded = () => {
-      popup.focus()
-      popup.print()
-      setTimeout(() => URL.revokeObjectURL(printUrl), 10_000)
-    }
-    if (popup.document.readyState === 'complete') onLoaded()
-    else popup.addEventListener('load', onLoaded, { once: true })
-  }
+  const printHtmlDocument = useCallback(
+    (html: string, errorTitle: string, preparedPopup?: Window | null) => {
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const printUrl = URL.createObjectURL(blob)
+      const popup = preparedPopup && !preparedPopup.closed ? preparedPopup : window.open(printUrl, '_blank')
+      if (!popup) {
+        URL.revokeObjectURL(printUrl)
+        addToast({ type: 'error', title: errorTitle, message: 'Não foi possível abrir a janela de impressão.' })
+        return false
+      }
+      const releaseUrl = () => {
+        try {
+          URL.revokeObjectURL(printUrl)
+        } catch {
+          // noop
+        }
+      }
+      const onLoaded = () => {
+        popup.focus()
+        popup.print()
+        setTimeout(releaseUrl, 10_000)
+      }
+      if (preparedPopup && !preparedPopup.closed) {
+        popup.addEventListener('load', onLoaded, { once: true })
+        popup.location.replace(printUrl)
+      } else if (popup.document.readyState === 'complete') {
+        onLoaded()
+      } else {
+        popup.addEventListener('load', onLoaded, { once: true })
+      }
+      return true
+    },
+    [addToast],
+  )
+
+  const forcePrintHtmlDocument = useCallback(
+    (html: string, errorTitle: string, preparedPopup?: Window | null) => {
+      const popup = preparedPopup && !preparedPopup.closed ? preparedPopup : window.open('', '_blank')
+      if (!popup) {
+        addToast({ type: 'error', title: errorTitle, message: 'Não foi possível abrir a janela de impressão.' })
+        return false
+      }
+      let printed = false
+      const runPrint = () => {
+        if (printed || popup.closed) return
+        printed = true
+        popup.focus()
+        popup.print()
+      }
+      popup.addEventListener('load', () => {
+        setTimeout(runPrint, 150)
+      }, { once: true })
+      popup.document.open()
+      popup.document.write(html)
+      popup.document.close()
+      setTimeout(runPrint, 900)
+      return true
+    },
+    [addToast],
+  )
+
+  const printGuideDocument = useCallback(
+    (item: LabItem, options: GuidePrintOptions, preparedPopup?: Window | null, forcePrint = false) =>
+      (forcePrint ? forcePrintHtmlDocument : printHtmlDocument)(
+        buildLabGuideHtml(getGuidePrintContext(item), options),
+        options.kind === 'initial' ? 'Reimpressao O.S' : 'Comprovante de entrega',
+        preparedPopup,
+      ),
+    [forcePrintHtmlDocument, getGuidePrintContext, printHtmlDocument],
+  )
+
+  const reprintGuideFromModal = useCallback(
+    (item: LabItem) => {
+      printGuideDocument(item, { kind: 'initial' })
+    },
+    [printGuideDocument],
+  )
 
   return (
     <AppShell breadcrumb={['Início', 'Laboratório']}>
@@ -2143,9 +2363,21 @@ export default function LabPage() {
               addToast({ type: 'error', title: 'Entrega de lote', message: 'Selecione uma OS pronta valida.' })
               return
             }
+            const closePreparedPopup = (popup?: Window | null) => {
+              if (popup && !popup.closed) popup.close()
+            }
             if (!selectedReadyItem.caseId) {
+              const deliveryReceipt: GuidePrintOptions = {
+                kind: 'delivery_receipt',
+                deliveredToDoctorAt: payload.deliveredToDoctorAt,
+                deliveredUpperQty: 0,
+                deliveredLowerQty: 0,
+                note: payload.note,
+              }
+              const preparedPopup = preparePrintPopup('Comprovante de entrega ao dentista')
               if (isSupabaseMode) {
                 if (!supabase) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase não configurado.' })
                   return
                 }
@@ -2155,6 +2387,7 @@ export default function LabPage() {
                   .eq('id', selectedReadyItem.id)
                   .maybeSingle()
                 if (readError || !current) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: readError?.message ?? 'OS não encontrada.' })
                   return
                 }
@@ -2172,6 +2405,7 @@ export default function LabPage() {
                   })
                   .eq('id', selectedReadyItem.id)
                 if (error) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: error.message })
                   return
                 }
@@ -2180,6 +2414,7 @@ export default function LabPage() {
                 setDeliveryOpen(false)
                 setDeliveryCaseId('')
                 addToast({ type: 'success', title: 'Entrega registrada pelo laboratorio' })
+                printGuideDocument(selectedReadyItem, deliveryReceipt, preparedPopup, Boolean(payload.forcePrint))
                 return
               }
               const result = updateLabItem(selectedReadyItem.id, {
@@ -2187,12 +2422,14 @@ export default function LabPage() {
                 notes: payload.note ?? selectedReadyItem.notes,
               })
               if (result.error) {
+                closePreparedPopup(preparedPopup)
                 addToast({ type: 'error', title: 'Entrega de lote', message: result.error })
                 return
               }
               setDeliveryOpen(false)
               setDeliveryCaseId('')
               addToast({ type: 'success', title: 'Entrega registrada pelo laboratorio' })
+              printGuideDocument(selectedReadyItem, deliveryReceipt, preparedPopup, Boolean(payload.forcePrint))
               return
             }
             const selectedCaseId = selectedReadyItem.caseId
@@ -2221,8 +2458,17 @@ export default function LabPage() {
               const nextStatus = 'em_entrega'
               const nextPhase = 'em_producao'
               const nextNote = payload.note ?? selectedReadyItem.notes
+              const deliveryReceipt: GuidePrintOptions = {
+                kind: 'delivery_receipt',
+                deliveredToDoctorAt: payload.deliveredToDoctorAt,
+                deliveredUpperQty: 0,
+                deliveredLowerQty: 0,
+                note: payload.note,
+              }
+              const preparedPopup = preparePrintPopup('Comprovante de entrega ao dentista')
               if (isSupabaseMode) {
                 if (!supabase) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase não configurado.' })
                   return
                 }
@@ -2239,6 +2485,7 @@ export default function LabPage() {
                   })
                   .eq('id', selectedReadyItem.id)
                 if (labError) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: labError.message })
                   return
                 }
@@ -2257,6 +2504,7 @@ export default function LabPage() {
                   })
                   .eq('id', selectedCaseId)
                 if (caseError) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: caseError.message })
                   return
                 }
@@ -2267,6 +2515,7 @@ export default function LabPage() {
                   notes: nextNote,
                 })
                 if (labResult.error) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: labResult.error })
                   return
                 }
@@ -2279,6 +2528,7 @@ export default function LabPage() {
               setDeliveryOpen(false)
               setDeliveryCaseId('')
               addToast({ type: 'success', title: 'Entrega registrada pelo laboratorio' })
+              printGuideDocument(selectedReadyItem, deliveryReceipt, preparedPopup, Boolean(payload.forcePrint))
               return
             }
 
@@ -2312,8 +2562,24 @@ export default function LabPage() {
               return
             }
 
+            const deliveredUpperQty = ops
+              .filter((op) => op.arch === 'superior')
+              .reduce((total, op) => total + (op.toTray - op.fromTray + 1), 0)
+            const deliveredLowerQty = ops
+              .filter((op) => op.arch === 'inferior')
+              .reduce((total, op) => total + (op.toTray - op.fromTray + 1), 0)
+            const deliveryReceipt: GuidePrintOptions = {
+              kind: 'delivery_receipt',
+              deliveredToDoctorAt: payload.deliveredToDoctorAt,
+              deliveredUpperQty,
+              deliveredLowerQty,
+              note: payload.note,
+            }
+            const preparedPopup = preparePrintPopup('Comprovante de entrega ao dentista')
+
             if (isSupabaseMode) {
               if (!supabase) {
+                closePreparedPopup(preparedPopup)
                 addToast({ type: 'error', title: 'Entrega de lote', message: 'Supabase não configurado.' })
                 return
               }
@@ -2358,6 +2624,7 @@ export default function LabPage() {
                 })
                 .eq('id', selectedCaseId)
               if (error) {
+                closePreparedPopup(preparedPopup)
                 addToast({ type: 'error', title: 'Entrega de lote', message: error.message })
                 return
               }
@@ -2372,6 +2639,7 @@ export default function LabPage() {
                   note: payload.note,
                 })
                 if (!result.ok) {
+                  closePreparedPopup(preparedPopup)
                   addToast({ type: 'error', title: 'Entrega de lote', message: result.error })
                   return
                 }
@@ -2381,6 +2649,7 @@ export default function LabPage() {
             setDeliveryOpen(false)
             setDeliveryCaseId('')
             addToast({ type: 'success', title: 'Entrega registrada pelo laboratorio' })
+            printGuideDocument(selectedReadyItem, deliveryReceipt, preparedPopup, Boolean(payload.forcePrint))
           })()
         }}
       />

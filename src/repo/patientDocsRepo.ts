@@ -67,9 +67,9 @@ export async function getPatientDoc(id: string) {
 }
 
 export async function resolvePatientDocUrl(doc: PatientDocument) {
+  if (doc.filePath) return createSignedUrl(doc.filePath, 300)
   if (doc.url) return { ok: true as const, url: doc.url }
-  if (!doc.filePath) return { ok: false as const, error: 'Documento sem caminho de arquivo.' }
-  return createSignedUrl(doc.filePath, 300)
+  return { ok: false as const, error: 'Documento sem caminho de arquivo.' }
 }
 export async function addPatientDoc(payload: {
   patientId: string

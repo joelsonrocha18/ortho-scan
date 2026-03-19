@@ -20,6 +20,7 @@ type RegisterDeliveryLotModalProps = {
     lowerQty: number
     deliveredToDoctorAt: string
     note?: string
+    forcePrint?: boolean
   }) => void
 }
 
@@ -131,6 +132,20 @@ export default function RegisterDeliveryLotModal({
             Cancelar
           </Button>
           <Button
+            variant="secondary"
+            onClick={() =>
+              onConfirm({
+                upperQty: Number(upperQty),
+                lowerQty: Number(lowerQty),
+                deliveredToDoctorAt,
+                note: note.trim() || undefined,
+                forcePrint: true,
+              })
+            }
+          >
+            Forcar impressao
+          </Button>
+          <Button
             onClick={() =>
               onConfirm({
                 upperQty: Number(upperQty),
@@ -140,7 +155,7 @@ export default function RegisterDeliveryLotModal({
               })
             }
           >
-            Salvar lote
+            Salvar
           </Button>
         </div>
       </Card>

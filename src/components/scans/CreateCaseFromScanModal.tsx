@@ -34,10 +34,12 @@ export default function CreateCaseFromScanModal({ open, scan, onClose, onConfirm
     let bestLower: number | undefined
     const planningFiles = attachments.filter((item) => item.kind === 'projeto')
     for (const item of planningFiles) {
-      let url = item.url
-      if (!url && item.filePath) {
+      let url: string | undefined
+      if (item.filePath) {
         const signed = await createSignedUrl(item.filePath, 300)
         if (signed.ok) url = signed.url
+      } else {
+        url = item.url
       }
       if (!url) continue
       try {

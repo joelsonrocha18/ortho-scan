@@ -155,14 +155,15 @@ export default function ScanDetailsModal({
   }
 
   const openAttachment = async (item: ScanAttachment) => {
-    if (item.url) {
-      window.open(item.url, '_blank', 'noreferrer')
+    if (item.filePath) {
+      const signed = await createSignedUrl(item.filePath, 300)
+      if (!signed.ok) return
+      window.open(signed.url, '_blank', 'noreferrer')
       return
     }
-    if (!item.filePath) return
-    const signed = await createSignedUrl(item.filePath, 300)
-    if (!signed.ok) return
-    window.open(signed.url, '_blank', 'noreferrer')
+    if (item.url) {
+      window.open(item.url, '_blank', 'noreferrer')
+    }
   }
 
   const renderFileItem = (item: ScanAttachment) => {
