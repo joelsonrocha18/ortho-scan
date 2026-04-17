@@ -1,4 +1,4 @@
-import { buildActualChangeDateMap, buildChangeSchedule, getCaseAlignerChangeSummary, resolveAlignerArchTotals, resolveDeliveredToPatient } from '../../../../lib/alignerChange'
+import { buildActualChangeDateMap, buildChangeSchedule, getCaseAlignerChangeSummary, recalculateTrayDueDates, resolveAlignerArchTotals, resolveDeliveredToPatient } from '../../../../lib/alignerChange'
 import { addDaysToIsoDate, formatPtBrDate, nowIsoDate, pickMinIsoDate, toIsoDate } from '../../../../shared/utils/date'
 import type { Case } from '../../../../types/Case'
 import type { PatientDocument, PatientDocumentMetadata } from '../../../../types/PatientDocument'
@@ -125,6 +125,14 @@ function buildScheduleRows(caseItem?: Case | null, documents: PatientDocument[] 
       actualLowerByTray.set(trayNumber, date)
     })
 
+    const adjustedTrays = recalculateTrayDueDates({
+      trays: caseItem.trays,
+      changeEveryDays: caseItem.changeEveryDays,
+      installedAt: caseItem.installation.installedAt,
+      actualUpperByTray,
+      actualLowerByTray,
+    })
+
     return buildChangeSchedule({
       installedAt: caseItem.installation.installedAt,
       changeEveryDays: caseItem.changeEveryDays,
@@ -132,7 +140,7 @@ function buildScheduleRows(caseItem?: Case | null, documents: PatientDocument[] 
       totalLower: totals.lower,
       deliveredUpper: delivered.upper,
       deliveredLower: delivered.lower,
-      trays: caseItem.trays,
+      trays: adjustedTrays,
       actualUpperByTray,
       actualLowerByTray,
     }).map((item) => ({

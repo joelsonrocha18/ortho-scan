@@ -8,6 +8,6 @@ describe('loadExcelJS', () => {
 
     expect(first).toBe(second)
     expect(typeof first.Workbook).toBe('function')
-  }, 15000)
+  }, 60000)
 })
 

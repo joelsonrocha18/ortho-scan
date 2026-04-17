@@ -929,8 +929,7 @@ export class LocalLabRepository implements LabRepository {
     const hasOpenReworkProduction = linkedLabItems.some(
       (item) =>
         item.trayNumber === input.trayNumber &&
-        (item.requestKind ?? 'producao') === 'producao' &&
-        (item.notes ?? '').toLowerCase().includes('rework') &&
+        isReworkProductionOrder(item) &&
         item.status !== 'prontas',
     )
 
@@ -985,6 +984,8 @@ export class LocalLabRepository implements LabRepository {
         status: 'aguardando_iniciar',
         priority: 'Urgente',
         notes: buildLabOrderNotesWithReason('OS de produção para reconfecção', input.trayNumber, input.reason),
+        reworkOfCaseId: input.caseId,
+        reworkOfTrayNumber: input.trayNumber,
       })
       if (!created.ok) return created
       createdProductionOrder = created.data.order

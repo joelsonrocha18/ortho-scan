@@ -16,7 +16,7 @@ describe('accessLinks', () => {
     })
 
     expect(href).toContain('https://wa.me/5585999990000?text=')
-    expect(decodeURIComponent(href.split('?text=')[1] ?? '')).toContain('Codigo do tratamento: ORTH-00028')
+    expect(decodeURIComponent(href.split('?text=')[1] ?? '')).toContain('Código do tratamento: ORTH-00028')
     expect(decodeURIComponent(href.split('?text=')[1] ?? '')).toContain('https://ortho-scan.vercel.app/acesso/pacientes')
   })
 

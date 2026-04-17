@@ -100,8 +100,13 @@ export function isReworkOrder(order: Pick<LabOrder, 'requestKind'>) {
   return (order.requestKind ?? 'producao') === 'reconfeccao'
 }
 
-export function isReworkProductionOrder(order: Pick<LabOrder, 'requestKind' | 'notes'>) {
-  return (order.requestKind ?? 'producao') === 'producao' && (order.notes ?? '').toLowerCase().includes('rework')
+export function isReworkProductionOrder(order: Pick<LabOrder, 'requestKind' | 'notes' | 'reworkOfCaseId' | 'reworkOfLabOrderId' | 'reworkOfTrayNumber'>) {
+  const notes = (order.notes ?? '').toLowerCase()
+  return (order.requestKind ?? 'producao') === 'producao' && (
+    Boolean(order.reworkOfCaseId || order.reworkOfLabOrderId || order.reworkOfTrayNumber) ||
+    notes.includes('rework') ||
+    notes.includes('reconfec')
+  )
 }
 
 export function isProgrammedReplenishmentOrder(order: Pick<LabOrder, 'requestKind'>) {

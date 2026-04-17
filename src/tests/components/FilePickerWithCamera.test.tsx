@@ -18,7 +18,7 @@ describe('FilePickerWithCamera', () => {
     Object.defineProperty(window.navigator, 'userAgent', { value: 'iPhone', configurable: true })
     render(<FilePickerWithCamera onFileSelected={() => undefined} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir camera' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir câmera' }))
     expect(await screen.findByText('Capturar foto')).toBeInTheDocument()
   })
 

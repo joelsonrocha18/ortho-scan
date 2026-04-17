@@ -157,7 +157,7 @@ describe('local patient access repository', () => {
 
     expect(session.ok).toBe(false)
     if (session.ok) return
-    expect(session.error).toContain('Codigo do tratamento')
+    expect(session.error).toContain('Código do tratamento')
   })
 
   it('uploads a patient progress photo and refreshes the portal timeline', async () => {
@@ -280,6 +280,6 @@ describe('local patient access repository', () => {
 
     expect(secondUpload.ok).toBe(false)
     if (secondUpload.ok) return
-    expect(secondUpload.error).toContain('nao e possivel alterar ou excluir')
+    expect(secondUpload.error).toContain('Não é possível alterar ou excluir')
   })
 })

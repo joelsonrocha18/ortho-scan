@@ -946,8 +946,7 @@ export class SupabaseLabRepository implements LabRepository {
     const hasOpenReworkProduction = linkedLabItems.some(
       (item) =>
         item.trayNumber === input.trayNumber &&
-        (item.requestKind ?? 'producao') === 'producao' &&
-        (item.notes ?? '').toLowerCase().includes('rework') &&
+        isReworkProductionOrder(item) &&
         item.status !== 'prontas',
     )
 
@@ -987,6 +986,8 @@ export class SupabaseLabRepository implements LabRepository {
         status: 'aguardando_iniciar',
         priority: 'Urgente',
         notes: input.reason.trim(),
+        reworkOfCaseId: input.caseId,
+        reworkOfTrayNumber: input.trayNumber,
       })
       if (!created.ok) return created
       createdReworkOrder = created.data.order
@@ -1006,7 +1007,9 @@ export class SupabaseLabRepository implements LabRepository {
         dueDate,
         status: 'aguardando_iniciar',
         priority: 'Urgente',
-        notes: `OS de produção para rework da placa #${input.trayNumber}. Motivo: ${input.reason.trim()}`,
+        notes: `OS de produção para reconfecção da placa #${input.trayNumber}. Motivo: ${input.reason.trim()}`,
+        reworkOfCaseId: input.caseId,
+        reworkOfTrayNumber: input.trayNumber,
       })
       if (!created.ok) return created
       createdProductionOrder = created.data.order

@@ -64,14 +64,6 @@ function fileNameWithTimestamp(fileName: string, patientId: string) {
   return `${sanitizeTokenSegment(patientId, 'paciente')}_${new Date().toISOString().replace(/[-:.TZ]/g, '')}_patient_portal_${cleaned}`
 }
 
-function resolveCaseCode(row: CaseRow) {
-  const data = row.data ?? {}
-  const treatmentCode = typeof data.treatmentCode === 'string' ? data.treatmentCode : ''
-  const shortId = typeof row.short_id === 'string' ? row.short_id : ''
-  const readableId = isReadableCode(row.id) ? String(row.id) : ''
-  return treatmentCode || shortId || readableId
-}
-
 function matchesAccessCode(row: CaseRow, accessCode: string) {
   const normalized = normalizeAccessCode(accessCode)
   const data = row.data ?? {}

@@ -138,7 +138,7 @@ describe('LAB module', () => {
     expect(caseItem?.installation?.deliveredLower).toBe(2)
     expect(caseItem?.deliveryLots?.length).toBe(2)
     expect(nextDb.labItems.some((item) => item.caseId === 'qa_case_1' && item.trayNumber === 2 && item.requestKind === 'reconfeccao')).toBe(true)
-    expect(nextDb.labItems.some((item) => item.caseId === 'qa_case_1' && item.trayNumber === 2 && (item.notes ?? '').toLowerCase().includes('rework'))).toBe(true)
+    expect(nextDb.labItems.some((item) => item.caseId === 'qa_case_1' && item.trayNumber === 2 && item.requestKind === 'producao' && item.reworkOfCaseId === 'qa_case_1')).toBe(true)
     const reworkAudit = nextDb.auditLogs.find((entry) => entry.action === 'case.rework_registered' && entry.entityId === 'qa_case_1')
     expect(reworkAudit?.context?.trayNumber).toBe(2)
     expect(reworkAudit?.context?.reworkOrderId).toBeTruthy()
