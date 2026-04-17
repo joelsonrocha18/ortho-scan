@@ -1,5 +1,4 @@
 ﻿import { supabase } from '../lib/supabaseClient'
-import { PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabaseEndpoint'
 import type { CaseTray } from '../types/Case'
 import type { LabItem } from '../types/Lab'
 import type { ProductType } from '../types/Product'
@@ -792,8 +791,8 @@ export async function inviteUser(payload: {
   if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const accessToken = payload.accessToken?.trim()
   if (!accessToken) return { ok: false as const, error: 'Sessão expirada. Saia e entre novamente.' }
-  const anonKey = SUPABASE_ANON_KEY
-  const supabaseUrl = PUBLIC_SUPABASE_URL
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
   if (!anonKey) return { ok: false as const, error: 'Supabase anon key ausente no build.' }
   if (!supabaseUrl) return { ok: false as const, error: 'Supabase URL ausente no build.' }
 
@@ -809,7 +808,7 @@ export async function inviteUser(payload: {
   }
   const callInvite = async (token: string) => {
     try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/invite-user`, {
+      const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/invite-user`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${anonKey}`,

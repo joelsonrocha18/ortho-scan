@@ -6,19 +6,21 @@ import {
   createSessionStorageAdapter,
   SUPABASE_SESSION_STORAGE_KEY,
 } from './authStorage'
-import { PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseEndpoint'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 clearLegacyPersistentAuthStorage()
 
 export const supabase =
-  DATA_MODE === 'supabase' && (!PUBLIC_SUPABASE_URL || !SUPABASE_ANON_KEY)
+  DATA_MODE === 'supabase' && (!supabaseUrl || !supabaseAnonKey)
     ? (logger.error('Supabase env vars ausentes. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.', {
         dataMode: DATA_MODE,
-        hasSupabaseUrl: Boolean(PUBLIC_SUPABASE_URL),
-        hasSupabaseAnonKey: Boolean(SUPABASE_ANON_KEY),
+        hasSupabaseUrl: Boolean(supabaseUrl),
+        hasSupabaseAnonKey: Boolean(supabaseAnonKey),
       }), null)
-    : PUBLIC_SUPABASE_URL && SUPABASE_ANON_KEY
-      ? createClient(PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY, {
+    : supabaseUrl && supabaseAnonKey
+      ? createClient(supabaseUrl, supabaseAnonKey, {
           auth: {
             autoRefreshToken: true,
             persistSession: true,

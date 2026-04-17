@@ -4,11 +4,12 @@ import { supabase } from '../lib/supabaseClient'
 import { DATA_MODE } from '../data/dataMode'
 import { createValidationError, getErrorMessage } from '../shared/errors'
 import { buildUtcTimestampToken, sanitizeTokenSegment } from '../shared/utils/id'
-import { PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabaseEndpoint'
 
 const BUCKET = 'orthoscan'
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 const STORAGE_PROVIDER = ((import.meta.env.VITE_STORAGE_PROVIDER as string | undefined) ?? 'supabase').trim().toLowerCase()
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? ''
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? ''
 const localMockStorage = new Map<string, { file: File; createdAt: string }>()
 
 function fileNameWithTimestamp(fileName: string, params: { patientId?: string; origin?: string }) {
@@ -193,7 +194,7 @@ async function readAccessToken() {
 }
 
 function msFunctionUrl() {
-  return `${PUBLIC_SUPABASE_URL}/functions/v1/ms-drive-storage`
+  return `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/ms-drive-storage`
 }
 
 async function callMicrosoftDriveFunction(params: {
@@ -201,7 +202,7 @@ async function callMicrosoftDriveFunction(params: {
   path: string
   expiresIn?: number
 }) {
-  if (!PUBLIC_SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return { ok: false as const, error: 'Supabase env ausente para chamar ms-drive-storage.' }
   }
   const token = await readAccessToken()
@@ -230,7 +231,7 @@ async function callMicrosoftDriveFunction(params: {
 }
 
 async function uploadToMicrosoftDrive(path: string, file: File) {
-  if (!PUBLIC_SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return { ok: false as const, error: 'Supabase env ausente para chamar ms-drive-storage.' }
   }
   const token = await readAccessToken()
