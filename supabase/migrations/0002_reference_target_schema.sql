@@ -80,7 +80,7 @@ end $$;
 -- TABELAS PRINCIPAIS
 -- ============================
 create table if not exists clinics (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text not null,
   cnpj text,
   phone text,
@@ -91,7 +91,7 @@ create table if not exists clinics (
 );
 
 create table if not exists dentists (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   clinic_id uuid references clinics(id),
   name text not null,
   gender text,
@@ -104,7 +104,7 @@ create table if not exists dentists (
 );
 
 create table if not exists patients (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   clinic_id uuid references clinics(id),
   dentist_id uuid references dentists(id),
   name text not null,
@@ -118,7 +118,7 @@ create table if not exists patients (
 );
 
 create table if not exists scans (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   clinic_id uuid references clinics(id),
   dentist_id uuid references dentists(id),
   patient_id uuid references patients(id),
@@ -131,7 +131,7 @@ create table if not exists scans (
 );
 
 create table if not exists cases (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   clinic_id uuid references clinics(id),
   dentist_id uuid references dentists(id),
   patient_id uuid references patients(id),
@@ -149,7 +149,7 @@ create table if not exists cases (
 );
 
 create table if not exists lab_items (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   case_id uuid references cases(id),
   clinic_id uuid references clinics(id),
   arch arch_type default 'ambos',
@@ -163,7 +163,7 @@ create table if not exists lab_items (
 );
 
 create table if not exists deliveries (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   case_id uuid references cases(id),
   lab_item_id uuid references lab_items(id),
   delivered_at timestamptz not null,
@@ -172,7 +172,7 @@ create table if not exists deliveries (
 );
 
 create table if not exists documents (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   clinic_id uuid references clinics(id),
   patient_id uuid references patients(id),
   case_id uuid references cases(id),

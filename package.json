@@ -47,11 +47,13 @@
         "qa": "npm run qa:diagnostics && npm run test -- --run && npm run test:e2e && npm run build && node ./scripts/makeReport.mjs"
     },
     "dependencies": {
+        "@posthog/react": "^1.9.0",
         "@supabase/supabase-js": "^2.95.3",
         "@vitejs/plugin-basic-ssl": "^2.1.4",
         "clsx": "^2.1.1",
         "exceljs": "^4.4.0",
         "lucide-react": "^0.563.0",
+        "posthog-js": "^1.373.5",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "react-router-dom": "^7.13.0",
