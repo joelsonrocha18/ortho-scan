@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import posthog from 'posthog-js'
-import { PostHogProvider } from '@posthog/react'
+import { PostHogProvider } from 'posthog-js/react'
 import App from './App'
 import './index.css'
 import { initMonitoring } from './lib/monitoring'
@@ -20,6 +20,12 @@ if (POSTHOG_ENABLED) {
     api_host: POSTHOG_HOST,
     defaults: '2026-01-30',
     capture_pageview: true,
+    loaded: (client) => {
+      client.capture('orthoscan_posthog_linked', {
+        app: 'orthoscan',
+        source: 'app_init',
+      })
+    },
   })
 }
 
