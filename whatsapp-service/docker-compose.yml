@@ -1,0 +1,17 @@
+services:
+  whatsapp-service:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      AUTH_DATA_PATH: /data/.wwebjs_auth
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_HEADLESS: "true"
+    volumes:
+      - whatsapp_session:/data
+
+volumes:
+  whatsapp_session:

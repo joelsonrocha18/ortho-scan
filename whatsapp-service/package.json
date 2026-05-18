@@ -1,0 +1,21 @@
+{
+  "name": "orthoscan-whatsapp-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Microsservico de lembretes de troca de alinhadores via WhatsApp Web.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.95.3",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.2"
+  }
+}
