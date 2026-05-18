@@ -2,6 +2,8 @@
 
 export type Permission =
   | 'dashboard.read'
+  | 'agenda.read'
+  | 'agenda.write'
   | 'users.read'
   | 'users.write'
   | 'users.delete'
@@ -34,6 +36,7 @@ export type Permission =
 
 export type PermissionModule =
   | 'Painel'
+  | 'Agenda'
   | 'Pacientes'
   | 'Exames'
   | 'Alinhadores'
@@ -47,6 +50,8 @@ export type PermissionModule =
 
 const allPermissions: Permission[] = [
   'dashboard.read',
+  'agenda.read',
+  'agenda.write',
   'users.read',
   'users.write',
   'users.delete',
@@ -89,7 +94,7 @@ const rolePermissions: Record<Role, Permission[]> = {
   dentist_client: ['dashboard.read', 'patients.read', 'patients.write', 'scans.read', 'cases.read', 'docs.read', 'ai.clinica'],
   clinic_client: ['dashboard.read', 'patients.read', 'patients.write', 'scans.read', 'cases.read', 'docs.read', 'ai.clinica', 'ai.comercial'],
   lab_tech: ['lab.read', 'cases.read', 'scans.read', 'ai.lab'],
-  receptionist: ['dashboard.read', 'patients.read', 'patients.write', 'scans.read', 'scans.write', 'cases.read', 'lab.read', 'ai.clinica', 'ai.comercial'],
+  receptionist: ['dashboard.read', 'agenda.read', 'agenda.write', 'patients.read', 'patients.write', 'scans.read', 'scans.write', 'cases.read', 'lab.read', 'ai.clinica', 'ai.comercial'],
 }
 
 const profileLabels: Record<Role, string> = {
@@ -112,6 +117,8 @@ const profileDescriptions: Record<Role, string> = {
 
 const permissionLabels: Record<Permission, string> = {
   'dashboard.read': 'Visualizar painel',
+  'agenda.read': 'Visualizar agenda',
+  'agenda.write': 'Criar/editar agenda',
   'users.read': 'Visualizar usuários',
   'users.write': 'Cadastrar/editar usuários',
   'users.delete': 'Excluir usuários',
@@ -145,6 +152,8 @@ const permissionLabels: Record<Permission, string> = {
 
 const permissionModules: Record<Permission, PermissionModule> = {
   'dashboard.read': 'Painel',
+  'agenda.read': 'Agenda',
+  'agenda.write': 'Agenda',
   'users.read': 'Usuários',
   'users.write': 'Usuários',
   'users.delete': 'Usuários',

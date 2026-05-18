@@ -22,16 +22,16 @@ export async function loginAs(page: Page, userId: string) {
   }
 
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Entrar', level: 2 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible()
 
   const select = page.locator('select')
   if (await select.count()) {
     await select.selectOption(userId)
   } else {
-    await page.getByLabel('Email').fill(emailById[userId])
-    await page.getByLabel('Senha').fill('123456')
+    await page.locator('#email').fill(emailById[userId])
+    await page.locator('#password').fill('123456')
   }
 
   await page.getByRole('button', { name: 'Entrar' }).click({ noWaitAfter: true })
-  await expect(page).toHaveURL(/\/app\/dashboard/)
+  await expect(page.locator('main')).toContainText('Painel executivo')
 }

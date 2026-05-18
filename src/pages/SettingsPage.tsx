@@ -44,7 +44,7 @@ type PasswordMode = 'auto' | 'manual'
 type ReportDatasetKey = 'patients' | 'dentists' | 'clinics' | 'users' | 'scans' | 'cases' | 'labItems'
 type ReportFieldOption = { key: string; label: string }
 const ROLE_LIST: Role[] = ['master_admin', 'dentist_admin', 'dentist_client', 'clinic_client', 'lab_tech', 'receptionist']
-const MODULE_ORDER: PermissionModule[] = ['Painel', 'Pacientes', 'Exames', 'Alinhadores', 'Laboratório', 'Usuários', 'Configurações']
+const MODULE_ORDER: PermissionModule[] = ['Painel', 'Agenda', 'Pacientes', 'Exames', 'Alinhadores', 'Laboratório', 'Usuários', 'Configurações']
 const REPORT_DATASETS: Array<{ key: ReportDatasetKey; label: string }> = [
   { key: 'patients', label: 'Pacientes' },
   { key: 'dentists', label: 'Dentistas' },

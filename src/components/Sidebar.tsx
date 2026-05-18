@@ -1,4 +1,4 @@
-import { Building2, FlaskConical, LayoutDashboard, LogOut, ScanLine, Settings, Shapes, Stethoscope, UserRound, Users } from 'lucide-react'
+import { Building2, CalendarDays, FlaskConical, LayoutDashboard, LogOut, ScanLine, Settings, Shapes, Stethoscope, UserRound, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { getAuthProvider } from '../auth/authProvider'
 import { can } from '../auth/permissions'
@@ -30,6 +30,7 @@ export default function Sidebar({ isOpen, onCloseMobile, onLogout }: SidebarProp
 
   const menuItems = [
     { to: '/app/dashboard', label: 'Painel', icon: LayoutDashboard, permission: 'dashboard.read' as const },
+    { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, permission: 'agenda.read' as const },
     { to: '/app/scans', label: 'Exames', icon: ScanLine, permission: 'scans.read' as const },
     { to: '/app/cases', label: 'Alinhadores', icon: Shapes, permission: 'cases.read' as const },
     { to: '/app/portal-dentista', label: 'Portal do dentista', icon: Stethoscope, permission: 'cases.read' as const, onlyRoles: dentistPortalRoles },

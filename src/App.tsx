@@ -12,6 +12,7 @@ const PUSH_NOTIFICATIONS_ENABLED = ((import.meta.env.VITE_WEB_PUSH_ENABLED as st
 
 const CaseDetailPage = lazy(() => import('./pages/CaseDetailPage'))
 const CasesPage = lazy(() => import('./pages/CasesPage'))
+const AgendaPage = lazy(() => import('./pages/AgendaPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const DentistAccessPage = lazy(() => import('./pages/DentistAccessPage'))
 const DentistPortalPage = lazy(() => import('./pages/DentistPortalPage'))
@@ -127,7 +128,10 @@ export default function App() {
           <Route path="/app" element={<InternalAppEntryRedirect />} />
           <Route element={<ProtectedRoute permission="dashboard.read" />}>
             <Route path="/app/dashboard" element={withSuspense(<DashboardPage />)} />
-            <Route path="/dashboard/agendamentos" element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="/dashboard/agendamentos" element={<Navigate to="/app/agenda" replace />} />
+          </Route>
+          <Route element={<ProtectedRoute permission="agenda.read" />}>
+            <Route path="/app/agenda" element={withSuspense(<AgendaPage />)} />
           </Route>
           <Route element={<ProtectedRoute permission="scans.read" />}>
             <Route path="/app/scans" element={withSuspense(<ScansPage />)} />

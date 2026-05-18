@@ -37,6 +37,7 @@ export type DiagnosticReport = {
 const REQUIRED_ROUTES = [
   '/login',
   '/app/dashboard',
+  '/app/agenda',
   '/app/scans',
   '/app/cases',
   '/app/lab',
