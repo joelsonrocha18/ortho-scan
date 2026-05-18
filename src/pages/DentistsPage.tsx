@@ -128,7 +128,7 @@ export default function DentistsPage() {
       await navigator.clipboard.writeText(result.inviteLink)
       addToast({ type: 'success', title: 'Link copiado para a área de transferência' })
     } catch {
-      // no-op
+      // A cópia para a área de transferência pode falhar sem invalidar o link gerado.
     }
   }
 

@@ -644,14 +644,11 @@ export async function deleteScanSupabase(scanId: string) {
       .in('id', ids)
       .is('deleted_at', null)
 
-    // Tabela opcional no banco; se não existir, apenas ignora.
-    const replacementDelete = await supabase
+    // Tabela opcional no banco; se não existir, a exclusão principal continua válida.
+    await supabase
       .from('replacement_bank')
       .delete()
       .in('case_id', ids)
-    if (replacementDelete.error) {
-      // no-op
-    }
   }
 
   const { data, error } = await supabase
@@ -719,13 +716,11 @@ export async function deleteCaseSupabase(caseId: string) {
     }
   }
 
-  const replacementDelete = await supabase
+  // Tabela opcional no banco; se não existir, a exclusão principal continua válida.
+  await supabase
     .from('replacement_bank')
     .delete()
     .eq('case_id', caseId)
-  if (replacementDelete.error) {
-    // no-op
-  }
 
   await appendPatientHistorySupabase(
     patientId,

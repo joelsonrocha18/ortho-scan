@@ -35,9 +35,7 @@ function playFallbackBeep() {
   oscillator.stop(audioContext.currentTime + 0.12)
 
   oscillator.onended = () => {
-    void audioContext.close().catch(() => {
-      // no-op
-    })
+    void audioContext.close().catch(() => undefined)
   }
 }
 

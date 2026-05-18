@@ -1,3 +1,6 @@
+import { captureAnalyticsEvent } from './analytics'
+import { sanitizeForLog } from '../shared/observability'
+
 type MonitoringEvent = {
   type: 'error' | 'unhandledrejection'
   message: string
@@ -8,38 +11,42 @@ type MonitoringEvent = {
   ts: string
 }
 
-const webhookUrl = (import.meta.env.VITE_MONITORING_WEBHOOK_URL as string | undefined)?.trim()
+const explicitEndpoint = (import.meta.env.VITE_MONITORING_ENDPOINT as string | undefined)?.trim()
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
+const monitoringEnabled = (import.meta.env.VITE_MONITORING_ENABLED as string | undefined)?.trim() === 'true' || Boolean(explicitEndpoint)
 const release = (import.meta.env.VITE_RELEASE as string | undefined)?.trim()
 
-function isDiscordWebhook(url: string) {
-  return /discord\.com\/api\/webhooks\//i.test(url)
+function resolveMonitoringEndpoint() {
+  if (explicitEndpoint) return explicitEndpoint
+  if (!monitoringEnabled || !supabaseUrl) return ''
+  return `${supabaseUrl.replace(/\/$/, '')}/functions/v1/frontend-monitoring`
 }
 
-function buildDiscordPayload(event: MonitoringEvent) {
-  const title = event.type === 'error' ? 'Erro capturado' : 'Promise rejeitada'
-  const lines = [
-    `OrthoScan Monitor - ${title}`,
-    `Mensagem: ${event.message}`,
-    `URL: ${event.url}`,
-    `Release: ${event.release ?? 'n/a'}`,
-    `Timestamp: ${event.ts}`,
-  ]
-  return {
-    content: lines.join('\n'),
-  }
+function sanitizeMonitoringEvent(event: MonitoringEvent) {
+  return sanitizeForLog(event) as MonitoringEvent
 }
 
 function sendMonitoringEvent(event: MonitoringEvent) {
-  if (!webhookUrl) return
-  const payload = isDiscordWebhook(webhookUrl) ? buildDiscordPayload(event) : event
-  void fetch(webhookUrl, {
+  const payload = sanitizeMonitoringEvent(event)
+  captureAnalyticsEvent(payload.type === 'error' ? 'frontend.error' : 'frontend.unhandledrejection', {
+    message: payload.message,
+    url: payload.url,
+    release: payload.release,
+    monitoringType: payload.type,
+  })
+
+  const endpoint = resolveMonitoringEndpoint()
+  if (!endpoint) return
+
+  void fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...payload,
+      app: 'orthoscan',
+    }),
     keepalive: true,
-  }).catch(() => {
-    // Avoid throwing from the monitoring path.
-  })
+  }).catch(() => undefined)
 }
 
 export function initMonitoring() {

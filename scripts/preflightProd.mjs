@@ -11,7 +11,12 @@ const requiredVars = [
   'VITE_APP_URL',
 ]
 
-const recommendedVars = ['VITE_MONITORING_WEBHOOK_URL', 'VITE_RELEASE']
+const recommendedVars = [
+  'VITE_MONITORING_ENABLED',
+  'VITE_RELEASE',
+  'VITE_PUBLIC_POSTHOG_TOKEN',
+  'VITE_PUBLIC_POSTHOG_HOST',
+]
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {}

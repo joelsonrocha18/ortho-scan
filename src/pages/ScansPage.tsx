@@ -437,7 +437,7 @@ export default function ScansPage() {
       try {
         URL.revokeObjectURL(printUrl)
       } catch {
-        // noop
+        // O navegador pode revogar o Object URL antes do callback tardio de impressão.
       }
     }
     const onLoaded = () => {

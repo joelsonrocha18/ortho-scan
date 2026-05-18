@@ -10,7 +10,7 @@ import { LabPageHeaderSection } from './sections/LabPageHeaderSection'
 import { LabAlertsSection } from './sections/LabAlertsSection'
 import { LabBoardSection } from './sections/LabBoardSection'
 
-export function LabPageContainer() {
+function LabPageContainer() {
   const controller = useLabPageController()
 
   return (

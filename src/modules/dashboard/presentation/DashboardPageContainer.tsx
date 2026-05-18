@@ -6,7 +6,7 @@ import { ExecutiveDashboardHeaderSection } from './sections/ExecutiveDashboardHe
 import { ExecutiveDashboardKpisSection } from './sections/ExecutiveDashboardKpisSection'
 import { ExecutiveDashboardSlaSection } from './sections/ExecutiveDashboardSlaSection'
 
-export function DashboardPageContainer() {
+function DashboardPageContainer() {
   const controller = useExecutiveDashboardController()
 
   return (

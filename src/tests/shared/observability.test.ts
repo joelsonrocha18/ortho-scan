@@ -4,6 +4,7 @@ import {
   BUSINESS_EVENTS,
   createStructuredLogRecord,
   emitStructuredLog,
+  registerStructuredLogSink,
   sanitizeForLog,
 } from '../../shared/observability'
 
@@ -67,6 +68,30 @@ describe('shared observability', () => {
     expect(parsed.event).toBe(BUSINESS_EVENTS.LAB_SENT)
     expect(parsed.context.caseId).toBe('case_1')
     expect(parsed.context.email).toBe('[REDACTED]')
+  })
+
+  it('notifies registered structured log sinks', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const received: unknown[] = []
+    const unregister = registerStructuredLogSink((record) => {
+      received.push(record)
+    })
+
+    const record = createStructuredLogRecord({
+      level: 'info',
+      category: 'business',
+      event: BUSINESS_EVENTS.CASE_CREATED,
+      message: 'Caso criado.',
+      context: { caseId: 'case_sink_1' },
+    })
+
+    emitStructuredLog(record)
+    unregister()
+    emitStructuredLog(record)
+
+    expect(consoleSpy).toHaveBeenCalledTimes(2)
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({ event: BUSINESS_EVENTS.CASE_CREATED })
   })
 
   it('builds audit entries with actor, role and sanitized context', () => {

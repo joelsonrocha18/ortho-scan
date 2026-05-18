@@ -7,7 +7,9 @@
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_STORAGE_PROVIDER` (`supabase` ou `microsoft_drive`)
 - `VITE_RELEASE` (ex.: `2026-02-16.1`)
-- `VITE_MONITORING_WEBHOOK_URL` (webhook opcional de erro do frontend)
+- `VITE_MONITORING_ENABLED=true` para enviar erros do frontend ao proxy seguro
+- `VITE_MONITORING_ENDPOINT` (opcional; se vazio, usa `<VITE_SUPABASE_URL>/functions/v1/frontend-monitoring`)
+- `VITE_PUBLIC_POSTHOG_TOKEN` e `VITE_PUBLIC_POSTHOG_HOST` para analytics de produto
 
 Para Supabase Edge Functions:
 
@@ -15,6 +17,7 @@ Para Supabase Edge Functions:
 - `SERVICE_ROLE_KEY` (ou `SUPABASE_SERVICE_ROLE_KEY`)
 - `SITE_URL`
 - `ALLOWED_ORIGIN` (origem do frontend, ex.: `https://app.example.com`)
+- `MONITORING_WEBHOOK_URL` (segredo da Edge Function `frontend-monitoring`, nunca usar com prefixo `VITE_`)
 
 Quando `VITE_STORAGE_PROVIDER=microsoft_drive`, configure também:
 
@@ -54,4 +57,6 @@ Quando `VITE_STORAGE_PROVIDER=microsoft_drive`, configure também:
 2. Enviar PDF/JPEG/STL e reabrir arquivos.
 3. Redefinição de senha e fluxo de link de onboarding.
 4. Verificar endpoint `/health` e monitor de uptime.
+5. Confirmar no PostHog os eventos `orthoscan_posthog_linked`, `auth.sign_in_succeeded` e um evento de negocio (`case.created` ou `lab.sent`).
+6. Confirmar que erros do frontend chegam via Edge Function `frontend-monitoring`.
 

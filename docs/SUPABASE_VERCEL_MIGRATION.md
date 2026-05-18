@@ -44,8 +44,11 @@ VITE_STORAGE_PROVIDER=supabase
 VITE_APP_URL=https://<dominio-final>
 VITE_WEB_PUSH_ENABLED=false
 VITE_INTERNAL_CHAT_ENABLED=false
-VITE_MONITORING_WEBHOOK_URL=
+VITE_MONITORING_ENABLED=true
+VITE_MONITORING_ENDPOINT=
 VITE_RELEASE=<versao-ou-data>
+VITE_PUBLIC_POSTHOG_TOKEN=<posthog_project_api_key>
+VITE_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 ```
 
 Com Vercel CLI:
@@ -56,9 +59,18 @@ npx vercel env add VITE_SUPABASE_URL production
 npx vercel env add VITE_SUPABASE_ANON_KEY production
 npx vercel env add VITE_STORAGE_PROVIDER production
 npx vercel env add VITE_APP_URL production
+npx vercel env add VITE_MONITORING_ENABLED production
+npx vercel env add VITE_PUBLIC_POSTHOG_TOKEN production
+npx vercel env add VITE_PUBLIC_POSTHOG_HOST production
 ```
 
 Repita para `preview` se o ambiente de homologacao tambem precisar apontar para Supabase.
+
+Para o proxy seguro de erros, configure o segredo da Edge Function no Supabase:
+
+```bash
+npx supabase secrets set MONITORING_WEBHOOK_URL=<webhook_privado>
+```
 
 ## 4. Configurar Supabase Auth
 
@@ -131,14 +143,30 @@ npx supabase functions deploy patient-access-session
 npx supabase functions deploy patient-request-magic-link
 npx supabase functions deploy patient-upload-progress-photo
 npx supabase functions deploy send-web-push
+npx supabase functions deploy frontend-monitoring
 npx supabase functions deploy ms-drive-storage
 ```
+
+Para publicar somente o monitoramento:
+
+```bash
+npm run deploy:monitoring
+```
+
+Esse atalho usa o `project-ref` de `.env.production`, então não depende de `supabase link`.
 
 ## 8. Deploy Vercel
 
 ```bash
+npm run preflight:prod
 npm run build
 npx vercel deploy --prod
+```
+
+Atalho:
+
+```bash
+npm run deploy:prod
 ```
 
 ## 9. Conferencias pos-deploy

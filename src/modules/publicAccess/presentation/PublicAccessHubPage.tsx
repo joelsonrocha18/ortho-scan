@@ -2,7 +2,7 @@ import { HeartPulse, Stethoscope } from 'lucide-react'
 import { AudienceAccessCard } from './components/AudienceAccessCard'
 import { PublicAccessShell } from './components/PublicAccessShell'
 
-export function PublicAccessHubPage() {
+function PublicAccessHubPage() {
   return (
     <PublicAccessShell eyebrow="Portais" title="Escolha seu acesso" accent="baby">
       <div className="space-y-4">

@@ -6,7 +6,7 @@ import { DentistPortalCasesSection } from './sections/DentistPortalCasesSection'
 import { DentistPortalDocumentsSection } from './sections/DentistPortalDocumentsSection'
 import { DentistPortalHeaderSection } from './sections/DentistPortalHeaderSection'
 
-export function DentistPortalPageContainer() {
+function DentistPortalPageContainer() {
   const controller = useDentistPortalController()
 
   return (

@@ -17,7 +17,7 @@ import { CaseHistoryTimelineSection } from './sections/CaseHistoryTimelineSectio
 import { CasePlanningVersionsSection } from './sections/CasePlanningVersionsSection'
 import { CaseDangerZoneSection } from './sections/CaseDangerZoneSection'
 
-export function CaseDetailPageContainer() {
+function CaseDetailPageContainer() {
   const controller = useCaseDetailController()
 
   if (controller.pageState === 'not_found') {

@@ -21,6 +21,17 @@ type LoggerPayload = {
   error?: unknown
 }
 
+export type StructuredLogSink = (record: StructuredLogRecord) => void
+
+const structuredLogSinks = new Set<StructuredLogSink>()
+
+export function registerStructuredLogSink(sink: StructuredLogSink) {
+  structuredLogSinks.add(sink)
+  return () => {
+    structuredLogSinks.delete(sink)
+  }
+}
+
 function normalizeError(error?: unknown): StructuredLogError | undefined {
   if (!error) return undefined
   const normalized = toAppError(error)
@@ -56,13 +67,18 @@ export function emitStructuredLog(record: StructuredLogRecord) {
   const serialized = JSON.stringify(record)
   if (record.level === 'error') {
     console.error(serialized)
-    return record
-  }
-  if (record.level === 'warn') {
+  } else if (record.level === 'warn') {
     console.warn(serialized)
-    return record
+  } else {
+    console.info(serialized)
   }
-  console.info(serialized)
+  structuredLogSinks.forEach((sink) => {
+    try {
+      sink(record)
+    } catch {
+      return undefined
+    }
+  })
   return record
 }
 

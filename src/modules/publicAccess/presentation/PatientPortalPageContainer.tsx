@@ -6,7 +6,7 @@ import { PatientPortalHeroSection } from './sections/PatientPortalHeroSection'
 import { PatientPortalSummarySection } from './sections/PatientPortalSummarySection'
 import { PatientPortalTrayScheduleSection } from './sections/PatientPortalTrayScheduleSection'
 
-export function PatientPortalPageContainer() {
+function PatientPortalPageContainer() {
   const controller = usePatientPortalController()
 
   if (controller.loading) {

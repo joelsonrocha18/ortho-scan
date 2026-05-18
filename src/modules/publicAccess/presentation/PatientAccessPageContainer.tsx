@@ -2,7 +2,7 @@ import { PublicAccessShell } from './components/PublicAccessShell'
 import { PatientPortalAccessCard } from './components/PatientPortalAccessCard'
 import { usePatientAccessController } from './hooks/usePatientAccessController'
 
-export function PatientAccessPageContainer() {
+function PatientAccessPageContainer() {
   const controller = usePatientAccessController()
 
   return (

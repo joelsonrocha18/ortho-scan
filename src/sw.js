@@ -85,7 +85,7 @@ self.addEventListener('notificationclick', (event) => {
         const windowClient = client
         if ('navigate' in windowClient) {
           await windowClient.navigate(targetUrl).catch(() => {
-            // no-op
+            // Se a aba não puder navegar, ainda tentamos focar o cliente existente.
           })
         }
         if ('focus' in windowClient) {

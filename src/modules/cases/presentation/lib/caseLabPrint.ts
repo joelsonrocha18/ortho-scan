@@ -149,7 +149,7 @@ export function printCaseLabOrder(input: PrintCaseLabOrderInput) {
     try {
       URL.revokeObjectURL(printUrl)
     } catch {
-      // noop
+      // O navegador pode revogar o Object URL antes do callback tardio de impressão.
     }
   }
 
