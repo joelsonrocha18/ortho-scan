@@ -83,6 +83,7 @@ type UseCaseDetailActionsArgs = {
   navigate: (to: string, options?: { replace?: boolean }) => void
   refreshSupabase: () => void
   setOptimisticTrays: (value: CaseTray[] | null) => void
+  setOptimisticActualChangeDates: (value: NonNullable<Case['installation']>['actualChangeDates'] | null) => void
   setSelectedTray: (value: CaseTray | null) => void
   setAttachmentFile: (value: File | null) => void
   setAttachmentNote: (value: string) => void
@@ -587,6 +588,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         actualChangeDates: nextActualDates.length > 0 ? nextActualDates : undefined,
       })
       args.setOptimisticTrays(nextTrays)
+      args.setOptimisticActualChangeDates(nextActualDates.length > 0 ? nextActualDates : null)
       if (args.isSupabaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, {
@@ -595,6 +597,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
           })
           if (!result.ok) {
             args.setOptimisticTrays(null)
+            args.setOptimisticActualChangeDates(null)
             args.addToast({ type: 'error', title: 'Troca real', message: result.error })
             return
           }
@@ -609,6 +612,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
       })
       if (!updated) {
         args.setOptimisticTrays(null)
+        args.setOptimisticActualChangeDates(null)
         args.addToast({ type: 'error', title: 'Troca real', message: 'Não foi possível atualizar a data real de troca.' })
         return
       }

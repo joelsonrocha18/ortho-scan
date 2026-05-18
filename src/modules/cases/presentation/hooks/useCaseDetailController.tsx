@@ -13,7 +13,7 @@ import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
 import { listPatientDocs, resolvePatientDocUrl } from '../../../../repo/patientDocsRepo'
 import { downloadBlob } from '../../../../repo/storageRepo'
 import { formatPtBrDateTime, nowIsoDate } from '../../../../shared/utils/date'
-import type { CaseTray, TrayState } from '../../../../types/Case'
+import type { Case, CaseTray, TrayState } from '../../../../types/Case'
 import { isAlignerProductType, normalizeProductType } from '../../../../types/Product'
 import { RegisterReworkUseCase } from '../../../lab'
 import { createLabRepository } from '../../../lab/infra'
@@ -82,6 +82,7 @@ export function useCaseDetailController() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [patientPortalPhotosByTray, setPatientPortalPhotosByTray] = useState<Map<number, PatientPortalTrayPhoto>>(new Map())
   const [optimisticTrays, setOptimisticTrays] = useState<CaseTray[] | null>(null)
+  const [optimisticActualChangeDates, setOptimisticActualChangeDates] = useState<NonNullable<Case['installation']>['actualChangeDates'] | null>(null)
   const initializedCaseIdRef = useRef<string | null>(null)
   const supabaseSyncTick = useSupabaseSyncTick()
   const supabaseDetail = useCaseSupabaseDetail(params.id, isSupabaseMode, supabaseSyncTick)
@@ -132,15 +133,21 @@ export function useCaseDetailController() {
     ;(resolvedCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
       if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
     })
+    ;(optimisticActualChangeDates ?? []).forEach((entry) => {
+      if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
+    })
     return map
-  }, [resolvedCase])
+  }, [resolvedCase, optimisticActualChangeDates])
   const actualChangeDateLowerByTray = useMemo(() => {
     const map = new Map<number, string>()
     ;(resolvedCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
       if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
     })
+    ;(optimisticActualChangeDates ?? []).forEach((entry) => {
+      if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
+    })
     return map
-  }, [resolvedCase])
+  }, [resolvedCase, optimisticActualChangeDates])
   const progressUpper = useMemo(() => caseProgress(totalUpper, deliveredUpper), [deliveredUpper, totalUpper])
   const progressLower = useMemo(() => caseProgress(totalLower, deliveredLower), [deliveredLower, totalLower])
   const todayIso = useMemo(() => nowIsoDate(), [])
@@ -360,6 +367,7 @@ export function useCaseDetailController() {
 
   useEffect(() => {
     setOptimisticTrays(null)
+    setOptimisticActualChangeDates(null)
   }, [resolvedCase?.id, resolvedCase?.updatedAt])
 
   const pageState: PageState = !resolvedCase ? 'not_found' : (!isSupabaseMode && !scopedCases.some((item) => item.id === resolvedCase.id) ? 'forbidden' : 'ready')
@@ -455,6 +463,7 @@ export function useCaseDetailController() {
     navigate: (to, options) => navigate(to, options),
     refreshSupabase,
     setOptimisticTrays,
+    setOptimisticActualChangeDates,
     setSelectedTray,
     setAttachmentFile,
     setAttachmentNote,
