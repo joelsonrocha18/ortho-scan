@@ -79,7 +79,7 @@ function metadataChip(label: string, value?: string) {
 }
 
 function resolvePlannedDate(row: ChangeScheduleRow, tray?: CaseTray) {
-  return tray?.dueDate ?? row.upperPlannedDate ?? row.lowerPlannedDate ?? row.changeDate ?? ''
+  return row.upperPlannedDate ?? row.lowerPlannedDate ?? tray?.dueDate ?? row.changeDate ?? ''
 }
 
 type EditableDateFieldProps = {

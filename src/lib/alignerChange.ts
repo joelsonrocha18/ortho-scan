@@ -129,6 +129,18 @@ export function scheduleStateForTray(
   return tray.state
 }
 
+function resolvePlannedDate(
+  plannedOverride: string | undefined,
+  calculatedDate: string | undefined,
+  previousAnchorDate: string | undefined,
+  trayNumber: number,
+) {
+  const normalizedOverride = plannedOverride?.slice(0, 10)
+  if (!normalizedOverride) return calculatedDate
+  if (trayNumber > 1 && previousAnchorDate && normalizedOverride <= previousAnchorDate) return calculatedDate
+  return normalizedOverride
+}
+
 export function buildChangeSchedule(payload: {
   installedAt?: string
   changeEveryDays: number
@@ -143,20 +155,27 @@ export function buildChangeSchedule(payload: {
   if (!payload.installedAt) return []
   const max = Math.max(payload.totalUpper, payload.totalLower)
   const schedule: ChangeScheduleRow[] = []
-  let nextUpperDate = payload.installedAt
-  let nextLowerDate = payload.installedAt
+  const installedAt = payload.installedAt.slice(0, 10)
+  let nextUpperDate = installedAt
+  let nextLowerDate = installedAt
 
   for (let trayNumber = 1; trayNumber <= max; trayNumber += 1) {
     const tray = payload.trays.find((item) => item.trayNumber === trayNumber)
     const plannedOverride = tray?.dueDate?.slice(0, 10)
+    const previousUpperAnchor = nextUpperDate
+    const previousLowerAnchor = nextLowerDate
     if (trayNumber > 1 && trayNumber <= payload.totalUpper) {
       nextUpperDate = addDaysIso(nextUpperDate, payload.changeEveryDays)
     }
     if (trayNumber > 1 && trayNumber <= payload.totalLower) {
       nextLowerDate = addDaysIso(nextLowerDate, payload.changeEveryDays)
     }
-    const upperPlannedDate = trayNumber <= payload.totalUpper ? (plannedOverride ?? nextUpperDate) : undefined
-    const lowerPlannedDate = trayNumber <= payload.totalLower ? (plannedOverride ?? nextLowerDate) : undefined
+    const upperPlannedDate = trayNumber <= payload.totalUpper
+      ? resolvePlannedDate(plannedOverride, nextUpperDate, previousUpperAnchor, trayNumber)
+      : undefined
+    const lowerPlannedDate = trayNumber <= payload.totalLower
+      ? resolvePlannedDate(plannedOverride, nextLowerDate, previousLowerAnchor, trayNumber)
+      : undefined
     const upperChangeDate = trayNumber <= payload.totalUpper ? (payload.actualUpperByTray.get(trayNumber) ?? upperPlannedDate) : undefined
     const lowerChangeDate = trayNumber <= payload.totalLower ? (payload.actualLowerByTray.get(trayNumber) ?? lowerPlannedDate) : undefined
     if (trayNumber <= payload.totalUpper && upperChangeDate) {
@@ -171,7 +190,7 @@ export function buildChangeSchedule(payload: {
       lowerPlannedDate,
       upperChangeDate,
       lowerChangeDate,
-      changeDate: pickMinIsoDate([upperChangeDate, lowerChangeDate]) ?? payload.installedAt,
+      changeDate: pickMinIsoDate([upperChangeDate, lowerChangeDate]) ?? installedAt,
       superiorState: scheduleStateForTray(trayNumber, payload.totalUpper, payload.deliveredUpper, payload.trays),
       inferiorState: scheduleStateForTray(trayNumber, payload.totalLower, payload.deliveredLower, payload.trays),
     })

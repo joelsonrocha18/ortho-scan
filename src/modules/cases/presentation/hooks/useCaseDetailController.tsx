@@ -123,6 +123,10 @@ export function useCaseDetailController() {
   const hasLowerArch = totalLower > 0
   const deliveredUpper = resolvedCase?.installation?.deliveredUpper ?? 0
   const deliveredLower = resolvedCase?.installation?.deliveredLower ?? 0
+  const displayedActualChangeDates = useMemo(
+    () => optimisticActualChangeDates ?? resolvedCase?.installation?.actualChangeDates ?? [],
+    [optimisticActualChangeDates, resolvedCase?.installation?.actualChangeDates],
+  )
   const deliveredToDentist = useMemo(() => CaseLifecycleService.deliveredToDentistByArch(resolvedCase), [resolvedCase])
   const readyToDeliverPatient = useMemo(
     () => ({ upper: Math.max(0, deliveredToDentist.upper - deliveredUpper), lower: Math.max(0, deliveredToDentist.lower - deliveredLower) }),
@@ -130,24 +134,18 @@ export function useCaseDetailController() {
   )
   const actualChangeDateUpperByTray = useMemo(() => {
     const map = new Map<number, string>()
-    ;(resolvedCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
-      if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
-    })
-    ;(optimisticActualChangeDates ?? []).forEach((entry) => {
+    displayedActualChangeDates.forEach((entry) => {
       if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'superior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
     })
     return map
-  }, [resolvedCase, optimisticActualChangeDates])
+  }, [displayedActualChangeDates])
   const actualChangeDateLowerByTray = useMemo(() => {
     const map = new Map<number, string>()
-    ;(resolvedCase?.installation?.actualChangeDates ?? []).forEach((entry) => {
-      if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
-    })
-    ;(optimisticActualChangeDates ?? []).forEach((entry) => {
+    displayedActualChangeDates.forEach((entry) => {
       if (entry.trayNumber > 0 && entry.changedAt && (!entry.arch || entry.arch === 'inferior' || entry.arch === 'ambos')) map.set(entry.trayNumber, entry.changedAt)
     })
     return map
-  }, [resolvedCase, optimisticActualChangeDates])
+  }, [displayedActualChangeDates])
   const progressUpper = useMemo(() => caseProgress(totalUpper, deliveredUpper), [deliveredUpper, totalUpper])
   const progressLower = useMemo(() => caseProgress(totalLower, deliveredLower), [deliveredLower, totalLower])
   const todayIso = useMemo(() => nowIsoDate(), [])

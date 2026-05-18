@@ -94,6 +94,27 @@ describe('alignerChange helpers', () => {
     ])
   })
 
+  it('ignores stale stored due dates after a previous real change date', () => {
+    const schedule = buildChangeSchedule({
+      installedAt: '2025-09-03',
+      changeEveryDays: 10,
+      totalUpper: 10,
+      totalLower: 0,
+      deliveredUpper: 10,
+      deliveredLower: 0,
+      trays: [
+        { trayNumber: 8, state: 'entregue', dueDate: '2025-11-12' },
+        { trayNumber: 9, state: 'entregue', dueDate: '2025-11-22' },
+        { trayNumber: 10, state: 'entregue', dueDate: '2025-12-02' },
+      ],
+      actualUpperByTray: new Map([[8, '2026-04-06']]),
+      actualLowerByTray: new Map(),
+    })
+
+    expect(schedule.find((row) => row.trayNumber === 9)?.upperPlannedDate).toBe('2026-04-16')
+    expect(schedule.find((row) => row.trayNumber === 10)?.upperPlannedDate).toBe('2026-04-26')
+  })
+
   it('recalculates future tray due dates using the latest actual change as the next anchor', () => {
     const trays = recalculateTrayDueDates({
       trays: [
@@ -120,6 +141,25 @@ describe('alignerChange helpers', () => {
     expect(trays.find((tray) => tray.trayNumber === 3)?.dueDate).toBe('2026-03-31')
     expect(trays.find((tray) => tray.trayNumber === 4)?.dueDate).toBe('2026-04-15')
     expect(trays.find((tray) => tray.trayNumber === 5)?.dueDate).toBe('2026-04-25')
+  })
+
+  it('recalculates stored due dates from the previous tray real change date', () => {
+    const trays = recalculateTrayDueDates({
+      trays: [
+        { trayNumber: 8, state: 'entregue', dueDate: '2025-11-12' },
+        { trayNumber: 9, state: 'entregue', dueDate: '2025-11-22' },
+        { trayNumber: 10, state: 'entregue', dueDate: '2025-12-02' },
+      ],
+      changeEveryDays: 10,
+      installedAt: '2025-09-03',
+      actualUpperByTray: new Map([[8, '2026-04-06']]),
+      actualLowerByTray: new Map(),
+      startTrayNumber: 9,
+    })
+
+    expect(trays.find((tray) => tray.trayNumber === 8)?.dueDate).toBe('2025-11-12')
+    expect(trays.find((tray) => tray.trayNumber === 9)?.dueDate).toBe('2026-04-16')
+    expect(trays.find((tray) => tray.trayNumber === 10)?.dueDate).toBe('2026-04-26')
   })
 
   it('uses the edited main card date as the shared planned date for both arches and cascades forward', () => {

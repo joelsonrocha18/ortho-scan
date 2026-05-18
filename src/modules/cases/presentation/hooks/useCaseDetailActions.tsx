@@ -578,21 +578,15 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
       )
       if (changedAt) nextActualDates.push({ trayNumber, changedAt, arch })
       const nextTrays = recalculateFromTray(args.currentCase.trays, {
-        startTrayNumber: trayNumber,
-        overrideDueDates: new Map(
-          (() => {
-            const currentTray = args.currentCase?.trays.find((item) => item.trayNumber === trayNumber)
-            return currentTray?.dueDate ? [[trayNumber, currentTray.dueDate]] as Array<[number, string]> : []
-          })(),
-        ),
-        actualChangeDates: nextActualDates.length > 0 ? nextActualDates : undefined,
+        startTrayNumber: trayNumber + 1,
+        actualChangeDates: nextActualDates,
       })
       args.setOptimisticTrays(nextTrays)
-      args.setOptimisticActualChangeDates(nextActualDates.length > 0 ? nextActualDates : null)
+      args.setOptimisticActualChangeDates(nextActualDates)
       if (args.isSupabaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, {
-            installation: { ...args.currentCase!.installation, actualChangeDates: nextActualDates.length > 0 ? nextActualDates : undefined },
+            installation: { ...args.currentCase!.installation, actualChangeDates: nextActualDates },
             trays: nextTrays,
           })
           if (!result.ok) {
@@ -607,7 +601,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         return
       }
       const updated = updateCase(args.currentCase.id, {
-        installation: { ...args.currentCase.installation, actualChangeDates: nextActualDates.length > 0 ? nextActualDates : undefined },
+        installation: { ...args.currentCase.installation, actualChangeDates: nextActualDates },
         trays: nextTrays,
       })
       if (!updated) {
