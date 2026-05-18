@@ -109,27 +109,34 @@ using (
   )
 );
 
-insert into public.permissions (key, label, module) values
-  ('agenda.read', 'Visualizar agenda', 'Agenda'),
-  ('agenda.write', 'Criar/editar agenda', 'Agenda')
-on conflict (key) do update
-set label = excluded.label,
-    module = excluded.module;
+do $$
+begin
+  if to_regclass('public.permissions') is not null then
+    insert into public.permissions (key, label, module) values
+      ('agenda.read', 'Visualizar agenda', 'Agenda'),
+      ('agenda.write', 'Criar/editar agenda', 'Agenda')
+    on conflict (key) do update
+    set label = excluded.label,
+        module = excluded.module;
+  end if;
 
-insert into public.profile_permissions (role, permission_id)
-select 'master_admin'::app_role, p.id
-from public.permissions p
-where p.key in ('agenda.read', 'agenda.write')
-on conflict do nothing;
+  if to_regclass('public.profile_permissions') is not null then
+    insert into public.profile_permissions (role, permission_id)
+    select 'master_admin'::app_role, p.id
+    from public.permissions p
+    where p.key in ('agenda.read', 'agenda.write')
+    on conflict do nothing;
 
-insert into public.profile_permissions (role, permission_id)
-select 'dentist_admin'::app_role, p.id
-from public.permissions p
-where p.key in ('agenda.read', 'agenda.write')
-on conflict do nothing;
+    insert into public.profile_permissions (role, permission_id)
+    select 'dentist_admin'::app_role, p.id
+    from public.permissions p
+    where p.key in ('agenda.read', 'agenda.write')
+    on conflict do nothing;
 
-insert into public.profile_permissions (role, permission_id)
-select 'receptionist'::app_role, p.id
-from public.permissions p
-where p.key in ('agenda.read', 'agenda.write')
-on conflict do nothing;
+    insert into public.profile_permissions (role, permission_id)
+    select 'receptionist'::app_role, p.id
+    from public.permissions p
+    where p.key in ('agenda.read', 'agenda.write')
+    on conflict do nothing;
+  end if;
+end $$;
