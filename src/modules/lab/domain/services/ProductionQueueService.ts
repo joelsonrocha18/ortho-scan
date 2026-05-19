@@ -111,7 +111,6 @@ export function buildProductionQueue(
     .map((order) => enrichLabOrder(order, todayIso))
     .filter((order) => {
       if (order.stage === 'delivered') return false
-      if (isProgrammedReplenishmentOrder(order) && order.status === 'aguardando_iniciar') return false
       return !isLabOrderDeliveredToProfessional(order, caseById)
     })
     .sort((left, right) => right.priorityScore - left.priorityScore || left.dueDate.localeCompare(right.dueDate))

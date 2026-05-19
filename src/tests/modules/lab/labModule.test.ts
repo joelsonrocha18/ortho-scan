@@ -144,7 +144,7 @@ describe('LAB module', () => {
     expect(reworkAudit?.context?.reworkOrderId).toBeTruthy()
   })
 
-  it('builds pipeline without explicit rework and programmed replenishment waiting', () => {
+  it('builds pipeline with programmed replenishment waiting in the lab board', () => {
     const items: LabOrder[] = [
       { id: '1', patientName: 'A', trayNumber: 1, dueDate: '2026-03-10', status: 'em_producao', priority: 'Medio', plannedDate: '2026-03-01', arch: 'ambos', createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z', requestKind: 'producao' },
       { id: '2', patientName: 'B', trayNumber: 2, dueDate: '2026-03-10', status: 'aguardando_iniciar', priority: 'Medio', plannedDate: '2026-03-01', arch: 'ambos', createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z', requestKind: 'reposicao_programada' },
@@ -152,7 +152,7 @@ describe('LAB module', () => {
     ]
 
     const result = ProductionQueueService.getPipelineOrders(items, new Map())
-    expect(result.map((item) => item.id)).toEqual(['3', '1'])
+    expect(result.map((item) => item.id)).toEqual(['3', '1', '2'])
   })
 
   it('lists pronta rework orders for delivery registration', () => {
