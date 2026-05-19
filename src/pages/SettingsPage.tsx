@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, Trash2, UserRound, WandSparkles } from 'lucide-react'
+import { ExternalLink, Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, RefreshCw, Trash2, UserRound, WandSparkles } from 'lucide-react'
 import { getAuthProvider } from '../auth/authProvider'
 import { can, groupedPermissionsForRole, permissionLabel, profileDescription, profileLabel, type PermissionModule } from '../auth/permissions'
 import { useToast } from '../app/ToastProvider'
@@ -38,7 +38,7 @@ import type { Role, User } from '../types/User'
 import { useDb } from '../lib/useDb'
 import { loadExcelJS } from '../lib/loadExcelJS'
 
-type MainTab = 'registration' | 'users' | 'pricing' | 'system_update' | 'system_diagnostics'
+type MainTab = 'registration' | 'users' | 'pricing' | 'whatsapp' | 'system_update' | 'system_diagnostics'
 type ModalTab = 'personal' | 'access' | 'profile' | 'link'
 type PasswordMode = 'auto' | 'manual'
 type ReportDatasetKey = 'patients' | 'dentists' | 'clinics' | 'users' | 'scans' | 'cases' | 'labItems'
@@ -207,6 +207,17 @@ function isValidEmail(value?: string | null) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+function normalizeServiceUrl(value: string) {
+  return value.trim().replace(/\/+$/, '')
+}
+
+function buildWhatsappQrUrl(baseUrl?: string, adminToken?: string) {
+  const normalizedBaseUrl = normalizeServiceUrl(baseUrl ?? '')
+  if (!normalizedBaseUrl || !adminToken?.trim()) return ''
+  const params = new URLSearchParams({ token: adminToken.trim() })
+  return `${normalizedBaseUrl}/qr?${params.toString()}`
+}
+
 function normalizeUserCreationError(error: string) {
   const text = (error ?? '').toLowerCase()
   if (text.includes('idx_profiles_short_id_unique')) {
@@ -291,6 +302,15 @@ export default function SettingsPage() {
   const [cepError, setCepError] = useState('')
   const [settingsState, setSettingsState] = useState(() => loadSystemSettings())
   const [labForm, setLabForm] = useState<LabCompanyProfile>(() => loadSystemSettings().labCompany)
+  const [whatsappServiceForm, setWhatsappServiceForm] = useState(() => {
+    const service = loadSystemSettings().whatsappService
+    return {
+      enabled: service?.enabled === true,
+      baseUrl: service?.baseUrl ?? '',
+      adminToken: service?.adminToken ?? '',
+    }
+  })
+  const [whatsappQrFrameKey, setWhatsappQrFrameKey] = useState(0)
   const [priceForm, setPriceForm] = useState<{
     productFlow: 'alinhador' | 'impressoes'
     customName: string
@@ -361,6 +381,11 @@ export default function SettingsPage() {
       saveSystemSettings(normalized)
       setSettingsState(normalized)
       setLabForm(normalized.labCompany)
+      setWhatsappServiceForm({
+        enabled: normalized.whatsappService?.enabled === true,
+        baseUrl: normalized.whatsappService?.baseUrl ?? '',
+        adminToken: normalized.whatsappService?.adminToken ?? '',
+      })
     })()
     return () => {
       active = false
@@ -611,6 +636,35 @@ export default function SettingsPage() {
     void persistSettings(next)
     setSettingsState(next)
     addToast({ type: 'success', title: 'Automação de guias salva' })
+  }
+
+  const saveWhatsappService = () => {
+    const baseUrl = normalizeServiceUrl(whatsappServiceForm.baseUrl)
+    const adminToken = whatsappServiceForm.adminToken.trim()
+    if (whatsappServiceForm.enabled && (!baseUrl || !adminToken)) {
+      addToast({ type: 'error', title: 'Informe a URL e o token do serviço de WhatsApp.' })
+      return
+    }
+    const next = addAuditEntry(
+      {
+        ...settingsState,
+        whatsappService: {
+          enabled: whatsappServiceForm.enabled,
+          baseUrl,
+          adminToken,
+        },
+      },
+      {
+        action: 'settings.whatsapp_service.updated',
+        actor: currentUser?.email,
+        details: `enabled=${whatsappServiceForm.enabled}; baseUrl=${baseUrl || '-'}`,
+      },
+    )
+    void persistSettings(next)
+    setSettingsState(next)
+    setWhatsappServiceForm((current) => ({ ...current, baseUrl, adminToken }))
+    setWhatsappQrFrameKey((current) => current + 1)
+    addToast({ type: 'success', title: 'WhatsApp salvo' })
   }
 
   const saveAiGateway = () => {
@@ -902,6 +956,7 @@ export default function SettingsPage() {
             { id: 'registration', label: 'Cadastro' },
             { id: 'users', label: 'Usuários' },
             { id: 'pricing', label: 'Política de preço' },
+            { id: 'whatsapp', label: 'WhatsApp' },
             { id: 'system_update', label: 'Atualização do sistema' },
             { id: 'system_diagnostics', label: 'Diagnóstico do sistema' },
           ].map((item) => (
@@ -1087,6 +1142,14 @@ export default function SettingsPage() {
           </div>
         </Card>
         <Card>
+          <h2 className="text-lg font-semibold text-slate-900">WhatsApp</h2>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button type="button" onClick={() => setMainTab('whatsapp')} className="inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100">
+              Configurar QR Code
+            </button>
+          </div>
+        </Card>
+        <Card>
           <h2 className="text-lg font-semibold text-slate-900">Ajuda e LGPD</h2>
           
           <div className="mt-4 flex flex-wrap gap-3">
@@ -1097,6 +1160,84 @@ export default function SettingsPage() {
             <Link to="/legal/privacy" className="text-sm font-semibold text-brand-700 hover:text-brand-500">Privacidade</Link>
             <span className="text-slate-300">|</span>
             <Link to="/legal/lgpd" className="text-sm font-semibold text-brand-700 hover:text-brand-500">Direitos LGPD</Link>
+          </div>
+        </Card>
+      </section> : null}
+
+      {mainTab === 'whatsapp' ? <section className="mt-4 space-y-4">
+        <Card>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Conexão do WhatsApp</h2>
+              <p className="mt-1 text-sm text-slate-600">Configure o serviço de lembretes e escaneie o QR Code sem sair do sistema.</p>
+            </div>
+            <Badge tone={settingsState.whatsappService?.enabled ? 'success' : 'neutral'}>
+              {settingsState.whatsappService?.enabled ? 'Ativo' : 'Inativo'}
+            </Badge>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 lg:col-span-2">
+              <input
+                type="checkbox"
+                checked={whatsappServiceForm.enabled}
+                onChange={(event) => setWhatsappServiceForm((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              Ativar painel de QR Code do WhatsApp
+            </label>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">URL do serviço</label>
+              <Input
+                value={whatsappServiceForm.baseUrl}
+                placeholder="Ex.: https://whatsapp.orthoscan.online"
+                onChange={(event) => setWhatsappServiceForm((current) => ({ ...current, baseUrl: event.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Token administrativo</label>
+              <Input
+                value={whatsappServiceForm.adminToken}
+                placeholder="ADMIN_TOKEN"
+                onChange={(event) => setWhatsappServiceForm((current) => ({ ...current, adminToken: event.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={saveWhatsappService}>Salvar WhatsApp</Button>
+            <Button type="button" variant="secondary" onClick={() => setWhatsappQrFrameKey((current) => current + 1)}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Atualizar QR
+            </Button>
+            {buildWhatsappQrUrl(settingsState.whatsappService?.baseUrl, settingsState.whatsappService?.adminToken) ? (
+              <a href={buildWhatsappQrUrl(settingsState.whatsappService?.baseUrl, settingsState.whatsappService?.adminToken)} target="_blank" rel="noreferrer" className="inline-flex">
+                <Button type="button" variant="ghost">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Abrir em nova aba
+                </Button>
+              </a>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-lg font-semibold text-slate-900">QR Code</h2>
+          {buildWhatsappQrUrl(settingsState.whatsappService?.baseUrl, settingsState.whatsappService?.adminToken) ? (
+            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <iframe
+                key={`${whatsappQrFrameKey}_${settingsState.whatsappService?.baseUrl ?? ''}_${settingsState.whatsappService?.adminToken ?? ''}`}
+                title="QR Code do WhatsApp"
+                src={buildWhatsappQrUrl(settingsState.whatsappService?.baseUrl, settingsState.whatsappService?.adminToken)}
+                className="h-[460px] w-full bg-white"
+              />
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Informe a URL do serviço e o token administrativo, salve, e o QR Code aparecerá aqui.
+            </div>
+          )}
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            No celular da clínica, abra WhatsApp, entre em Aparelhos conectados e toque em Conectar aparelho.
           </div>
         </Card>
       </section> : null}

@@ -50,6 +50,11 @@ export type SystemSettings = {
     enabled: boolean
     leadDays: number
   }
+  whatsappService: {
+    enabled: boolean
+    baseUrl: string
+    adminToken: string
+  }
   aiGateway: {
     enabled: boolean
     modules: {
@@ -87,6 +92,11 @@ const defaultSettings: SystemSettings = {
     enabled: true,
     leadDays: 10,
   },
+  whatsappService: {
+    enabled: false,
+    baseUrl: '',
+    adminToken: '',
+  },
   aiGateway: {
     enabled: false,
     modules: {
@@ -119,6 +129,7 @@ export function loadSystemSettings(): SystemSettings {
     const theme = parsed.theme === 'dark' ? 'dark' : 'light'
     const companyRaw = isObject(parsed.labCompany) ? parsed.labCompany : {}
     const guideAutomationRaw = isObject(parsed.guideAutomation) ? parsed.guideAutomation : {}
+    const whatsappServiceRaw = isObject(parsed.whatsappService) ? parsed.whatsappService : {}
     const aiGatewayRaw = isObject(parsed.aiGateway) ? parsed.aiGateway : {}
     const aiModulesRaw = isObject(aiGatewayRaw.modules) ? aiGatewayRaw.modules : {}
 
@@ -140,6 +151,11 @@ export function loadSystemSettings(): SystemSettings {
         typeof guideAutomationRaw.leadDays === 'number' && Number.isFinite(guideAutomationRaw.leadDays)
           ? Math.max(0, Math.trunc(guideAutomationRaw.leadDays))
           : 10,
+    }
+    const whatsappService = {
+      enabled: whatsappServiceRaw.enabled === true,
+      baseUrl: typeof whatsappServiceRaw.baseUrl === 'string' ? whatsappServiceRaw.baseUrl : '',
+      adminToken: typeof whatsappServiceRaw.adminToken === 'string' ? whatsappServiceRaw.adminToken : '',
     }
     const aiGateway = {
       enabled: aiGatewayRaw.enabled === true,
@@ -188,6 +204,7 @@ export function loadSystemSettings(): SystemSettings {
       theme,
       labCompany,
       guideAutomation,
+      whatsappService,
       aiGateway,
       priceCatalog,
       audit,

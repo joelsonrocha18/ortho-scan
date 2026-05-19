@@ -23,6 +23,11 @@ function withDisabledAi(settings: SystemSettings): SystemSettings {
       apiBaseUrl: '',
       apiKey: '',
     },
+    whatsappService: settings.whatsappService ?? {
+      enabled: false,
+      baseUrl: '',
+      adminToken: '',
+    },
   }
 }
 
