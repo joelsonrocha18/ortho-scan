@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useToast } from '../app/ToastProvider'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import FilePickerWithCamera from '../components/files/FilePickerWithCamera'
@@ -27,8 +28,10 @@ import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
 import { updateScan } from '../data/scanRepo'
 import { updateCase } from '../data/caseRepo'
-import { buildPatientPortalWhatsappHref, resolvePatientPortalAccessCode } from '../lib/accessLinks'
+import { buildPatientPortalWhatsappHref, buildPatientPortalWhatsappMessage, resolvePatientPortalAccessCode } from '../lib/accessLinks'
 import { getCurrentUser } from '../lib/auth'
+import { loadSystemSettings } from '../lib/systemSettings'
+import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../lib/whatsappService'
 import DocumentsList from '../components/documents/DocumentsList'
 import { createSignedUrl, validatePatientDocFile } from '../repo/storageRepo'
 import { DATA_MODE } from '../data/dataMode'
@@ -176,6 +179,7 @@ export default function PatientDetailPage() {
   const params = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { db } = useDb()
+  const { addToast } = useToast()
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'patients.write')
   const canDelete = can(currentUser, 'patients.delete')
@@ -347,14 +351,23 @@ export default function PatientDetailPage() {
     () => resolvePatientPortalAccessCode(latestCaseForPortalShare),
     [latestCaseForPortalShare],
   )
+  const patientPortalDisplayName = existing?.name ?? `${form.firstName.trim()} ${form.lastName.trim()}`.trim()
+  const patientPortalWhatsappMessage = useMemo(
+    () =>
+      buildPatientPortalWhatsappMessage({
+        patientName: patientPortalDisplayName,
+        accessCode: patientPortalAccessCode,
+      }),
+    [patientPortalAccessCode, patientPortalDisplayName],
+  )
   const patientPortalWhatsappHref = useMemo(
     () =>
       buildPatientPortalWhatsappHref({
-        patientName: existing?.name ?? `${form.firstName.trim()} ${form.lastName.trim()}`.trim(),
+        patientName: patientPortalDisplayName,
         whatsapp: form.whatsapp,
         accessCode: patientPortalAccessCode,
       }),
-    [existing?.name, form.firstName, form.lastName, form.whatsapp, patientPortalAccessCode],
+    [form.whatsapp, patientPortalAccessCode, patientPortalDisplayName],
   )
   const relatedAuditEvents = useMemo(() => {
     if (!existing) return []
@@ -1071,6 +1084,30 @@ export default function PatientDetailPage() {
     }
   }
 
+  const sharePatientPortalAccess = async () => {
+    if (!patientPortalWhatsappHref) return
+
+    const settings = loadSystemSettings()
+    if (isWhatsappServiceReady(settings.whatsappService) && patientPortalWhatsappMessage) {
+      const result = await sendWhatsappServiceMessage(
+        { whatsappService: settings.whatsappService },
+        {
+          to: form.whatsapp,
+          message: patientPortalWhatsappMessage,
+          kind: 'patient_portal_access',
+          metadata: { patientId: existing?.id ?? '', accessCode: patientPortalAccessCode },
+        },
+      )
+      if (result.ok) {
+        addToast({ type: 'success', title: 'Acesso enviado pelo WhatsApp' })
+        return
+      }
+      addToast({ type: 'error', title: 'Serviço WhatsApp indisponível', message: result.error })
+    }
+
+    window.open(patientPortalWhatsappHref, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <AppShell breadcrumb={['Início', 'Pacientes', isNew ? 'Novo' : existing?.name ?? 'Detalhe']}>
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1088,7 +1125,7 @@ export default function PatientDetailPage() {
               disabled={!canSharePatientPortalAccess}
               onClick={
                 canSharePatientPortalAccess
-                  ? () => window.open(patientPortalWhatsappHref, '_blank', 'noopener,noreferrer')
+                  ? sharePatientPortalAccess
                   : undefined
               }
             >

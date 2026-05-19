@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, RefreshCw, Trash2, UserRound, WandSparkles } from 'lucide-react'
+import { ExternalLink, Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, RefreshCw, Send, Trash2, UserRound, WandSparkles } from 'lucide-react'
 import { getAuthProvider } from '../auth/authProvider'
 import { can, groupedPermissionsForRole, permissionLabel, profileDescription, profileLabel, type PermissionModule } from '../auth/permissions'
 import { useToast } from '../app/ToastProvider'
@@ -37,6 +37,7 @@ import { PRODUCT_TYPE_LABEL } from '../types/Product'
 import type { Role, User } from '../types/User'
 import { useDb } from '../lib/useDb'
 import { loadExcelJS } from '../lib/loadExcelJS'
+import { sendWhatsappServiceMessage } from '../lib/whatsappService'
 
 type MainTab = 'registration' | 'users' | 'pricing' | 'whatsapp' | 'system_update' | 'system_diagnostics'
 type ModalTab = 'personal' | 'access' | 'profile' | 'link'
@@ -311,6 +312,9 @@ export default function SettingsPage() {
     }
   })
   const [whatsappQrFrameKey, setWhatsappQrFrameKey] = useState(0)
+  const [whatsappTestPhone, setWhatsappTestPhone] = useState('')
+  const [whatsappTestMessage, setWhatsappTestMessage] = useState('Teste de envio pelo WhatsApp ORTHOSCAN.')
+  const [whatsappSending, setWhatsappSending] = useState(false)
   const [priceForm, setPriceForm] = useState<{
     productFlow: 'alinhador' | 'impressoes'
     customName: string
@@ -665,6 +669,35 @@ export default function SettingsPage() {
     setWhatsappServiceForm((current) => ({ ...current, baseUrl, adminToken }))
     setWhatsappQrFrameKey((current) => current + 1)
     addToast({ type: 'success', title: 'WhatsApp salvo' })
+  }
+
+  const sendWhatsappTest = async () => {
+    if (whatsappSending) return
+    setWhatsappSending(true)
+    try {
+      const result = await sendWhatsappServiceMessage(
+        {
+          whatsappService: {
+            enabled: whatsappServiceForm.enabled,
+            baseUrl: normalizeServiceUrl(whatsappServiceForm.baseUrl),
+            adminToken: whatsappServiceForm.adminToken.trim(),
+          },
+        },
+        {
+          to: whatsappTestPhone,
+          message: whatsappTestMessage,
+          kind: 'settings_test',
+          metadata: { screen: 'settings' },
+        },
+      )
+      if (!result.ok) {
+        addToast({ type: 'error', title: 'Falha no teste do WhatsApp', message: result.error })
+        return
+      }
+      addToast({ type: 'success', title: 'Mensagem enviada pelo WhatsApp' })
+    } finally {
+      setWhatsappSending(false)
+    }
   }
 
   const saveAiGateway = () => {
@@ -1238,6 +1271,33 @@ export default function SettingsPage() {
           )}
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             No celular da clínica, abra WhatsApp, entre em Aparelhos conectados e toque em Conectar aparelho.
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-lg font-semibold text-slate-900">Teste de envio</h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[220px_1fr_auto] sm:items-end">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Destino do teste</label>
+              <Input
+                value={whatsappTestPhone}
+                onChange={(event) => setWhatsappTestPhone(formatMobilePhone(event.target.value))}
+                placeholder="(86) 99999-9999"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Mensagem</label>
+              <Input value={whatsappTestMessage} onChange={(event) => setWhatsappTestMessage(event.target.value)} />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={whatsappSending || !whatsappServiceForm.enabled}
+              onClick={sendWhatsappTest}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              {whatsappSending ? 'Enviando' : 'Enviar teste'}
+            </Button>
           </div>
         </Card>
       </section> : null}

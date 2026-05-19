@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useToast } from '../app/ToastProvider'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import Input from '../components/Input'
@@ -11,12 +12,14 @@ import { useDb } from '../lib/useDb'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
 import { getCurrentUser } from '../lib/auth'
-import { buildDentistPortalWhatsappHref } from '../lib/accessLinks'
+import { buildDentistPortalWhatsappHref, buildDentistPortalWhatsappMessage } from '../lib/accessLinks'
 import { can } from '../auth/permissions'
 import { DATA_MODE } from '../data/dataMode'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { dentistCode } from '../lib/entityCode'
+import { loadSystemSettings } from '../lib/systemSettings'
+import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../lib/whatsappService'
 
 type DentistForm = {
   firstName: string
@@ -100,6 +103,7 @@ export default function DentistDetailPage() {
   const params = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { db } = useDb()
+  const { addToast } = useToast()
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'dentists.write')
   const canDelete = can(currentUser, 'dentists.delete')
@@ -239,6 +243,14 @@ export default function DentistDetailPage() {
   const namePrefix = form.gender === 'feminino' ? 'Dra.' : 'Dr.'
   const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim()
   const headerName = fullName ? `${namePrefix} ${fullName}` : ''
+  const dentistPortalWhatsappMessage = useMemo(
+    () =>
+      buildDentistPortalWhatsappMessage({
+        dentistName: headerName || existing?.name,
+        email: form.email,
+      }),
+    [existing?.name, form.email, headerName],
+  )
   const dentistPortalWhatsappHref = useMemo(
     () =>
       buildDentistPortalWhatsappHref({
@@ -248,6 +260,30 @@ export default function DentistDetailPage() {
       }),
     [existing?.name, form.email, form.whatsapp, headerName],
   )
+
+  const shareDentistPortalAccess = async () => {
+    if (!dentistPortalWhatsappHref) return
+
+    const settings = loadSystemSettings()
+    if (isWhatsappServiceReady(settings.whatsappService) && dentistPortalWhatsappMessage) {
+      const result = await sendWhatsappServiceMessage(
+        { whatsappService: settings.whatsappService },
+        {
+          to: form.whatsapp,
+          message: dentistPortalWhatsappMessage,
+          kind: 'dentist_portal_access',
+          metadata: { dentistId: existing?.id ?? '', email: form.email },
+        },
+      )
+      if (result.ok) {
+        addToast({ type: 'success', title: 'Acesso enviado pelo WhatsApp' })
+        return
+      }
+      addToast({ type: 'error', title: 'Serviço WhatsApp indisponível', message: result.error })
+    }
+
+    window.open(dentistPortalWhatsappHref, '_blank', 'noopener,noreferrer')
+  }
 
   if (!isNew && loadingExisting) {
     return (
@@ -450,7 +486,7 @@ export default function DentistDetailPage() {
               disabled={!dentistPortalWhatsappHref}
               onClick={
                 dentistPortalWhatsappHref
-                  ? () => window.open(dentistPortalWhatsappHref, '_blank', 'noopener,noreferrer')
+                  ? shareDentistPortalAccess
                   : undefined
               }
             >

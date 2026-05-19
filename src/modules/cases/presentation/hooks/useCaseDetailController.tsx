@@ -6,10 +6,12 @@ import { useToast } from '../../../../app/ToastProvider'
 import { DATA_MODE } from '../../../../data/dataMode'
 import { getCurrentUser } from '../../../../lib/auth'
 import { buildChangeSchedule } from '../../../../lib/alignerChange'
-import { buildPatientPortalWhatsappHref, resolvePatientPortalAccessCode } from '../../../../lib/accessLinks'
+import { buildPatientPortalWhatsappHref, buildPatientPortalWhatsappMessage, resolvePatientPortalAccessCode } from '../../../../lib/accessLinks'
 import { resolveRequestedProductLabel } from '../../../../lib/productLabel'
+import { loadSystemSettings } from '../../../../lib/systemSettings'
 import { useDb } from '../../../../lib/useDb'
 import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
+import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../../../../lib/whatsappService'
 import { listPatientDocs, resolvePatientDocUrl } from '../../../../repo/patientDocsRepo'
 import { downloadBlob } from '../../../../repo/storageRepo'
 import { formatPtBrDateTime, nowIsoDate } from '../../../../shared/utils/date'
@@ -225,6 +227,14 @@ export function useCaseDetailController() {
         accessCode: patientPortalAccessCode,
       }),
     [patientDisplayName, patientPortalAccessCode, patientWhatsapp],
+  )
+  const patientPortalWhatsappMessage = useMemo(
+    () =>
+      buildPatientPortalWhatsappMessage({
+        patientName: patientDisplayName,
+        accessCode: patientPortalAccessCode,
+      }),
+    [patientDisplayName, patientPortalAccessCode],
   )
   const dentistsById = useMemo(() => new Map(db.dentists.map((item) => [item.id, item])), [db.dentists])
   const clinicsById = useMemo(() => new Map(db.clinics.map((item) => [item.id, item])), [db.clinics])
@@ -505,11 +515,29 @@ export function useCaseDetailController() {
     statusTone: resolvedCase ? caseStatusToneMap[resolvedCase.status] : 'neutral',
     patientPortalAccessCode,
     canSharePatientPortalAccess: Boolean(patientPortalWhatsappHref),
-    sharePatientPortalAccess: () => {
+    sharePatientPortalAccess: async () => {
       if (!patientPortalWhatsappHref) {
         addToast({ type: 'error', title: 'Acesso do paciente', message: 'Cadastre um WhatsApp válido e um código de tratamento para compartilhar.' })
         return
       }
+      const settings = loadSystemSettings()
+      if (isWhatsappServiceReady(settings.whatsappService) && patientPortalWhatsappMessage) {
+        const result = await sendWhatsappServiceMessage(
+          { whatsappService: settings.whatsappService },
+          {
+            to: patientWhatsapp ?? '',
+            message: patientPortalWhatsappMessage,
+            kind: 'patient_portal_access',
+            metadata: { caseId: resolvedCase?.id ?? '', accessCode: patientPortalAccessCode },
+          },
+        )
+        if (result.ok) {
+          addToast({ type: 'success', title: 'Acesso enviado pelo WhatsApp' })
+          return
+        }
+        addToast({ type: 'error', title: 'Serviço WhatsApp indisponível', message: result.error })
+      }
+
       window.open(patientPortalWhatsappHref, '_blank', 'noopener,noreferrer')
     },
     canConcludeTreatmentManually,

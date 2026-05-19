@@ -18,6 +18,7 @@ const PUPPETEER_EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || undef
 const AUTH_DATA_PATH = process.env.AUTH_DATA_PATH || './.wwebjs_auth'
 const PORT = Number(process.env.PORT || 3000)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'
 
 if (
   !SUPABASE_URL ||
@@ -57,6 +58,25 @@ let lastJobAt = ''
 let lastJobStatus = 'Servico iniciado. Aguardando WhatsApp.'
 
 const app = express()
+
+app.use(express.json({ limit: '1mb' }))
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  const allowedOrigins = ALLOWED_ORIGIN.split(',').map((item) => item.trim()).filter(Boolean)
+  if (ALLOWED_ORIGIN === '*') {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+  } else if (!origin || allowedOrigins.includes(origin)) {
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
+  }
+  res.setHeader('Vary', 'Origin')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') {
+    res.status(204).end()
+    return
+  }
+  next()
+})
 
 function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) {
@@ -127,6 +147,40 @@ app.get('/qr', requireAdmin, async (_req, res) => {
       </body>
     </html>
   `)
+})
+
+app.post('/send', requireAdmin, async (req, res) => {
+  if (!whatsappReady) {
+    res.status(409).json({ ok: false, error: 'WhatsApp ainda nao esta conectado.' })
+    return
+  }
+
+  const phone = String(req.body?.phone || req.body?.to || '')
+  const message = String(req.body?.message || '').trim()
+  const kind = String(req.body?.kind || 'manual')
+  const whatsappId = normalizePhoneToWhatsappId(phone)
+
+  if (!whatsappId) {
+    res.status(400).json({ ok: false, error: 'Telefone de destino invalido.' })
+    return
+  }
+
+  if (!message) {
+    res.status(400).json({ ok: false, error: 'Mensagem obrigatoria.' })
+    return
+  }
+
+  try {
+    await client.sendMessage(whatsappId, message)
+    lastJobStatus = `Mensagem ${kind} enviada para ${whatsappId}.`
+    console.log(lastJobStatus)
+    res.json({ ok: true })
+  } catch (error) {
+    const errorMessage = error?.message || String(error)
+    lastJobStatus = `Erro no envio manual: ${errorMessage}`
+    console.error('Erro ao enviar mensagem manual:', error)
+    res.status(500).json({ ok: false, error: errorMessage })
+  }
 })
 
 app.post('/run-now', requireAdmin, async (_req, res) => {

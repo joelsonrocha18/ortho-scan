@@ -18,7 +18,6 @@ Para Supabase Edge Functions:
 - `SITE_URL`
 - `ALLOWED_ORIGIN` (origem do frontend, ex.: `https://app.example.com`)
 - `MONITORING_WEBHOOK_URL` (segredo da Edge Function `frontend-monitoring`, nunca usar com prefixo `VITE_`)
-
 Quando `VITE_STORAGE_PROVIDER=microsoft_drive`, configure também:
 
 - `MS_AUTH_MODE` (`app` ou `delegated`)
@@ -30,6 +29,15 @@ Quando `VITE_STORAGE_PROVIDER=microsoft_drive`, configure também:
 - `MS_DRIVE_LINK_SCOPE` (opcional, `anonymous` ou `organization`)
 - `MS_AUTHORITY` (somente `delegated`, geralmente `consumers` para contas pessoais)
 - `MS_REFRESH_TOKEN` (somente `delegated`)
+
+Para o `whatsapp-service` online:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_TOKEN`
+- `ALLOWED_ORIGIN` (ex.: `https://www.orthoscan.online`)
+- `AUTH_DATA_PATH=/data/.wwebjs_auth`
+- volume persistente montado em `/data`
 
 ## Headers de segurança
 

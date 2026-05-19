@@ -8,12 +8,16 @@ type PatientPortalShareInput = {
   originOverride?: string
 }
 
+type PatientPortalMessageInput = Omit<PatientPortalShareInput, 'whatsapp'>
+
 type DentistPortalShareInput = {
   dentistName?: string
   whatsapp?: string
   email?: string
   originOverride?: string
 }
+
+type DentistPortalMessageInput = Omit<DentistPortalShareInput, 'whatsapp'>
 
 function normalizeOrigin(origin?: string) {
   const trimmed = origin?.trim()
@@ -46,6 +50,24 @@ export function resolvePatientPortalAccessCode(caseItem?: Pick<Case, 'treatmentC
   return (caseItem.treatmentCode ?? caseItem.shortId ?? caseItem.id ?? '').trim().toUpperCase()
 }
 
+export function buildPatientPortalWhatsappMessage({
+  patientName,
+  accessCode,
+  originOverride,
+}: PatientPortalMessageInput) {
+  const normalizedCode = accessCode?.trim().toUpperCase()
+  if (!normalizedCode) return ''
+
+  const portalUrl = resolvePublicAccessUrl('/acesso/pacientes', originOverride)
+  const greeting = patientName?.trim() ? `Ola, ${patientName.trim()}.` : 'Ola.'
+  return [
+    `${greeting} Este e o acesso do seu portal Orthoscan.`,
+    `Link: ${portalUrl}`,
+    `Codigo do tratamento: ${normalizedCode}`,
+    'Use com seu CPF e data de nascimento.',
+  ].join('\n')
+}
+
 export function buildPatientPortalWhatsappHref({
   patientName,
   accessCode,
@@ -59,16 +81,24 @@ export function buildPatientPortalWhatsappHref({
   const baseUrl = buildWhatsappUrl(whatsapp)
   if (!baseUrl) return ''
 
-  const portalUrl = resolvePublicAccessUrl('/acesso/pacientes', originOverride)
-  const greeting = patientName?.trim() ? `Olá, ${patientName.trim()}.` : 'Olá.'
-  const message = [
-    `${greeting} Este é o acesso do seu portal Orthoscan.`,
-    `Link: ${portalUrl}`,
-    `Código do tratamento: ${normalizedCode}`,
-    'Use com seu CPF e data de nascimento.',
-  ].join('\n')
-
+  const message = buildPatientPortalWhatsappMessage({ patientName, accessCode: normalizedCode, originOverride })
   return `${baseUrl}?text=${encodeURIComponent(message)}`
+}
+
+export function buildDentistPortalWhatsappMessage({
+  dentistName,
+  email,
+  originOverride,
+}: DentistPortalMessageInput) {
+  const portalUrl = resolvePublicAccessUrl('/acesso/dentistas', originOverride)
+  const greeting = dentistName?.trim() ? `Ola, ${dentistName.trim()}.` : 'Ola.'
+  const emailLine = email?.trim() ? `Email de acesso: ${email.trim()}` : 'Use seu email profissional cadastrado.'
+  return [
+    `${greeting} Este e o acesso do portal do parceiro Orthoscan.`,
+    `Link: ${portalUrl}`,
+    emailLine,
+    'A senha permanece a mesma cadastrada no sistema.',
+  ].join('\n')
 }
 
 export function buildDentistPortalWhatsappHref({
@@ -82,15 +112,6 @@ export function buildDentistPortalWhatsappHref({
   const baseUrl = buildWhatsappUrl(whatsapp)
   if (!baseUrl) return ''
 
-  const portalUrl = resolvePublicAccessUrl('/acesso/dentistas', originOverride)
-  const greeting = dentistName?.trim() ? `Olá, ${dentistName.trim()}.` : 'Olá.'
-  const emailLine = email?.trim() ? `Email de acesso: ${email.trim()}` : 'Use seu email profissional cadastrado.'
-  const message = [
-    `${greeting} Este é o acesso do portal do parceiro Orthoscan.`,
-    `Link: ${portalUrl}`,
-    emailLine,
-    'A senha permanece a mesma cadastrada no sistema.',
-  ].join('\n')
-
+  const message = buildDentistPortalWhatsappMessage({ dentistName, email, originOverride })
   return `${baseUrl}?text=${encodeURIComponent(message)}`
 }

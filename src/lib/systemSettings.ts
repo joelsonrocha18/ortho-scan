@@ -43,6 +43,12 @@ export type ProductPricingItem = {
   updatedAt: string
 }
 
+export type WhatsappServiceSettings = {
+  enabled: boolean
+  baseUrl: string
+  adminToken: string
+}
+
 export type SystemSettings = {
   theme: AppThemeMode
   labCompany: LabCompanyProfile
@@ -50,11 +56,7 @@ export type SystemSettings = {
     enabled: boolean
     leadDays: number
   }
-  whatsappService: {
-    enabled: boolean
-    baseUrl: string
-    adminToken: string
-  }
+  whatsappService: WhatsappServiceSettings
   aiGateway: {
     enabled: boolean
     modules: {
@@ -170,7 +172,6 @@ export function loadSystemSettings(): SystemSettings {
       apiBaseUrl: typeof aiGatewayRaw.apiBaseUrl === 'string' ? aiGatewayRaw.apiBaseUrl : '',
       apiKey: typeof aiGatewayRaw.apiKey === 'string' ? aiGatewayRaw.apiKey : '',
     } as SystemSettings['aiGateway']
-
     const auditRaw = Array.isArray(parsed.audit) ? parsed.audit : []
     const catalogRaw = Array.isArray(parsed.priceCatalog) ? parsed.priceCatalog : []
     const priceCatalog: ProductPricingItem[] = catalogRaw

@@ -82,6 +82,10 @@ Configure variaveis:
 Deploy:
 - `supabase functions deploy ms-drive-storage`
 
+## 4.5) WhatsApp Service
+O QR Code e o envio direto de WhatsApp ficam no microservico `whatsapp-service/`, nao em Supabase Edge Function.
+Veja `whatsapp-service/README.md` para configurar `ADMIN_TOKEN`, `ALLOWED_ORIGIN`, Docker e volume persistente.
+
 ## 5) Frontend
 Crie um `.env` baseado em `.env.example`:
 ```

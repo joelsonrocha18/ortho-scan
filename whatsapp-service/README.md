@@ -46,6 +46,7 @@ RUN_ON_START=false
 PUPPETEER_HEADLESS=true
 PORT=3000
 ADMIN_TOKEN=um-token-grande-e-secreto
+ALLOWED_ORIGIN=https://www.orthoscan.online
 AUTH_DATA_PATH=/data/.wwebjs_auth
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ```
@@ -57,11 +58,21 @@ Depois do deploy, acesse:
 - `https://seu-dominio/health` para health check publico.
 - `https://seu-dominio/status?token=SEU_ADMIN_TOKEN` para status protegido.
 - `https://seu-dominio/qr?token=SEU_ADMIN_TOKEN` para ler o QR Code online.
+- `POST https://seu-dominio/send` com header `Authorization: Bearer SEU_ADMIN_TOKEN` para envio direto pelo OrthoScan.
 
 Para disparar manualmente a rotina:
 
 ```bash
 curl -X POST "https://seu-dominio/run-now?token=SEU_ADMIN_TOKEN"
+```
+
+Envio manual:
+
+```bash
+curl -X POST "https://seu-dominio/send" \
+  -H "Authorization: Bearer SEU_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"5586999990000","message":"Teste ORTHOSCAN"}'
 ```
 
 ## Teste manual
