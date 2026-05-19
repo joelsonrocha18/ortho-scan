@@ -33,5 +33,7 @@ export async function loginAs(page: Page, userId: string) {
   }
 
   await page.getByRole('button', { name: 'Entrar' }).click({ noWaitAfter: true })
-  await expect(page.locator('main')).toContainText('Painel executivo')
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem('arrimo_session_user_id')), { timeout: 30_000 })
+    .toBe(userId)
 }

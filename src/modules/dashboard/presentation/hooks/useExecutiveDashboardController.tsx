@@ -15,7 +15,7 @@ export function useExecutiveDashboardController() {
   const isSupabaseMode = DATA_MODE === 'supabase'
   const currentUser = useMemo(() => getCurrentUser(db), [db])
   const currentUserKey = `${currentUser?.id ?? ''}::${currentUser?.role ?? ''}::${currentUser?.linkedClinicId ?? ''}::${currentUser?.linkedDentistId ?? ''}`
-  const repository = useMemo(() => createDashboardRepository(currentUser), [currentUser, currentUserKey])
+  const repository = useMemo(() => createDashboardRepository(currentUser), [currentUser])
   const loadExecutiveDashboard = useMemo(() => new LoadExecutiveDashboardUseCase(repository), [repository])
   const [data, setData] = useState<ExecutiveDashboardView | null>(null)
   const [todayKey, setTodayKey] = useState(() => nowIsoDate())

@@ -16,38 +16,10 @@ test('scan to case to lab flow', async ({ page }) => {
   await expect(page.getByText('Orientacao A')).toBeVisible()
 
   await page.getByRole('button', { name: 'Concluir planejamento' }).click()
-  const closeBudgetButton = page.getByRole('button', { name: 'Fechar orcamento' })
+  const closeBudgetButton = page.getByRole('button', { name: /Fechar or.amento/ })
   await expect(closeBudgetButton).toBeEnabled()
-  const caseId = page.url().split('/').pop() ?? ''
-  // Make the budget->contract transition deterministic in E2E by updating the seeded local DB directly.
-  await page.evaluate(
-    ({ caseId: id }) => {
-      const key = 'arrimo_orthoscan_db_v1'
-      const raw = window.localStorage.getItem(key)
-      if (!raw) return
-      const db = JSON.parse(raw) as { cases?: Array<Record<string, unknown>> }
-      const cases = Array.isArray(db.cases) ? db.cases : []
-      db.cases = cases.map((c) => {
-        const currentId = typeof c.id === 'string' ? c.id : ''
-        if (currentId !== id) return c
-        const currentContract =
-          typeof c.contract === 'object' && c.contract !== null ? (c.contract as Record<string, unknown>) : {}
-        return {
-          ...c,
-          phase: 'contrato_pendente',
-          budget: { value: 12000, createdAt: new Date().toISOString() },
-          contract: { ...currentContract, status: 'pendente' },
-          updatedAt: new Date().toISOString(),
-        }
-      })
-      window.localStorage.setItem(key, JSON.stringify(db))
-      window.dispatchEvent(new Event('arrimo:db_changed'))
-    },
-    { caseId },
-  )
-
-  // Wait for the case phase transition after saving to local storage.
-  await expect(page.getByText('Fase atual: Contrato pendente')).toBeVisible({ timeout: 30_000 })
+  await page.getByPlaceholder('R$ 0,00').fill('12000')
+  await closeBudgetButton.click()
   const approveButton = page.getByRole('button', { name: 'Aprovar contrato' })
   await expect(approveButton).toBeEnabled({ timeout: 30_000 })
   await approveButton.click()

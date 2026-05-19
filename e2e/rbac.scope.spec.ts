@@ -27,7 +27,7 @@ test('lab_tech can access LAB but cannot access patients page', async ({ page })
   await loginAs(page, 'qa_user_lab')
 
   await page.goto('/app/lab', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByText('Fila de produção e entregas')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Laboratório' })).toBeVisible()
 
   await page.goto('/app/patients', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Sem acesso' })).toBeVisible()

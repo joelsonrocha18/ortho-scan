@@ -38,6 +38,9 @@ type ProductionConfirmState = {
   resolver: ((confirmed: boolean) => void) | null
 }
 
+type LabCaseOption = LabOverview['cases'][number]
+type LabPatientOption = LabOverview['patientOptions'][number]
+
 export function useLabPageController() {
   const [searchParams] = useSearchParams()
   const { db } = useDb()
@@ -135,8 +138,8 @@ export function useLabPageController() {
   )
   const patientOptionById = useMemo(
     () =>
-      new Map<string, (typeof overview.patientOptions)[number]>(
-        overview.patientOptions.map((item): [string, (typeof overview.patientOptions)[number]] => [item.id, item]),
+      new Map<string, LabPatientOption>(
+        overview.patientOptions.map((item): [string, LabPatientOption] => [item.id, item]),
       ),
     [overview.patientOptions],
   )
@@ -160,7 +163,7 @@ export function useLabPageController() {
   )
 
   const resolveOrderProductLabel = useCallback(
-    (item: LabOrder, caseItemOverride?: typeof overview.cases[number]) =>
+    (item: LabOrder, caseItemOverride?: LabCaseOption) =>
       resolveLabProductLabel(item, { caseById, scansById }, caseItemOverride),
     [caseById, scansById],
   )

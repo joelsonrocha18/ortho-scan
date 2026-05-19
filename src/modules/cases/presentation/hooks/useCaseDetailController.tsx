@@ -93,7 +93,10 @@ export function useCaseDetailController() {
     [db.cases, isSupabaseMode, params.id, supabaseDetail.supabaseCase],
   )
   const resolvedCase = currentCase
-  const displayedTrays = optimisticTrays ?? resolvedCase?.trays ?? []
+  const displayedTrays = useMemo(
+    () => optimisticTrays ?? resolvedCase?.trays ?? [],
+    [optimisticTrays, resolvedCase?.trays],
+  )
   const timelineRefreshSignature = `${params.id ?? ''}::${supabaseSyncTick}::${db.auditLogs?.length ?? 0}::${resolvedCase?.updatedAt ?? ''}::${resolvedCase?.timelineEntries?.length ?? 0}`
   const { timelineEntries } = useCaseTimeline(resolvedCase?.id, listCaseTimeline, timelineRefreshSignature)
   const localSourceScan = useMemo(
