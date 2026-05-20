@@ -29,20 +29,27 @@ type SubscriptionRow = {
 
 function resolveAllowedOrigin(req: Request) {
   const configured = (Deno.env.get('ALLOWED_ORIGIN') ?? '').trim()
-  if (configured) return configured
+  const allowedOrigins = configured
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean)
   const siteUrl = (Deno.env.get('SITE_URL') ?? '').trim()
-  if (!siteUrl) return req.headers.get('origin') ?? '*'
-  try {
-    return new URL(siteUrl).origin
-  } catch {
-    return req.headers.get('origin') ?? '*'
+  if (siteUrl) {
+    try {
+      const siteOrigin = new URL(siteUrl).origin
+      if (!allowedOrigins.includes(siteOrigin)) allowedOrigins.push(siteOrigin)
+    } catch {
+      // Ignore invalid SITE_URL and fall back to ALLOWED_ORIGIN.
+    }
   }
+  const requestOrigin = (req.headers.get('origin') ?? '').replace(/\/$/, '')
+  if (allowedOrigins.includes('*')) return requestOrigin || '*'
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin
+  return allowedOrigins[0] ?? (requestOrigin || '*')
 }
 
 function corsHeaders(req: Request) {
-  const allowedOrigin = resolveAllowedOrigin(req)
-  const requestOrigin = req.headers.get('origin') ?? ''
-  const origin = requestOrigin && requestOrigin === allowedOrigin ? requestOrigin : allowedOrigin
+  const origin = resolveAllowedOrigin(req)
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',

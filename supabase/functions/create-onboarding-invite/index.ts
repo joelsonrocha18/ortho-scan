@@ -19,22 +19,29 @@ const APP_ROLES = new Set([
   'receptionist',
 ])
 
-function resolveAllowedOrigin(_req: Request) {
+function resolveAllowedOrigin(req: Request) {
   const configured = (Deno.env.get('ALLOWED_ORIGIN') ?? '').trim()
-  if (configured) return configured
+  const allowedOrigins = configured
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean)
   const siteUrl = (Deno.env.get('SITE_URL') ?? '').trim()
-  if (!siteUrl) return 'null'
-  try {
-    return new URL(siteUrl).origin
-  } catch {
-    return 'null'
+  if (siteUrl) {
+    try {
+      const siteOrigin = new URL(siteUrl).origin
+      if (!allowedOrigins.includes(siteOrigin)) allowedOrigins.push(siteOrigin)
+    } catch {
+      // Ignore invalid SITE_URL and fall back to ALLOWED_ORIGIN.
+    }
   }
+  const requestOrigin = (req.headers.get('origin') ?? '').replace(/\/$/, '')
+  if (allowedOrigins.includes('*')) return requestOrigin || '*'
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin
+  return allowedOrigins[0] ?? 'null'
 }
 
 function corsHeaders(req: Request) {
-  const allowedOrigin = resolveAllowedOrigin(req)
-  const requestOrigin = req.headers.get('origin') ?? ''
-  const origin = requestOrigin && requestOrigin === allowedOrigin ? requestOrigin : allowedOrigin
+  const origin = resolveAllowedOrigin(req)
   return {
     'Access-Control-Allow-Origin': origin,
     // `x-user-jwt` carries the authenticated user's access token (ES256) because the Functions gateway
