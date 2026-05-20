@@ -69,7 +69,7 @@ export function CaseLabProductionSection({
         </div>
         <p className="mt-3 text-xs text-slate-500">Itens da OS: {labSummary.osItens}</p>
 
-        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <div className="mt-5 grid items-start gap-4 xl:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
             <h3 className="text-sm font-semibold text-slate-900">Entrega ao profissional</h3>
             <div className="mt-3 space-y-3">
@@ -101,8 +101,13 @@ export function CaseLabProductionSection({
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-            <h3 className="text-sm font-semibold text-slate-900">Pendências do laboratório</h3>
-            <div className="mt-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">Pendências do laboratório</h3>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                {pendingItems.length} aberta{pendingItems.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="mt-3 max-h-[26rem] space-y-3 overflow-y-auto pr-1">
               {pendingItems.length === 0 ? (
                 <p className="text-sm text-slate-500">Sem pendências abertas.</p>
               ) : (
