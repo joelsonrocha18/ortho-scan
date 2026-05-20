@@ -17,14 +17,19 @@ export function CaseHistoryTimelineSection({ entries }: CaseHistoryTimelineSecti
   return (
     <section className="mt-6">
       <Card>
-        <h2 className="text-lg font-semibold text-slate-900">Histórico do caso</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">Histórico do caso</h2>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {entries.length} evento{entries.length === 1 ? '' : 's'}
+          </span>
+        </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 max-h-[24rem] space-y-3 overflow-y-auto pr-1">
           {entries.length === 0 ? (
             <p className="text-sm text-slate-500">Nenhum evento registrado.</p>
           ) : (
             entries.map((entry) => (
-              <div key={entry.id} className={`rounded-xl border px-4 py-3 ${toneClasses(entry)}`}>
+              <div key={entry.id} className={`rounded-xl border px-3 py-2.5 ${toneClasses(entry)}`}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-semibold">{entry.title}</p>
                   <p className="text-xs opacity-75">{new Date(entry.at).toLocaleString('pt-BR')}</p>
