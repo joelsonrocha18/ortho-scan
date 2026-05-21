@@ -225,13 +225,58 @@ describe('LAB module', () => {
         updatedAt: '2026-03-05T00:00:00.000Z',
         requestKind: 'producao',
       },
+      {
+        id: 'standalone_duplicate',
+        requestCode: 'ORTH-00001',
+        patientName: 'Paciente Duplicado',
+        trayNumber: 9,
+        dueDate: '2026-04-01',
+        expectedReplacementDate: '2026-04-01',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'ambos',
+        createdAt: '2026-03-06T00:00:00.000Z',
+        updatedAt: '2026-03-06T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+      {
+        id: 'standalone_real',
+        requestCode: 'ORTH-00002',
+        patientName: 'Paciente Avulso',
+        trayNumber: 1,
+        dueDate: '2026-03-12',
+        expectedReplacementDate: '2026-03-12',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'ambos',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+      {
+        id: 'standalone_duplicate_real',
+        requestCode: 'ORTH-00002',
+        patientName: 'Paciente Avulso',
+        trayNumber: 2,
+        dueDate: '2026-03-20',
+        expectedReplacementDate: '2026-03-20',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'ambos',
+        createdAt: '2026-03-02T00:00:00.000Z',
+        updatedAt: '2026-03-02T00:00:00.000Z',
+        requestKind: 'producao',
+      },
     ]
 
     const canonical = ProductionQueueService.getCanonicalOrders(items)
-    expect(canonical.map((item) => item.id)).toEqual(['real_waiting', 'real_production'])
+    expect(canonical.map((item) => item.id)).toEqual(['real_waiting', 'real_production', 'standalone_real'])
 
     const kpis = ProductionQueueService.getKpis(items)
-    expect(kpis.aguardando_iniciar).toBe(1)
+    expect(kpis.aguardando_iniciar).toBe(2)
     expect(kpis.em_producao).toBe(1)
   })
 

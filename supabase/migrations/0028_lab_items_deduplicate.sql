@@ -16,7 +16,7 @@ begin
           and coalesce(data->>'reworkOfTrayNumber', '') = ''
           then concat_ws('|',
             'base-production',
-            case_id::text,
+            coalesce(nullif(data->>'requestCode', ''), case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
             coalesce(data->>'requestCode', ''),
             coalesce(product_id, product_type, data->>'productId', data->>'productType', '')
           )
@@ -28,7 +28,7 @@ begin
           )
           then concat_ws('|',
             'rework-production',
-            case_id::text,
+            coalesce(case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
             coalesce(tray_number::text, data->>'trayNumber', ''),
             coalesce(data->>'arch', 'ambos'),
             coalesce(product_id, product_type, data->>'productId', data->>'productType', ''),
@@ -39,7 +39,7 @@ begin
         when coalesce(data->>'requestKind', 'producao') = 'reposicao_programada'
           then concat_ws('|',
             'programmed-replenishment',
-            case_id::text,
+            coalesce(case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
             coalesce(tray_number::text, data->>'trayNumber', ''),
             coalesce(data->>'expectedReplacementDate', data->>'dueDate', ''),
             coalesce(data->>'arch', 'ambos'),
@@ -47,7 +47,7 @@ begin
           )
         else concat_ws('|',
           coalesce(data->>'requestKind', 'producao'),
-          case_id::text,
+          coalesce(case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
           coalesce(tray_number::text, data->>'trayNumber', ''),
           coalesce(data->>'expectedReplacementDate', data->>'dueDate', ''),
           coalesce(data->>'arch', 'ambos'),
@@ -60,7 +60,10 @@ begin
       end as dedupe_key
     from public.lab_items
     where deleted_at is null
-      and case_id is not null
+      and (
+        case_id is not null
+        or coalesce(data->>'requestCode', '') <> ''
+      )
   ),
   ranked as (
     select
@@ -128,6 +131,20 @@ on public.lab_items (
 )
 where deleted_at is null
   and case_id is not null
+  and coalesce(data->>'requestKind', 'producao') = 'producao'
+  and coalesce(data->>'reworkOfCaseId', '') = ''
+  and coalesce(data->>'reworkOfLabOrderId', '') = ''
+  and coalesce(data->>'reworkOfTrayNumber', '') = ''
+  and coalesce(data->>'requestCode', '') !~ '/[0-9]+$';
+
+create unique index if not exists idx_lab_items_active_standalone_base_production_unique
+on public.lab_items (
+  (coalesce(data->>'requestCode', '')),
+  (coalesce(product_id, product_type, data->>'productId', data->>'productType', ''))
+)
+where deleted_at is null
+  and case_id is null
+  and coalesce(data->>'requestCode', '') <> ''
   and coalesce(data->>'requestKind', 'producao') = 'producao'
   and coalesce(data->>'reworkOfCaseId', '') = ''
   and coalesce(data->>'reworkOfLabOrderId', '') = ''

@@ -79,7 +79,6 @@ function planningWeight(order: Pick<LabOrder, 'plannedUpperQty' | 'plannedLowerQ
 }
 
 function canonicalOrderKey(order: LabOrder) {
-  if (!order.caseId) return `standalone:${order.id}`
   const requestKind = order.requestKind ?? 'producao'
   const requestCode = order.requestCode?.trim() ?? ''
   const isRevision = /\/\d+$/.test(requestCode)
@@ -89,19 +88,22 @@ function canonicalOrderKey(order: LabOrder) {
     order.reworkOfLabOrderId ?? '',
     order.reworkOfTrayNumber ?? '',
   ].join('|')
+  const scope = order.caseId ?? (requestCode ? `standalone:${requestCode}` : '')
+
+  if (!scope) return `standalone:${order.id}`
 
   if (requestKind === 'producao' && !isRevision && reworkKey === '||') {
-    return ['base-production', order.caseId, requestCode, product].join('|')
+    return ['base-production', requestCode || scope, product].join('|')
   }
 
   if (requestKind === 'producao' && reworkKey !== '||') {
-    return ['rework-production', order.caseId, order.trayNumber, order.arch, product, reworkKey].join('|')
+    return ['rework-production', scope, order.trayNumber, order.arch, product, reworkKey].join('|')
   }
 
   if (requestKind === 'reposicao_programada') {
     return [
       'programmed-replenishment',
-      order.caseId,
+      scope,
       order.trayNumber,
       order.expectedReplacementDate ?? order.dueDate,
       order.arch,
@@ -111,7 +113,7 @@ function canonicalOrderKey(order: LabOrder) {
 
   return [
     requestKind,
-    order.caseId,
+    scope,
     order.trayNumber,
     order.expectedReplacementDate ?? order.dueDate,
     order.arch,
