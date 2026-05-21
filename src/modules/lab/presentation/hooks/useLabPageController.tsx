@@ -39,6 +39,11 @@ type ProductionConfirmState = {
   resolver: ((confirmed: boolean) => void) | null
 }
 
+function isAbortErrorMessage(message: string) {
+  const normalized = message.toLowerCase()
+  return normalized.includes('aborterror') || normalized.includes('signal is aborted')
+}
+
 type LabCaseOption = LabOverview['cases'][number]
 type LabPatientOption = LabOverview['patientOptions'][number]
 
@@ -98,6 +103,10 @@ export function useLabPageController() {
     setLoading(true)
     const result = await repository.loadOverview()
     if (!result.ok) {
+      if (isAbortErrorMessage(result.error)) {
+        setLoading(false)
+        return
+      }
       addToast({ type: 'error', title: 'Laboratório', message: result.error })
       setLoading(false)
       return

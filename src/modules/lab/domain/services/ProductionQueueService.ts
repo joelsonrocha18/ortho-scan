@@ -78,6 +78,29 @@ function planningWeight(order: Pick<LabOrder, 'plannedUpperQty' | 'plannedLowerQ
   return toNonNegativeInt(order.plannedUpperQty) + toNonNegativeInt(order.plannedLowerQty) > 0 ? 1 : 0
 }
 
+function baseProductionIdentity(order: LabOrder) {
+  const requestKind = order.requestKind ?? 'producao'
+  const requestCode = order.requestCode?.trim() ?? ''
+  const isRevision = /\/\d+$/.test(requestCode)
+  const reworkKey = [
+    order.reworkOfCaseId ?? '',
+    order.reworkOfLabOrderId ?? '',
+    order.reworkOfTrayNumber ?? '',
+  ].join('|')
+
+  if (requestKind !== 'producao' || isRevision || reworkKey !== '||') return null
+
+  const aliases = [
+    order.caseId ? `case:${order.caseId}` : '',
+    requestCode ? `request:${requestCode}` : '',
+  ].filter(Boolean)
+
+  return {
+    product: order.productId ?? order.productType ?? '',
+    aliases: aliases.length > 0 ? [...new Set(aliases)] : [`order:${order.id}`],
+  }
+}
+
 function canonicalOrderKey(order: LabOrder) {
   const requestKind = order.requestKind ?? 'producao'
   const requestCode = order.requestCode?.trim() ?? ''
@@ -93,7 +116,7 @@ function canonicalOrderKey(order: LabOrder) {
   if (!scope) return `standalone:${order.id}`
 
   if (requestKind === 'producao' && !isRevision && reworkKey === '||') {
-    return ['base-production', requestCode || scope, product].join('|')
+    return ['base-production', scope, product].join('|')
   }
 
   if (requestKind === 'producao' && reworkKey !== '||') {
@@ -124,6 +147,10 @@ function canonicalOrderKey(order: LabOrder) {
 }
 
 function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
+  const leftCaseScoped = left.caseId ? 1 : 0
+  const rightCaseScoped = right.caseId ? 1 : 0
+  if (leftCaseScoped !== rightCaseScoped) return leftCaseScoped - rightCaseScoped
+
   const leftDelivered = left.deliveredToProfessionalAt ? 1 : 0
   const rightDelivered = right.deliveredToProfessionalAt ? 1 : 0
   if (leftDelivered !== rightDelivered) return leftDelivered - rightDelivered
@@ -149,10 +176,40 @@ function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
 
 export function getCanonicalLabOrders<T extends LabOrder>(orders: T[]) {
   const firstIndexById = new Map(orders.map((order, index) => [order.id, index]))
+  const parent = orders.map((_, index) => index)
+  const baseIdentityByIndex = new Map<number, ReturnType<typeof baseProductionIdentity>>()
+  const baseAliasOwner = new Map<string, number>()
   const bestByKey = new Map<string, T>()
 
-  orders.forEach((order) => {
-    const key = canonicalOrderKey(order)
+  const find = (index: number): number => {
+    if (parent[index] !== index) parent[index] = find(parent[index])
+    return parent[index]
+  }
+
+  const union = (left: number, right: number) => {
+    const leftRoot = find(left)
+    const rightRoot = find(right)
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot
+  }
+
+  orders.forEach((order, index) => {
+    const identity = baseProductionIdentity(order)
+    if (!identity) return
+    baseIdentityByIndex.set(index, identity)
+    identity.aliases.forEach((alias) => {
+      const aliasKey = ['base-production', identity.product, alias].join('|')
+      const owner = baseAliasOwner.get(aliasKey)
+      if (owner === undefined) {
+        baseAliasOwner.set(aliasKey, index)
+        return
+      }
+      union(owner, index)
+    })
+  })
+
+  orders.forEach((order, index) => {
+    const identity = baseIdentityByIndex.get(index)
+    const key = identity ? `base-production-group:${find(index)}` : canonicalOrderKey(order)
     const current = bestByKey.get(key)
     if (!current || compareCanonicalOrders(order, current) > 0) {
       bestByKey.set(key, order)

@@ -210,7 +210,7 @@ describe('LAB module', () => {
       {
         id: 'duplicate_base_production',
         caseId: 'qa_case_1',
-        requestCode: 'ORTH-00001',
+        requestCode: 'ORTH-00001-COPIA',
         patientName: 'Paciente Duplicado',
         trayNumber: 4,
         dueDate: '2026-03-20',

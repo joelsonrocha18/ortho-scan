@@ -16,8 +16,7 @@ begin
           and coalesce(data->>'reworkOfTrayNumber', '') = ''
           then concat_ws('|',
             'base-production',
-            coalesce(nullif(data->>'requestCode', ''), case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
-            coalesce(data->>'requestCode', ''),
+            coalesce(case_id::text, 'standalone:' || coalesce(data->>'requestCode', '')),
             coalesce(product_id, product_type, data->>'productId', data->>'productType', '')
           )
         when coalesce(data->>'requestKind', 'producao') = 'producao'
@@ -126,7 +125,6 @@ where deleted_at is null
 create unique index if not exists idx_lab_items_active_base_production_unique
 on public.lab_items (
   case_id,
-  (coalesce(data->>'requestCode', '')),
   (coalesce(product_id, product_type, data->>'productId', data->>'productType', ''))
 )
 where deleted_at is null
