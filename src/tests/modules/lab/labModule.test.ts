@@ -7,6 +7,7 @@ import { LabSLAService } from '../../../modules/lab/domain/services/LabSLAServic
 import { ProductionQueueService } from '../../../modules/lab/domain/services/ProductionQueueService'
 import { ReworkFinancialImpactService } from '../../../modules/lab/domain/services/ReworkFinancialImpactService'
 import { toLabOrder, type LabOrder } from '../../../modules/lab'
+import type { Case } from '../../../types/Case'
 import { clearQaSeed, seedQaData } from '../../seed'
 
 describe('LAB module', () => {
@@ -278,6 +279,64 @@ describe('LAB module', () => {
     const kpis = ProductionQueueService.getKpis(items)
     expect(kpis.aguardando_iniciar).toBe(2)
     expect(kpis.em_producao).toBe(1)
+  })
+
+  it('deduplicates base production orders from duplicated cases with the same treatment code', () => {
+    const caseById = new Map<string, Pick<Case, 'treatmentCode'>>([
+      ['case_real', { treatmentCode: 'ORTH-00003' }],
+      ['case_clone_a', { treatmentCode: 'ORTH-00003' }],
+      ['case_clone_b', { treatmentCode: 'ORTH-00003' }],
+    ])
+    const items: LabOrder[] = [
+      {
+        id: 'case_clone_a_order',
+        caseId: 'case_clone_a',
+        requestCode: 'ORTH-00003-COPIA-A',
+        patientName: 'Gilda Veras Rodrigues Torres',
+        trayNumber: 2,
+        dueDate: '2026-01-24',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-01-01',
+        arch: 'inferior',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+      {
+        id: 'case_real_order',
+        caseId: 'case_real',
+        requestCode: 'ORTH-00003',
+        patientName: 'Gilda Veras Rodrigues Torres',
+        trayNumber: 1,
+        dueDate: '2026-01-14',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-01-01',
+        arch: 'inferior',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+      {
+        id: 'case_clone_b_order',
+        caseId: 'case_clone_b',
+        requestCode: 'ORTH-00003-COPIA-B',
+        patientName: 'Gilda Veras Rodrigues Torres',
+        trayNumber: 3,
+        dueDate: '2026-01-28',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-01-01',
+        arch: 'inferior',
+        createdAt: '2026-01-03T00:00:00.000Z',
+        updatedAt: '2026-01-03T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+    ]
+
+    const canonical = ProductionQueueService.getCanonicalOrders(items, { caseById })
+    expect(canonical.map((item) => item.id)).toEqual(['case_real_order'])
   })
 
   it('lists pronta rework orders for delivery registration', () => {

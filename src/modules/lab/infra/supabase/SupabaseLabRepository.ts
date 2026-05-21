@@ -225,7 +225,8 @@ export class SupabaseLabRepository implements LabRepository {
     if (!automation.enabled) return ok(false)
 
     const today = nowIsoDate()
-    const requestCodes = getCanonicalLabOrders(items).map((item) => item.requestCode).filter((code): code is string => Boolean(code))
+    const caseById = new Map(cases.map((item): [string, Case] => [item.id, item]))
+    const requestCodes = getCanonicalLabOrders(items, { caseById }).map((item) => item.requestCode).filter((code): code is string => Boolean(code))
     const inserts: Array<Record<string, unknown>> = []
 
     cases.forEach((caseItem) => {
@@ -401,9 +402,10 @@ export class SupabaseLabRepository implements LabRepository {
       if (refreshRes.error) return err(refreshRes.error.message)
       items = ((refreshRes.data ?? []) as Array<Record<string, unknown>>).map(mapSupabaseLabRow)
     }
+    const caseById = new Map(cases.map((item): [string, Case] => [item.id, item]))
 
     return ok({
-      items: getCanonicalLabOrders(items).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+      items: getCanonicalLabOrders(items, { caseById }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
       cases,
       patientOptions,
       dentists,

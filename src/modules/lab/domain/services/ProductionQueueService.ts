@@ -38,6 +38,10 @@ export type LabPipelineItem = LabOrder & {
   priorityScore: number
 }
 
+export type LabOrderIdentityContext = {
+  caseById?: Map<string, Pick<Case, 'treatmentCode'>>
+}
+
 function toNonNegativeInt(value?: number) {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.trunc(value ?? 0))
@@ -78,10 +82,15 @@ function planningWeight(order: Pick<LabOrder, 'plannedUpperQty' | 'plannedLowerQ
   return toNonNegativeInt(order.plannedUpperQty) + toNonNegativeInt(order.plannedLowerQty) > 0 ? 1 : 0
 }
 
-function baseProductionIdentity(order: LabOrder) {
+function normalizedIdentityValue(value?: string) {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function baseProductionIdentity(order: LabOrder, context?: LabOrderIdentityContext) {
   const requestKind = order.requestKind ?? 'producao'
   const requestCode = order.requestCode?.trim() ?? ''
   const isRevision = /\/\d+$/.test(requestCode)
+  const treatmentCode = order.caseId ? context?.caseById?.get(order.caseId)?.treatmentCode : undefined
   const reworkKey = [
     order.reworkOfCaseId ?? '',
     order.reworkOfLabOrderId ?? '',
@@ -91,8 +100,9 @@ function baseProductionIdentity(order: LabOrder) {
   if (requestKind !== 'producao' || isRevision || reworkKey !== '||') return null
 
   const aliases = [
-    order.caseId ? `case:${order.caseId}` : '',
-    requestCode ? `request:${requestCode}` : '',
+    order.caseId ? `case:${normalizedIdentityValue(order.caseId)}` : '',
+    requestCode ? `code:${normalizedIdentityValue(requestCode)}` : '',
+    treatmentCode ? `code:${normalizedIdentityValue(treatmentCode)}` : '',
   ].filter(Boolean)
 
   return {
@@ -163,6 +173,10 @@ function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
   const rightPlanning = planningWeight(right)
   if (leftPlanning !== rightPlanning) return leftPlanning - rightPlanning
 
+  const leftDue = toTime(left.dueDate)
+  const rightDue = toTime(right.dueDate)
+  if (leftDue !== rightDue) return rightDue - leftDue
+
   const leftCreated = toTime(left.createdAt)
   const rightCreated = toTime(right.createdAt)
   if (leftCreated !== rightCreated) return rightCreated - leftCreated
@@ -174,7 +188,7 @@ function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
   return right.id.localeCompare(left.id)
 }
 
-export function getCanonicalLabOrders<T extends LabOrder>(orders: T[]) {
+export function getCanonicalLabOrders<T extends LabOrder>(orders: T[], context?: LabOrderIdentityContext) {
   const firstIndexById = new Map(orders.map((order, index) => [order.id, index]))
   const parent = orders.map((_, index) => index)
   const baseIdentityByIndex = new Map<number, ReturnType<typeof baseProductionIdentity>>()
@@ -193,7 +207,7 @@ export function getCanonicalLabOrders<T extends LabOrder>(orders: T[]) {
   }
 
   orders.forEach((order, index) => {
-    const identity = baseProductionIdentity(order)
+    const identity = baseProductionIdentity(order, context)
     if (!identity) return
     baseIdentityByIndex.set(index, identity)
     identity.aliases.forEach((alias) => {
@@ -263,10 +277,10 @@ export function isLabOrderDeliveredToProfessional(
 
 export function buildProductionQueue(
   orders: LabOrder[],
-  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays'>>,
+  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays' | 'treatmentCode'>>,
   todayIso = nowIsoDate(),
 ) {
-  return getCanonicalLabOrders(orders)
+  return getCanonicalLabOrders(orders, { caseById })
     .map((order) => enrichLabOrder(order, todayIso))
     .filter((order) => {
       if (order.stage === 'delivered') return false
@@ -277,7 +291,7 @@ export function buildProductionQueue(
 
 export function getPipelineOrders(
   orders: LabOrder[],
-  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays'>>,
+  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays' | 'treatmentCode'>>,
 ) {
   return buildProductionQueue(orders, caseById)
 }
@@ -359,9 +373,9 @@ export function filterLabOrders(
 
 export function getReadyDeliveryOrders(
   orders: LabOrder[],
-  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays'>>,
+  caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays' | 'treatmentCode'>>,
 ) {
-  return getCanonicalLabOrders(orders)
+  return getCanonicalLabOrders(orders, { caseById })
     .map((order) => enrichLabOrder(order))
     .filter((order) => {
       if (order.status !== 'prontas') return false
@@ -388,7 +402,7 @@ export function getRemainingBankOrders(
   caseById: Map<string, Case>,
   deliveredToProfessional: (order: LabOrder) => boolean,
 ) {
-  const raw = getCanonicalLabOrders(orders)
+  const raw = getCanonicalLabOrders(orders, { caseById })
     .map((order) => enrichLabOrder(order))
     .filter((order) => {
       const caseItem = order.caseId ? caseById.get(order.caseId) : undefined

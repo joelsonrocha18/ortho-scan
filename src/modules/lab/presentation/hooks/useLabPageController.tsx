@@ -180,7 +180,7 @@ export function useLabPageController() {
 
   const casesWithAlerts = useMemo(() => getCasesWithReplenishmentAlerts(overview.cases), [overview.cases])
   const alertSummaries = useMemo(() => getReplenishmentAlertSummaries(overview.cases), [overview.cases])
-  const canonicalItems = useMemo(() => getCanonicalLabOrders(overview.items), [overview.items])
+  const canonicalItems = useMemo(() => getCanonicalLabOrders(overview.items, { caseById }), [caseById, overview.items])
   const filteredItems = useMemo(
     () =>
       ProductionQueueService.filter(canonicalItems, {

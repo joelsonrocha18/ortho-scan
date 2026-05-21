@@ -10,9 +10,10 @@ begin
       coalesce(lab.product_id, lab.product_type, lab.data->>'productId', lab.data->>'productType', '') as product_key,
       nullif(lab.case_id::text, '') as case_key,
       nullif(lab.data->>'requestCode', '') as request_key,
-      nullif(case_row.data->>'treatmentCode', '') as treatment_key
+      nullif(coalesce(case_row.data->>'treatmentCode', scan_row.data->>'serviceOrderCode'), '') as treatment_key
     from public.lab_items lab
     left join public.cases case_row on case_row.id = lab.case_id
+    left join public.scans scan_row on scan_row.id = case_row.scan_id
     where lab.deleted_at is null
       and coalesce(lab.data->>'requestKind', 'producao') = 'producao'
       and coalesce(lab.data->>'requestCode', '') !~ '/[0-9]+$'
