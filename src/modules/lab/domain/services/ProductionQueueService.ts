@@ -188,12 +188,10 @@ function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
   return right.id.localeCompare(left.id)
 }
 
-export function getCanonicalLabOrders<T extends LabOrder>(orders: T[], context?: LabOrderIdentityContext) {
-  const firstIndexById = new Map(orders.map((order, index) => [order.id, index]))
+function buildCanonicalLabOrderGroups<T extends LabOrder>(orders: T[], context?: LabOrderIdentityContext) {
   const parent = orders.map((_, index) => index)
   const baseIdentityByIndex = new Map<number, ReturnType<typeof baseProductionIdentity>>()
   const baseAliasOwner = new Map<string, number>()
-  const bestByKey = new Map<string, T>()
 
   const find = (index: number): number => {
     if (parent[index] !== index) parent[index] = find(parent[index])
@@ -221,13 +219,42 @@ export function getCanonicalLabOrders<T extends LabOrder>(orders: T[], context?:
     })
   })
 
+  const groups = new Map<string, T[]>()
   orders.forEach((order, index) => {
     const identity = baseIdentityByIndex.get(index)
     const key = identity ? `base-production-group:${find(index)}` : canonicalOrderKey(order)
-    const current = bestByKey.get(key)
-    if (!current || compareCanonicalOrders(order, current) > 0) {
-      bestByKey.set(key, order)
+    const group = groups.get(key)
+    if (group) {
+      group.push(order)
+      return
     }
+    groups.set(key, [order])
+  })
+
+  return [...groups.values()]
+}
+
+export function getLabOrderDuplicateGroupIds<T extends LabOrder>(
+  targetId: string,
+  orders: T[],
+  context?: LabOrderIdentityContext,
+) {
+  const group = buildCanonicalLabOrderGroups(orders, context).find((items) => items.some((item) => item.id === targetId))
+  return group?.map((item) => item.id) ?? [targetId]
+}
+
+export function getCanonicalLabOrders<T extends LabOrder>(orders: T[], context?: LabOrderIdentityContext) {
+  const firstIndexById = new Map(orders.map((order, index) => [order.id, index]))
+  const bestByKey = new Map<string, T>()
+
+  buildCanonicalLabOrderGroups(orders, context).forEach((group, index) => {
+    const key = `canonical-group:${index}`
+    group.forEach((order) => {
+      const current = bestByKey.get(key)
+      if (!current || compareCanonicalOrders(order, current) > 0) {
+        bestByKey.set(key, order)
+      }
+    })
   })
 
   return [...bestByKey.values()].sort(
@@ -472,6 +499,7 @@ export class ProductionQueueService {
   static buildQueue = buildProductionQueue
   static getPipelineOrders = getPipelineOrders
   static getCanonicalOrders = getCanonicalLabOrders
+  static getDuplicateGroupIds = getLabOrderDuplicateGroupIds
   static getKpis = getQueueKpis
   static getReadyDeliveryOrders = getReadyDeliveryOrders
   static getRemainingBankOrders = getRemainingBankOrders

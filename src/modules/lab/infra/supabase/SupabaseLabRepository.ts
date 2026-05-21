@@ -33,7 +33,7 @@ import {
   validatePlanForCase,
 } from '../../domain/entities/LabOrder'
 import { adjustInstallationForRework, removeTrayFromDeliveryLots } from '../../domain/services/ReworkCaseAdjustments'
-import { getCanonicalLabOrders } from '../../domain/services/ProductionQueueService'
+import { getCanonicalLabOrders, getLabOrderDuplicateGroupIds } from '../../domain/services/ProductionQueueService'
 import {
   asObject,
   asText,
@@ -697,14 +697,67 @@ export class SupabaseLabRepository implements LabRepository {
     return this.updateOrder(input.id, { status: input.nextStage })
   }
 
+  private async listActiveOrdersForDelete(client: NonNullable<typeof supabase>) {
+    const { data: labRowsData, error: labError } = await client
+      .from('lab_items')
+      .select('id, clinic_id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, data')
+      .is('deleted_at', null)
+    if (labError) return err(labError.message)
+
+    const labRows = (labRowsData ?? []) as Array<Record<string, unknown>>
+    const caseIds = [...new Set(labRows.map((row) => asText(row.case_id)).filter(Boolean))]
+    const caseById = new Map<string, Pick<Case, 'treatmentCode'>>()
+    if (caseIds.length) {
+      const { data: caseRowsData, error: caseError } = await client
+        .from('cases')
+        .select('id, scan_id, data')
+        .in('id', caseIds)
+        .is('deleted_at', null)
+      if (caseError) return err(caseError.message)
+
+      const caseRows = (caseRowsData ?? []) as Array<Record<string, unknown>>
+      const scanIds = [...new Set(caseRows.map((row) => asText(row.scan_id, asText(asObject(row.data).sourceScanId))).filter(Boolean))]
+      let scanDataById = new Map<string, Record<string, unknown>>()
+      if (scanIds.length) {
+        const { data: scanRowsData, error: scanError } = await client
+          .from('scans')
+          .select('id, data')
+          .in('id', scanIds)
+          .is('deleted_at', null)
+        if (scanError) return err(scanError.message)
+        scanDataById = new Map(
+          ((scanRowsData ?? []) as Array<Record<string, unknown>>).map((row) => [asText(row.id), asObject(row.data)]),
+        )
+      }
+
+      caseRows.forEach((row) => {
+        const data = asObject(row.data)
+        const scanData = scanDataById.get(asText(row.scan_id, asText(data.sourceScanId))) ?? {}
+        caseById.set(asText(row.id), {
+          treatmentCode: asText(data.treatmentCode, asText(scanData.serviceOrderCode)) || undefined,
+        })
+      })
+    }
+
+    return ok({
+      orders: labRows.map(mapSupabaseLabRow),
+      caseById,
+    })
+  }
+
   async deleteOrder(id: string) {
     const clientResult = this.ensureClient()
     if (!clientResult.ok) return clientResult
+    const identityResult = await this.listActiveOrdersForDelete(clientResult.data)
+    if (!identityResult.ok) return identityResult
+    const idsToDelete = getLabOrderDuplicateGroupIds(id, identityResult.data.orders, {
+      caseById: identityResult.data.caseById,
+    })
     const nowIso = nowIsoDateTime()
     const { data, error } = await clientResult.data
       .from('lab_items')
       .update({ deleted_at: nowIso, updated_at: nowIso })
-      .eq('id', id)
+      .in('id', idsToDelete)
       .is('deleted_at', null)
       .select('id')
     if (error) return err(error.message)

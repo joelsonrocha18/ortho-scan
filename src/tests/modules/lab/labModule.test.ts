@@ -337,6 +337,11 @@ describe('LAB module', () => {
 
     const canonical = ProductionQueueService.getCanonicalOrders(items, { caseById })
     expect(canonical.map((item) => item.id)).toEqual(['case_real_order'])
+    expect(ProductionQueueService.getDuplicateGroupIds('case_real_order', items, { caseById }).sort()).toEqual([
+      'case_clone_a_order',
+      'case_clone_b_order',
+      'case_real_order',
+    ])
   })
 
   it('lists pronta rework orders for delivery registration', () => {

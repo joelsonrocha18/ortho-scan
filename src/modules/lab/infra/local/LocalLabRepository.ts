@@ -11,6 +11,7 @@ import { buildStandaloneLabDueDate, canTransitionLabOrderStage, hasProductionPla
 import type { LabOrder } from '../../domain/entities/LabOrder'
 import { CaseLifecycleService } from '../../../cases/domain/services/CaseLifecycleService'
 import { LabSLAService } from '../../domain/services/LabSLAService'
+import { getLabOrderDuplicateGroupIds } from '../../domain/services/ProductionQueueService'
 import { ReworkFinancialImpactService } from '../../domain/services/ReworkFinancialImpactService'
 import { adjustInstallationForRework, removeTrayFromDeliveryLots } from '../../domain/services/ReworkCaseAdjustments'
 import { LabStage } from '../../domain/valueObjects/LabStage'
@@ -506,7 +507,10 @@ export class LocalLabRepository implements LabRepository {
       return ok(null)
     }
 
-    const idsToRemove = new Set<string>([id])
+    const caseById = new Map(db.cases.map((item): [string, Case] => [item.id, item]))
+    const idsToRemove = new Set<string>(
+      getLabOrderDuplicateGroupIds(id, db.labItems.map(toLabOrder), { caseById }),
+    )
     if (removed.caseId) {
       if ((removed.requestKind ?? 'producao') === 'reconfeccao') {
         db.labItems
@@ -550,7 +554,8 @@ export class LocalLabRepository implements LabRepository {
         })
       }
     })
-    refreshCaseDomainState(db, removed.caseId)
+    const removedCaseIds = new Set(removedItems.map((item) => item.caseId).filter((caseId): caseId is string => Boolean(caseId)))
+    removedCaseIds.forEach((caseId) => refreshCaseDomainState(db, caseId))
     saveDb(db)
     return ok(null)
   }
