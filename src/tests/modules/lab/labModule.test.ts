@@ -207,6 +207,24 @@ describe('LAB module', () => {
         updatedAt: '2026-03-03T00:00:00.000Z',
         requestKind: 'producao',
       },
+      {
+        id: 'duplicate_base_production',
+        caseId: 'qa_case_1',
+        requestCode: 'ORTH-00001',
+        patientName: 'Paciente Duplicado',
+        trayNumber: 4,
+        dueDate: '2026-03-20',
+        expectedReplacementDate: '2026-03-20',
+        status: 'em_producao',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'ambos',
+        plannedUpperQty: 2,
+        plannedLowerQty: 2,
+        createdAt: '2026-03-04T00:00:00.000Z',
+        updatedAt: '2026-03-05T00:00:00.000Z',
+        requestKind: 'producao',
+      },
     ]
 
     const canonical = ProductionQueueService.getCanonicalOrders(items)

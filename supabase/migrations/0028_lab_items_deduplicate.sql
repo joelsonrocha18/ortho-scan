@@ -5,20 +5,68 @@ begin
     return;
   end if;
 
-  with ranked as (
+  with keyed as (
     select
       id,
-      row_number() over (
-        partition by
-          case_id,
+      case
+        when coalesce(data->>'requestKind', 'producao') = 'producao'
+          and coalesce(data->>'requestCode', '') !~ '/[0-9]+$'
+          and coalesce(data->>'reworkOfCaseId', '') = ''
+          and coalesce(data->>'reworkOfLabOrderId', '') = ''
+          and coalesce(data->>'reworkOfTrayNumber', '') = ''
+          then concat_ws('|',
+            'base-production',
+            case_id::text,
+            coalesce(data->>'requestCode', ''),
+            coalesce(product_id, product_type, data->>'productId', data->>'productType', '')
+          )
+        when coalesce(data->>'requestKind', 'producao') = 'producao'
+          and (
+            coalesce(data->>'reworkOfCaseId', '') <> ''
+            or coalesce(data->>'reworkOfLabOrderId', '') <> ''
+            or coalesce(data->>'reworkOfTrayNumber', '') <> ''
+          )
+          then concat_ws('|',
+            'rework-production',
+            case_id::text,
+            coalesce(tray_number::text, data->>'trayNumber', ''),
+            coalesce(data->>'arch', 'ambos'),
+            coalesce(product_id, product_type, data->>'productId', data->>'productType', ''),
+            coalesce(data->>'reworkOfCaseId', ''),
+            coalesce(data->>'reworkOfLabOrderId', ''),
+            coalesce(data->>'reworkOfTrayNumber', '')
+          )
+        when coalesce(data->>'requestKind', 'producao') = 'reposicao_programada'
+          then concat_ws('|',
+            'programmed-replenishment',
+            case_id::text,
+            coalesce(tray_number::text, data->>'trayNumber', ''),
+            coalesce(data->>'expectedReplacementDate', data->>'dueDate', ''),
+            coalesce(data->>'arch', 'ambos'),
+            coalesce(product_id, product_type, data->>'productId', data->>'productType', '')
+          )
+        else concat_ws('|',
           coalesce(data->>'requestKind', 'producao'),
+          case_id::text,
           coalesce(tray_number::text, data->>'trayNumber', ''),
           coalesce(data->>'expectedReplacementDate', data->>'dueDate', ''),
           coalesce(data->>'arch', 'ambos'),
           coalesce(product_id, product_type, data->>'productId', data->>'productType', ''),
+          coalesce(data->>'requestCode', ''),
           coalesce(data->>'reworkOfCaseId', ''),
           coalesce(data->>'reworkOfLabOrderId', ''),
           coalesce(data->>'reworkOfTrayNumber', '')
+        )
+      end as dedupe_key
+    from public.lab_items
+    where deleted_at is null
+      and case_id is not null
+  ),
+  ranked as (
+    select
+      lab.id,
+      row_number() over (
+        partition by keyed.dedupe_key
         order by
           case when coalesce(data->>'deliveredToProfessionalAt', '') <> '' then 1 else 0 end desc,
           case status
@@ -36,11 +84,10 @@ begin
           end desc,
           created_at asc,
           updated_at desc,
-          id asc
+          lab.id asc
       ) as duplicate_rank
-    from public.lab_items
-    where deleted_at is null
-      and case_id is not null
+    from public.lab_items lab
+    inner join keyed on keyed.id = lab.id
   )
   update public.lab_items as lab
   set
@@ -76,9 +123,7 @@ where deleted_at is null
 create unique index if not exists idx_lab_items_active_base_production_unique
 on public.lab_items (
   case_id,
-  (coalesce(tray_number::text, data->>'trayNumber', '')),
-  (coalesce(data->>'dueDate', data->>'expectedReplacementDate', '')),
-  (coalesce(data->>'arch', 'ambos')),
+  (coalesce(data->>'requestCode', '')),
   (coalesce(product_id, product_type, data->>'productId', data->>'productType', ''))
 )
 where deleted_at is null
