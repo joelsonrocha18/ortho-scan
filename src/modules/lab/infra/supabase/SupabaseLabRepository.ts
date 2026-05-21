@@ -33,6 +33,7 @@ import {
   validatePlanForCase,
 } from '../../domain/entities/LabOrder'
 import { adjustInstallationForRework, removeTrayFromDeliveryLots } from '../../domain/services/ReworkCaseAdjustments'
+import { getCanonicalLabOrders } from '../../domain/services/ProductionQueueService'
 import {
   asObject,
   asText,
@@ -224,7 +225,7 @@ export class SupabaseLabRepository implements LabRepository {
     if (!automation.enabled) return ok(false)
 
     const today = nowIsoDate()
-    const requestCodes = items.map((item) => item.requestCode).filter((code): code is string => Boolean(code))
+    const requestCodes = getCanonicalLabOrders(items).map((item) => item.requestCode).filter((code): code is string => Boolean(code))
     const inserts: Array<Record<string, unknown>> = []
 
     cases.forEach((caseItem) => {
@@ -246,7 +247,7 @@ export class SupabaseLabRepository implements LabRepository {
           const exists = items.some(
             (item) =>
               item.caseId === caseItem.id &&
-              item.requestKind === 'reposicao_programada' &&
+              (item.requestKind === 'reposicao_programada' || (item.notes ?? '').toLowerCase().includes('reposi')) &&
               item.trayNumber === tray.trayNumber &&
               (item.expectedReplacementDate === expected || item.dueDate === expected),
           )
@@ -402,7 +403,7 @@ export class SupabaseLabRepository implements LabRepository {
     }
 
     return ok({
-      items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+      items: getCanonicalLabOrders(items).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
       cases,
       patientOptions,
       dentists,

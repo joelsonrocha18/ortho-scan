@@ -10,6 +10,7 @@ import { BUSINESS_EVENTS } from '../shared/observability'
 import { nowIsoDateTime } from '../shared/utils/date'
 import { createExamCode } from '../shared/utils/id'
 import { validateCreateCaseFromScanInput, validateCreateScanInput, parseObject, parseTrimmedString } from '../shared/validators'
+import { getCanonicalLabOrders } from '../modules/lab/domain/services/ProductionQueueService'
 
 export type ProfileRecord = {
   user_id: string
@@ -486,7 +487,7 @@ export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[
     .is('deleted_at', null)
   if (error) return []
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  const items = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
     const meta = asObject(row.data)
     const createdAt = asText(row.created_at, new Date().toISOString())
     const updatedAt = asText(row.updated_at, createdAt)
@@ -515,6 +516,7 @@ export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[
       updatedAt,
     } satisfies LabItem
   })
+  return getCanonicalLabOrders(items)
 }
 
 export async function generateCaseLabOrderSupabase(caseId: string) {
@@ -573,7 +575,10 @@ export async function generateCaseLabOrderSupabase(caseId: string) {
       },
       updated_at: now,
     })
-  if (createError) return { ok: false as const, error: createError.message }
+  if (createError) {
+    if (createError.code === '23505') return { ok: true as const, alreadyExists: true as const }
+    return { ok: false as const, error: createError.message }
+  }
   logger.business(BUSINESS_EVENTS.LAB_SENT, 'Caso enviado para o LAB.', {
     caseId,
     requestCode,

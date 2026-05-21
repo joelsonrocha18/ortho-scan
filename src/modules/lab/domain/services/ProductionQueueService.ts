@@ -62,6 +62,78 @@ function stageWeight(stage: LabStageValue) {
   return 20
 }
 
+function statusWeight(status: LabOrderStage) {
+  if (status === 'prontas') return 400
+  if (status === 'controle_qualidade') return 300
+  if (status === 'em_producao') return 200
+  return 100
+}
+
+function toTime(value?: string) {
+  const time = Date.parse(value ?? '')
+  return Number.isFinite(time) ? time : 0
+}
+
+function planningWeight(order: Pick<LabOrder, 'plannedUpperQty' | 'plannedLowerQty'>) {
+  return toNonNegativeInt(order.plannedUpperQty) + toNonNegativeInt(order.plannedLowerQty) > 0 ? 1 : 0
+}
+
+function canonicalOrderKey(order: LabOrder) {
+  if (!order.caseId) return `standalone:${order.id}`
+  return [
+    order.caseId,
+    order.requestKind ?? 'producao',
+    order.trayNumber,
+    order.expectedReplacementDate ?? order.dueDate,
+    order.arch,
+    order.productId ?? order.productType ?? '',
+    order.reworkOfCaseId ?? '',
+    order.reworkOfLabOrderId ?? '',
+    order.reworkOfTrayNumber ?? '',
+  ].join('|')
+}
+
+function compareCanonicalOrders(left: LabOrder, right: LabOrder) {
+  const leftDelivered = left.deliveredToProfessionalAt ? 1 : 0
+  const rightDelivered = right.deliveredToProfessionalAt ? 1 : 0
+  if (leftDelivered !== rightDelivered) return leftDelivered - rightDelivered
+
+  const leftStatus = statusWeight(left.status)
+  const rightStatus = statusWeight(right.status)
+  if (leftStatus !== rightStatus) return leftStatus - rightStatus
+
+  const leftPlanning = planningWeight(left)
+  const rightPlanning = planningWeight(right)
+  if (leftPlanning !== rightPlanning) return leftPlanning - rightPlanning
+
+  const leftCreated = toTime(left.createdAt)
+  const rightCreated = toTime(right.createdAt)
+  if (leftCreated !== rightCreated) return rightCreated - leftCreated
+
+  const leftUpdated = toTime(left.updatedAt)
+  const rightUpdated = toTime(right.updatedAt)
+  if (leftUpdated !== rightUpdated) return leftUpdated - rightUpdated
+
+  return right.id.localeCompare(left.id)
+}
+
+export function getCanonicalLabOrders<T extends LabOrder>(orders: T[]) {
+  const firstIndexById = new Map(orders.map((order, index) => [order.id, index]))
+  const bestByKey = new Map<string, T>()
+
+  orders.forEach((order) => {
+    const key = canonicalOrderKey(order)
+    const current = bestByKey.get(key)
+    if (!current || compareCanonicalOrders(order, current) > 0) {
+      bestByKey.set(key, order)
+    }
+  })
+
+  return [...bestByKey.values()].sort(
+    (left, right) => (firstIndexById.get(left.id) ?? 0) - (firstIndexById.get(right.id) ?? 0),
+  )
+}
+
 export function enrichLabOrder(order: LabOrder, todayIso = nowIsoDate()): LabPipelineItem {
   const stage = order.stage ?? LabStage.fromOrder(order).value
   const sla = order.sla ?? LabSLAService.evaluate(order)
@@ -107,7 +179,7 @@ export function buildProductionQueue(
   caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays'>>,
   todayIso = nowIsoDate(),
 ) {
-  return orders
+  return getCanonicalLabOrders(orders)
     .map((order) => enrichLabOrder(order, todayIso))
     .filter((order) => {
       if (order.stage === 'delivered') return false
@@ -124,7 +196,7 @@ export function getPipelineOrders(
 }
 
 export function getQueueKpis(orders: LabOrder[]) {
-  const enriched = orders.map((order) => enrichLabOrder(order))
+  const enriched = getCanonicalLabOrders(orders).map((order) => enrichLabOrder(order))
   return {
     aguardando_iniciar: enriched.filter((order) => order.status === 'aguardando_iniciar').length,
     em_producao: enriched.filter((order) => order.stage === 'in_production').length,
@@ -202,7 +274,7 @@ export function getReadyDeliveryOrders(
   orders: LabOrder[],
   caseById: Map<string, Pick<Case, 'deliveryLots' | 'trays'>>,
 ) {
-  return orders
+  return getCanonicalLabOrders(orders)
     .map((order) => enrichLabOrder(order))
     .filter((order) => {
       if (order.status !== 'prontas') return false
@@ -229,7 +301,7 @@ export function getRemainingBankOrders(
   caseById: Map<string, Case>,
   deliveredToProfessional: (order: LabOrder) => boolean,
 ) {
-  const raw = orders
+  const raw = getCanonicalLabOrders(orders)
     .map((order) => enrichLabOrder(order))
     .filter((order) => {
       const caseItem = order.caseId ? caseById.get(order.caseId) : undefined
@@ -298,6 +370,7 @@ export class ProductionQueueService {
   static filter = filterLabOrders
   static buildQueue = buildProductionQueue
   static getPipelineOrders = getPipelineOrders
+  static getCanonicalOrders = getCanonicalLabOrders
   static getKpis = getQueueKpis
   static getReadyDeliveryOrders = getReadyDeliveryOrders
   static getRemainingBankOrders = getRemainingBankOrders

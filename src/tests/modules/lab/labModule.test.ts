@@ -155,6 +155,68 @@ describe('LAB module', () => {
     expect(result.map((item) => item.id)).toEqual(['3', '1', '2'])
   })
 
+  it('deduplicates repeated LAB orders by operational identity', () => {
+    const items: LabOrder[] = [
+      {
+        id: 'duplicate_waiting',
+        caseId: 'qa_case_1',
+        requestCode: 'ORTH-00001/8',
+        patientName: 'Paciente Duplicado',
+        trayNumber: 2,
+        dueDate: '2026-03-10',
+        expectedReplacementDate: '2026-03-10',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'inferior',
+        createdAt: '2026-03-02T00:00:00.000Z',
+        updatedAt: '2026-03-02T00:00:00.000Z',
+        requestKind: 'reposicao_programada',
+      },
+      {
+        id: 'real_waiting',
+        caseId: 'qa_case_1',
+        requestCode: 'ORTH-00001/1',
+        patientName: 'Paciente Duplicado',
+        trayNumber: 2,
+        dueDate: '2026-03-10',
+        expectedReplacementDate: '2026-03-10',
+        status: 'aguardando_iniciar',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'inferior',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+        requestKind: 'reposicao_programada',
+      },
+      {
+        id: 'real_production',
+        caseId: 'qa_case_1',
+        requestCode: 'ORTH-00001',
+        patientName: 'Paciente Duplicado',
+        trayNumber: 1,
+        dueDate: '2026-03-08',
+        expectedReplacementDate: '2026-03-08',
+        status: 'em_producao',
+        priority: 'Medio',
+        plannedDate: '2026-03-01',
+        arch: 'ambos',
+        plannedUpperQty: 2,
+        plannedLowerQty: 2,
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-03T00:00:00.000Z',
+        requestKind: 'producao',
+      },
+    ]
+
+    const canonical = ProductionQueueService.getCanonicalOrders(items)
+    expect(canonical.map((item) => item.id)).toEqual(['real_waiting', 'real_production'])
+
+    const kpis = ProductionQueueService.getKpis(items)
+    expect(kpis.aguardando_iniciar).toBe(1)
+    expect(kpis.em_producao).toBe(1)
+  })
+
   it('lists pronta rework orders for delivery registration', () => {
     const items: LabOrder[] = [
       {

@@ -17,6 +17,7 @@ import {
   ProductionQueueService,
   LabPatientReportService,
   getInitialDeliveryQuantities,
+  getCanonicalLabOrders,
   getCasesWithReplenishmentAlerts,
   getPipelineOrders,
   getQueueKpis,
@@ -170,9 +171,10 @@ export function useLabPageController() {
 
   const casesWithAlerts = useMemo(() => getCasesWithReplenishmentAlerts(overview.cases), [overview.cases])
   const alertSummaries = useMemo(() => getReplenishmentAlertSummaries(overview.cases), [overview.cases])
+  const canonicalItems = useMemo(() => getCanonicalLabOrders(overview.items), [overview.items])
   const filteredItems = useMemo(
     () =>
-      ProductionQueueService.filter(overview.items, {
+      ProductionQueueService.filter(canonicalItems, {
         search,
         priority,
         overdueOnly,
@@ -185,7 +187,7 @@ export function useLabPageController() {
         clinicById: clinicLookupById,
         casesWithAlerts,
       }),
-    [alertsOnly, caseById, casesWithAlerts, clinicLookupById, originFilter, overdueOnly, overview.items, patientOptionById, priority, search, status],
+    [alertsOnly, canonicalItems, caseById, casesWithAlerts, clinicLookupById, originFilter, overdueOnly, patientOptionById, priority, search, status],
   )
   const pipelineItems = useMemo(() => getPipelineOrders(filteredItems, caseById), [caseById, filteredItems])
   const reworkItems = useMemo(() => filteredItems.filter((item) => isReworkItem(item)), [filteredItems])
@@ -194,7 +196,7 @@ export function useLabPageController() {
     [caseById, filteredItems],
   )
   const kpis = useMemo(() => getQueueKpis(pipelineItems), [pipelineItems])
-  const readyDeliveryItems = useMemo(() => getReadyDeliveryOrders(overview.items, caseById), [caseById, overview.items])
+  const readyDeliveryItems = useMemo(() => getReadyDeliveryOrders(canonicalItems, caseById), [canonicalItems, caseById])
   const deliveryCaseOptions = useMemo(
     () =>
       readyDeliveryItems.map((item) => ({
@@ -398,7 +400,7 @@ export function useLabPageController() {
       const dentistsById = new Map(overview.dentists.map((item) => [item.id, { name: item.name }]))
       const rows = LabPatientReportService.buildRows({
         cases: overview.cases,
-        labOrders: overview.items,
+        labOrders: canonicalItems,
         dentistsById,
         guideAutomationLeadDays,
       })
@@ -456,7 +458,7 @@ export function useLabPageController() {
     } finally {
       setExportingPatientReport(false)
     }
-  }, [addToast, exportingPatientReport, guideAutomationLeadDays, overview.cases, overview.dentists, overview.items])
+  }, [addToast, canonicalItems, exportingPatientReport, guideAutomationLeadDays, overview.cases, overview.dentists])
 
   const runLabAi = useCallback(async (endpoint: '/lab/auditoria-solicitacao' | '/lab/previsao-entrega', title: string) => {
     if (!canAiLab || !aiClinicId) return
