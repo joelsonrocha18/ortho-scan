@@ -47,6 +47,16 @@ function toNonNegativeInt(value?: number) {
   return Math.max(0, Math.trunc(value ?? 0))
 }
 
+function toAlertList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return [value]
+  }
+  return []
+}
+
 function hasRevisionSuffix(code?: string) {
   return Boolean(code?.trim().match(/\/\d+$/))
 }
@@ -264,8 +274,12 @@ export function getCanonicalLabOrders<T extends LabOrder>(orders: T[], context?:
 
 export function enrichLabOrder(order: LabOrder, todayIso = nowIsoDate()): LabPipelineItem {
   const stage = order.stage ?? LabStage.fromOrder(order).value
-  const sla = order.sla ?? LabSLAService.evaluate(order)
-  const alerts = [...new Set([...(order.sla?.alerts ?? []), ...sla.alerts])]
+  const evaluatedSla = LabSLAService.evaluate({ ...order, stage })
+  const alerts = [...new Set([...toAlertList(order.sla?.alerts), ...toAlertList(evaluatedSla.alerts)])]
+  const sla = {
+    ...evaluatedSla,
+    alerts,
+  }
   const overdue = stage !== 'delivered' && order.dueDate < todayIso
   const priorityScore = priorityWeight(order.priority) + stageWeight(stage) + (sla.status === 'overdue' ? 60 : sla.status === 'warning' ? 30 : 0) + (overdue ? 20 : 0)
 
