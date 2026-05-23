@@ -6,7 +6,12 @@ import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore'
 import { initializeApp } from 'firebase/app'
 import { collection, doc, getDocs, initializeFirestore, limit, query, writeBatch } from 'firebase/firestore'
 
-const TABLES = ['patients', 'dentists', 'clinics', 'cases', 'scans']
+const DEFAULT_TABLES = ['patients', 'dentists', 'clinics', 'cases', 'scans', 'lab_items']
+const TABLES = (process.env.IMPORT_TABLES ?? '')
+  .split(',')
+  .map((table) => table.trim())
+  .filter(Boolean)
+const ACTIVE_TABLES = TABLES.length > 0 ? TABLES : DEFAULT_TABLES
 const BACKUP_DIR = path.resolve(process.cwd(), 'backup')
 const BATCH_SIZE = 450
 
@@ -70,7 +75,7 @@ async function preflightFirestoreApi(config) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           structuredQuery: {
-            from: [{ collectionId: TABLES[0] }],
+          from: [{ collectionId: ACTIVE_TABLES[0] }],
             limit: 1,
           },
         }),
@@ -97,6 +102,11 @@ async function readBackupRows(tableName) {
   const payload = JSON.parse(await fs.readFile(filePath, 'utf8'))
   if (!Array.isArray(payload.rows)) {
     throw new Error(`Backup invalido para ${tableName}: campo rows ausente.`)
+  }
+  if (tableName === 'lab_items') {
+    const activeRows = payload.rows.filter((row) => !row.deleted_at && !row.deletedAt)
+    console.log(`[firestore] lab_items: ${activeRows.length} ativos de ${payload.rows.length} linhas no backup`)
+    return activeRows
   }
   return payload.rows
 }
@@ -214,14 +224,14 @@ async function main() {
   console.log(`[firestore] usando ${useAdmin ? 'firebase-admin' : 'SDK Web'} para importacao`)
   const summary = {}
 
-  for (const table of TABLES) {
+  for (const table of ACTIVE_TABLES) {
     summary[table] = useAdmin
       ? await importCollectionWithAdmin(db, table)
       : await importCollectionWithWebSdk(db, table)
   }
 
   const validation = {}
-  for (const table of TABLES) {
+  for (const table of ACTIVE_TABLES) {
     validation[table] = useAdmin
       ? await validateCollectionWithAdmin(db, table)
       : await validateCollectionWithWebSdk(db, table)

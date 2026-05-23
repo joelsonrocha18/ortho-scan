@@ -13,6 +13,8 @@ export function useExecutiveDashboardController() {
   const { db } = useDb()
   const { addToast } = useToast()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
+  const isRemoteMode = isSupabaseMode || isFirebaseMode
   const currentUser = useMemo(() => getCurrentUser(db), [db])
   const currentUserKey = `${currentUser?.id ?? ''}::${currentUser?.role ?? ''}::${currentUser?.linkedClinicId ?? ''}::${currentUser?.linkedDentistId ?? ''}`
   const repository = useMemo(() => createDashboardRepository(currentUser), [currentUser])
@@ -20,7 +22,7 @@ export function useExecutiveDashboardController() {
   const [data, setData] = useState<ExecutiveDashboardView | null>(null)
   const [todayKey, setTodayKey] = useState(() => nowIsoDate())
   const supabaseSyncTick = useSupabaseSyncTick()
-  const refreshSignature = isSupabaseMode
+  const refreshSignature = isRemoteMode
     ? `${todayKey}::${supabaseSyncTick}::${currentUserKey}`
     : `${todayKey}::${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}::${db.scans.map((item) => item.updatedAt).join('|')}::${db.patients.map((item) => item.updatedAt).join('|')}::${currentUserKey}`
 

@@ -5,7 +5,12 @@ import pg from 'pg'
 
 const { Client } = pg
 
-const TABLES = ['patients', 'dentists', 'clinics', 'cases', 'scans']
+const DEFAULT_TABLES = ['patients', 'dentists', 'clinics', 'cases', 'scans', 'lab_items']
+const TABLES = (process.env.BACKUP_TABLES ?? '')
+  .split(',')
+  .map((table) => table.trim())
+  .filter(Boolean)
+const ACTIVE_TABLES = TABLES.length > 0 ? TABLES : DEFAULT_TABLES
 const BACKUP_DIR = path.resolve(process.cwd(), 'backup')
 
 function stripInlineComment(value) {
@@ -42,7 +47,7 @@ async function loadDotenvFile(filePath) {
 }
 
 function quoteIdentifier(identifier) {
-  if (!TABLES.includes(identifier)) {
+  if (!DEFAULT_TABLES.includes(identifier)) {
     throw new Error(`Tabela nao permitida para backup: ${identifier}`)
   }
   return `"${identifier.replaceAll('"', '""')}"`
@@ -99,7 +104,7 @@ async function main() {
 
   await client.connect()
   try {
-    for (const table of TABLES) {
+    for (const table of ACTIVE_TABLES) {
       const entry = await backupTable(client, table)
       manifest.tables.push(entry)
       console.log(`[backup] ${table}: ${entry.rowCount} linhas -> ${path.relative(process.cwd(), entry.file)}`)

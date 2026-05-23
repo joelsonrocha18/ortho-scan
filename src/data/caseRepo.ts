@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
 import { DATA_MODE } from './dataMode'
 import { loadDb, saveDb } from './db'
 import { pushAudit } from './audit'
@@ -6,6 +6,7 @@ import { handleRework as handleReplacementRework, markReplacementBankDeliveredBy
 import { db as firestoreDb } from '../lib/firebaseClient'
 import type { Case, CaseAttachment, CaseTray, TrayState } from '../types/Case'
 import type { Patient } from '../types/Patient'
+import { createEntityId } from '../shared/utils/id'
 import { appendCaseTimelineEntry, createCaseTimelineEntry } from '../modules/cases/domain/entities/Case'
 import { CaseLifecycleService } from '../modules/cases/domain/services/CaseLifecycleService'
 
@@ -40,6 +41,10 @@ function getFirestoreDb() {
 }
 
 function asText(value: unknown): string | undefined {
+  if (value instanceof Date) return value.toISOString()
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate().toISOString()
+  }
   return typeof value === 'string' && value.trim() ? value : undefined
 }
 
@@ -63,6 +68,23 @@ function asBoolean(value: unknown): boolean | undefined {
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : []
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (value === undefined) return null as T
+  if (value === null || typeof value !== 'object') return value
+  if (value instanceof Date) return value
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as T
+  }
+
+  const output: Record<string, unknown> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
+    if (entry !== undefined) {
+      output[key] = stripUndefinedDeep(entry)
+    }
+  })
+  return output as T
 }
 
 function asCaseStatus(value: unknown): Case['status'] {
@@ -219,6 +241,8 @@ function mapCaseDocument(id: string, row: CaseDocument): Case {
 }
 
 function caseToFirestorePatch(caseItem: Case): CaseDocument {
+  const sanitizedCase = stripUndefinedDeep(caseItem)
+
   return {
     id: caseItem.id,
     clinic_id: caseItem.clinicId ?? null,
@@ -235,7 +259,7 @@ function caseToFirestorePatch(caseItem: Case): CaseDocument {
     product_id: caseItem.productId ?? null,
     short_id: caseItem.shortId ?? null,
     updated_at: caseItem.updatedAt,
-    data: caseItem,
+    data: sanitizedCase,
   }
 }
 
@@ -331,6 +355,28 @@ export async function listCasesAsync(options?: { hydrateRelations?: boolean }) {
 
 export function getCase(id: string) {
   return loadDb().cases.find((item) => item.id === id) ?? null
+}
+
+export async function createCaseFirebase(payload: Omit<Case, 'id' | 'createdAt' | 'updatedAt'>): Promise<Case> {
+  const now = nowIso()
+  const next: Case = {
+    ...payload,
+    id: createEntityId('case'),
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await setDoc(doc(getFirestoreDb(), 'cases', next.id), {
+    ...caseToFirestorePatch(next),
+    created_at: next.createdAt,
+    deleted_at: null,
+  })
+  return next
+}
+
+export async function createCaseAsync(payload: Omit<Case, 'id' | 'createdAt' | 'updatedAt'>) {
+  if (DATA_MODE === 'firebase') return createCaseFirebase(payload)
+  throw new Error('Criacao direta de caso so esta implementada para Firebase neste repositorio.')
 }
 
 export async function getCaseFirebase(id: string, options?: { hydrateRelations?: boolean }) {
