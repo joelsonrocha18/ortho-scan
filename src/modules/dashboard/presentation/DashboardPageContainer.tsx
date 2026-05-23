@@ -4,6 +4,7 @@ import { useExecutiveDashboardController } from './hooks/useExecutiveDashboardCo
 import { ExecutiveDashboardBacklogSection } from './sections/ExecutiveDashboardBacklogSection'
 import { ExecutiveDashboardHeaderSection } from './sections/ExecutiveDashboardHeaderSection'
 import { ExecutiveDashboardKpisSection } from './sections/ExecutiveDashboardKpisSection'
+import { ExecutiveDashboardPeriodFilter } from './sections/ExecutiveDashboardPeriodFilter'
 import { ExecutiveDashboardSlaSection } from './sections/ExecutiveDashboardSlaSection'
 
 function DashboardPageContainer() {
@@ -13,11 +14,14 @@ function DashboardPageContainer() {
     <AppShell breadcrumb={['Início', 'Painel']}>
       {!controller.data ? null : (
         <div className="space-y-6">
-          <ExecutiveDashboardHeaderSection
-            activeCases={controller.data.kpis.activeCases}
-            overdueSla={controller.data.kpis.overdueSla}
-            reworkRate={controller.data.kpis.reworkRate}
-          />
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
+            <ExecutiveDashboardHeaderSection />
+            <ExecutiveDashboardPeriodFilter
+              options={controller.periodOptions}
+              selectedKey={controller.periodKey}
+              onChange={controller.setPeriodKey}
+            />
+          </section>
 
           <ExecutiveDashboardKpisSection
             activeCases={controller.data.kpis.activeCases}
@@ -27,16 +31,6 @@ function DashboardPageContainer() {
             margin={controller.data.finance.margin}
           />
 
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-            <ExecutiveDashboardSlaSection
-              onTrack={controller.data.sla.onTrack}
-              warning={controller.data.sla.warning}
-              overdue={controller.data.sla.overdue}
-              delayedCases={controller.data.delayedCases}
-            />
-            <StrategicNotificationsPanel notifications={controller.data.notifications} />
-          </section>
-
           <ExecutiveDashboardBacklogSection
             queued={controller.data.backlog.queued}
             inProduction={controller.data.backlog.inProduction}
@@ -45,6 +39,16 @@ function DashboardPageContainer() {
             revenue={controller.data.finance.revenue}
             totalCost={controller.data.finance.totalCost}
           />
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+            <StrategicNotificationsPanel notifications={controller.data.notifications} />
+            <ExecutiveDashboardSlaSection
+              onTrack={controller.data.sla.onTrack}
+              warning={controller.data.sla.warning}
+              overdue={controller.data.sla.overdue}
+              delayedCases={controller.data.delayedCases}
+            />
+          </section>
         </div>
       )}
     </AppShell>

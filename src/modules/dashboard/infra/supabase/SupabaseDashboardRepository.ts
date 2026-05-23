@@ -2,12 +2,18 @@ import { supabase } from '../../../../lib/supabaseClient'
 import { err, ok, type Result } from '../../../../shared/errors'
 import type { Patient } from '../../../../types/Patient'
 import type { User } from '../../../../types/User'
-import type { DashboardRepository, ExecutiveDashboardSnapshot } from '../../application/ports/DashboardRepository'
+import type { DashboardDateRange, DashboardRepository, ExecutiveDashboardSnapshot } from '../../application/ports/DashboardRepository'
 import { mapSupabaseCaseRow, mapSupabaseScanRow } from '../../../cases/infra/supabase/supabaseCaseMappers'
 import { mapSupabaseLabRow } from '../../../lab/infra/supabase/supabaseLabMappers'
 
 function asText(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback
+}
+
+function isWithinDateRange(value: string | undefined, period?: DashboardDateRange) {
+  if (!period || !value) return true
+  const date = value.slice(0, 10)
+  return date >= period.startDate && date <= period.endDate
 }
 
 function mapSupabasePatientRow(row: Record<string, unknown>): Patient {
@@ -35,7 +41,7 @@ function mapSupabasePatientRow(row: Record<string, unknown>): Patient {
 export class SupabaseDashboardRepository implements DashboardRepository {
   constructor(_currentUser: User | null) {}
 
-  async loadSnapshot(): Promise<Result<ExecutiveDashboardSnapshot, string>> {
+  async loadSnapshot(period?: DashboardDateRange): Promise<Result<ExecutiveDashboardSnapshot, string>> {
     if (!supabase) return err('Supabase não configurado.')
 
     const [casesRes, scansRes, labRes, patientsRes] = await Promise.all([
@@ -74,7 +80,7 @@ export class SupabaseDashboardRepository implements DashboardRepository {
         requested_by_dentist_id?: string | null
         data?: Record<string, unknown>
       }),
-    )
+    ).filter((caseItem) => isWithinDateRange(caseItem.createdAt ?? caseItem.scanDate, period))
     const scans = ((scansRes.data ?? []) as Array<Record<string, unknown>>).map((row) =>
       mapSupabaseScanRow(row as {
         id: string
@@ -85,8 +91,10 @@ export class SupabaseDashboardRepository implements DashboardRepository {
         created_at?: string
         data?: Record<string, unknown>
       }),
-    )
-    const labOrders = ((labRes.data ?? []) as Array<Record<string, unknown>>).map(mapSupabaseLabRow)
+    ).filter((scan) => isWithinDateRange(scan.scanDate ?? scan.createdAt, period))
+    const labOrders = ((labRes.data ?? []) as Array<Record<string, unknown>>)
+      .map(mapSupabaseLabRow)
+      .filter((order) => isWithinDateRange(order.createdAt ?? order.plannedDate, period))
     const patients = ((patientsRes.data ?? []) as Array<Record<string, unknown>>).map(mapSupabasePatientRow)
 
     return ok({

@@ -36,21 +36,21 @@ export function ExecutiveDashboardKpisSection(props: {
         hintClassName="text-slate-600"
       />
       <KpiCard
-        label="Backlog LAB"
+        label="Producao LAB"
         value={String(props.labBacklog)}
         className="border-baby-300 bg-[linear-gradient(180deg,rgba(234,244,255,0.96),rgba(255,255,255,0.98))]"
         labelClassName="text-brand-700"
         hintClassName="text-slate-600"
       />
       <KpiCard
-        label="SLA em atraso"
+        label="Trabalhos em atraso"
         value={String(props.overdueSla)}
         className="border-salmon-300 bg-[linear-gradient(180deg,rgba(255,224,216,0.92),rgba(255,255,255,0.98))]"
         labelClassName="text-salmon-700"
         hintClassName="text-slate-600"
       />
       <KpiCard
-        label="Reconfecção"
+        label="Refeitos"
         value={`${props.reworkRate}%`}
         className="border-olive-300 bg-[linear-gradient(180deg,rgba(231,235,213,0.92),rgba(255,255,255,0.98))]"
         labelClassName="text-olive-700"

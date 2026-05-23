@@ -12,6 +12,11 @@ export type ExecutiveDashboardSnapshot = {
   labOrders: LabOrder[]
 }
 
+export type DashboardDateRange = {
+  startDate: string
+  endDate: string
+}
+
 export interface DashboardRepository {
-  loadSnapshot(): MaybePromise<Result<ExecutiveDashboardSnapshot, string>>
+  loadSnapshot(period?: DashboardDateRange): MaybePromise<Result<ExecutiveDashboardSnapshot, string>>
 }

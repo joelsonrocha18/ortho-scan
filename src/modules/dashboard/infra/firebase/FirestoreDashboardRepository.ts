@@ -8,8 +8,14 @@ import type { Scan } from '../../../../types/Scan'
 import type { User } from '../../../../types/User'
 import type { LabOrder } from '../../../lab/domain/entities/LabOrder'
 import { CaseLifecycleService } from '../../../cases/domain/services/CaseLifecycleService'
-import type { DashboardRepository, ExecutiveDashboardSnapshot } from '../../application/ports/DashboardRepository'
+import type { DashboardDateRange, DashboardRepository, ExecutiveDashboardSnapshot } from '../../application/ports/DashboardRepository'
 import { listLabOrdersFirebase } from '../../../lab/infra/firebase/FirestoreLabRepository'
+
+function isWithinDateRange(value: string | undefined, period?: DashboardDateRange) {
+  if (!period || !value) return true
+  const date = value.slice(0, 10)
+  return date >= period.startDate && date <= period.endDate
+}
 
 function scopedPatients(patients: Patient[], currentUser: User | null) {
   if (!currentUser) return []
@@ -83,7 +89,7 @@ export class FirestoreDashboardRepository implements DashboardRepository {
     this.currentUser = currentUser
   }
 
-  async loadSnapshot(): Promise<Result<ExecutiveDashboardSnapshot, string>> {
+  async loadSnapshot(period?: DashboardDateRange): Promise<Result<ExecutiveDashboardSnapshot, string>> {
     try {
       const [allCases, allPatients, allScans, allLabOrders] = await Promise.all([
         listCasesFirebase(),
@@ -92,11 +98,14 @@ export class FirestoreDashboardRepository implements DashboardRepository {
         listLabOrdersFirebase(),
       ])
       const patients = scopedPatients(allPatients, this.currentUser)
-      const cases = scopedCases(allCases, patients, this.currentUser)
-      const scans = scopedScans(allScans, patients, this.currentUser)
-      const labOrders = scopedLabOrders(allLabOrders, cases, patients, this.currentUser)
+      const scopedCaseItems = scopedCases(allCases, patients, this.currentUser)
+      const scopedScanItems = scopedScans(allScans, patients, this.currentUser)
+      const scopedLabOrderItems = scopedLabOrders(allLabOrders, scopedCaseItems, patients, this.currentUser)
+      const cases = scopedCaseItems.filter((caseItem) => isWithinDateRange(caseItem.createdAt ?? caseItem.scanDate, period))
+      const scans = scopedScanItems.filter((scan) => isWithinDateRange(scan.scanDate ?? scan.createdAt, period))
+      const labOrders = scopedLabOrderItems.filter((order) => isWithinDateRange(order.createdAt ?? order.plannedDate, period))
       const ordersByCaseId = new Map<string, LabOrder[]>()
-      labOrders.forEach((order) => {
+      scopedLabOrderItems.forEach((order) => {
         if (!order.caseId) return
         const current = ordersByCaseId.get(order.caseId) ?? []
         ordersByCaseId.set(order.caseId, [...current, order])

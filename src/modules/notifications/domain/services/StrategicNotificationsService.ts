@@ -171,7 +171,7 @@ export function deriveStrategicNotifications(input: NotificationInput) {
         id: `sla-delay-${caseItem.id}`,
         kind: 'sla_delay',
         severity: 'danger',
-        title: 'Caso em atraso de SLA',
+        title: 'Trabalho em atraso',
         description: `${caseItem.patientName} está com atraso no fluxo produtivo.`,
         at: refreshed.updatedAt,
         href: `/app/cases/${caseItem.id}`,
