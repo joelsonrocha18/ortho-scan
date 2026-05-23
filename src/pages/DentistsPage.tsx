@@ -8,6 +8,7 @@ import WhatsappLink from '../components/WhatsappLink'
 import AppShell from '../layouts/AppShell'
 import { DATA_MODE } from '../data/dataMode'
 import { loadDb, saveDb } from '../data/db'
+import { createDentistFirebase, listDentistsFirebase } from '../data/dentistRepo'
 import { useDb } from '../lib/useDb'
 import type { DentistClinic } from '../types/DentistClinic'
 import { getCurrentUser } from '../lib/auth'
@@ -18,6 +19,7 @@ import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { dentistCode } from '../lib/entityCode'
 import { createOnboardingInvite } from '../repo/onboardingRepo'
 import { useToast } from '../app/ToastProvider'
+import { listClinicsFirebase } from '../repo/clinicRepo'
 
 function nowIso() {
   return new Date().toISOString()
@@ -33,6 +35,7 @@ export default function DentistsPage() {
   const { db } = useDb()
   const { addToast } = useToast()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'dentists.write')
   const [query, setQuery] = useState('')
@@ -57,6 +60,8 @@ export default function DentistsPage() {
     isActive: boolean
     deletedAt?: string
   }>>([])
+  const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
+  const [firebaseDentists, setFirebaseDentists] = useState<DentistClinic[]>([])
 
   useEffect(() => {
     let active = true
@@ -97,9 +102,31 @@ export default function DentistsPage() {
     }
   }, [isSupabaseMode, supabaseRefreshKey, supabaseSyncTick])
 
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode) {
+      setFirebaseClinics([])
+      setFirebaseDentists([])
+      return
+    }
+    ;(async () => {
+      const [dentists, clinics] = await Promise.all([
+        listDentistsFirebase({ includeDeleted: true, includeInactive: true }),
+        listClinicsFirebase({ includeDeleted: false }),
+      ])
+      if (!active) return
+      setFirebaseDentists(dentists)
+      setFirebaseClinics(clinics.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName })))
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, supabaseRefreshKey])
+
   const resolveDefaultClinicId = () => {
     const linkedClinicId = currentUser?.linkedClinicId?.trim() ?? ''
     if (linkedClinicId) return linkedClinicId
+    if (isFirebaseMode) return firebaseClinics[0]?.id ?? ''
     return supabaseClinics[0]?.id ?? ''
   }
 
@@ -132,7 +159,11 @@ export default function DentistsPage() {
     }
   }
 
-  const dentistsSource = isSupabaseMode ? supabaseDentists : db.dentists.filter((item) => item.type === 'dentista')
+  const dentistsSource = isSupabaseMode
+    ? supabaseDentists
+    : isFirebaseMode
+      ? firebaseDentists.filter((item) => item.type === 'dentista')
+      : db.dentists.filter((item) => item.type === 'dentista')
 
   const dentists = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -192,6 +223,36 @@ export default function DentistsPage() {
           is_active: true,
         })
         if (result.error) {
+          failed += 1
+          continue
+        }
+        existing.add(normalized)
+        inserted += 1
+      }
+      setSupabaseRefreshKey((current) => current + 1)
+      setImporting(false)
+      setImportMessage(`Importação concluída. Inseridos: ${inserted}, ignorados: ${skipped}, falhas: ${failed}.`)
+      return
+    }
+
+    if (isFirebaseMode) {
+      const existing = new Set(firebaseDentists.filter((item) => item.type === 'dentista').map((item) => item.name.trim().toLowerCase()))
+      let inserted = 0
+      let skipped = 0
+      let failed = 0
+      for (const row of parsed.rows) {
+        const normalized = row.name.trim().toLowerCase()
+        if (!normalized || existing.has(normalized)) {
+          skipped += 1
+          continue
+        }
+        const result = await createDentistFirebase({
+          name: row.name.trim(),
+          type: 'dentista',
+          gender: 'masculino',
+          isActive: true,
+        })
+        if (!result.ok) {
           failed += 1
           continue
         }

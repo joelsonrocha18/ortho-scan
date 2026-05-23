@@ -23,6 +23,7 @@ test-results/
 reports/diagnostics.json
 reports/playwright-results.json
 reports/playwright-html/
+backup/
 
 # Editor directories and files
 .vscode/*

@@ -7,7 +7,18 @@ import Input from '../components/Input'
 import WhatsappLink from '../components/WhatsappLink'
 import AppShell from '../layouts/AppShell'
 import type { DentistClinic } from '../types/DentistClinic'
-import { createDentist, getDentist, restoreDentist, softDeleteDentist, updateDentist } from '../data/dentistRepo'
+import {
+  createDentist,
+  createDentistFirebase,
+  getDentist,
+  getDentistFirebase,
+  restoreDentist,
+  restoreDentistFirebase,
+  softDeleteDentist,
+  softDeleteDentistFirebase,
+  updateDentist,
+  updateDentistFirebase,
+} from '../data/dentistRepo'
 import { useDb } from '../lib/useDb'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
@@ -20,6 +31,7 @@ import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { dentistCode } from '../lib/entityCode'
 import { loadSystemSettings } from '../lib/systemSettings'
 import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../lib/whatsappService'
+import { listClinicsFirebase } from '../repo/clinicRepo'
 
 type DentistForm = {
   firstName: string
@@ -108,6 +120,7 @@ export default function DentistDetailPage() {
   const canWrite = can(currentUser, 'dentists.write')
   const canDelete = can(currentUser, 'dentists.delete')
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const supabaseSyncTick = useSupabaseSyncTick()
   const isNew = params.id === 'new'
   const localExisting = useMemo(
@@ -115,8 +128,9 @@ export default function DentistDetailPage() {
     [isNew, params.id],
   )
   const [supabaseExisting, setSupabaseExisting] = useState<DentistClinic | null>(null)
+  const [firebaseExisting, setFirebaseExisting] = useState<DentistClinic | null>(null)
   const [loadingExisting, setLoadingExisting] = useState(false)
-  const existing = isSupabaseMode ? supabaseExisting : localExisting
+  const existing = isSupabaseMode ? supabaseExisting : isFirebaseMode ? firebaseExisting : localExisting
 
   const [form, setForm] = useState<DentistForm>(emptyForm)
   const [error, setError] = useState('')
@@ -124,9 +138,10 @@ export default function DentistDetailPage() {
   const [cepError, setCepError] = useState('')
 
   const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
+  const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const clinics = useMemo(
-    () => (isSupabaseMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt)),
-    [db.clinics, isSupabaseMode, supabaseClinics],
+    () => (isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
+    [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, supabaseClinics],
   )
 
   useEffect(() => {
@@ -146,6 +161,22 @@ export default function DentistDetailPage() {
       active = false
     }
   }, [isSupabaseMode, supabaseSyncTick])
+
+  useEffect(() => {
+    if (!isFirebaseMode) {
+      setFirebaseClinics([])
+      return
+    }
+    let active = true
+    void (async () => {
+      const clinics = await listClinicsFirebase({ includeDeleted: false })
+      if (!active) return
+      setFirebaseClinics(clinics.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName })))
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode])
 
   useEffect(() => {
     if (!isSupabaseMode || !supabase || isNew || !params.id) {
@@ -195,6 +226,25 @@ export default function DentistDetailPage() {
       active = false
     }
   }, [isNew, isSupabaseMode, params.id, supabaseSyncTick])
+
+  useEffect(() => {
+    if (!isFirebaseMode || isNew || !params.id) {
+      setFirebaseExisting(null)
+      if (!isSupabaseMode) setLoadingExisting(false)
+      return
+    }
+    let active = true
+    setLoadingExisting(true)
+    void (async () => {
+      const data = await getDentistFirebase(params.id!)
+      if (!active) return
+      setFirebaseExisting(data)
+      setLoadingExisting(false)
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, isNew, isSupabaseMode, params.id])
 
   useEffect(() => {
     if (!existing) {
@@ -395,6 +445,30 @@ export default function DentistDetailPage() {
       return
     }
 
+    if (isFirebaseMode) {
+      if (isNew) {
+        const result = await createDentistFirebase({
+          ...payload,
+          isActive: payload.isActive ?? true,
+        })
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        navigate(`/app/dentists/${result.dentist.id}`, { replace: true })
+        return
+      }
+      if (!existing) return
+      const result = await updateDentistFirebase(existing.id, payload)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setFirebaseExisting(result.dentist)
+      setError('')
+      return
+    }
+
     if (isNew) {
       const result = createDentist({
         ...payload,
@@ -431,6 +505,12 @@ export default function DentistDetailPage() {
         setError(deleteError.message)
         return
       }
+    } else if (isFirebaseMode) {
+      const result = await softDeleteDentistFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
     } else {
       const result = softDeleteDentist(existing.id)
       if (!result.ok) {
@@ -455,6 +535,15 @@ export default function DentistDetailPage() {
         return
       }
       setSupabaseExisting((current) =>
+        current ? { ...current, deletedAt: undefined, isActive: true } : current,
+      )
+    } else if (isFirebaseMode) {
+      const result = await restoreDentistFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setFirebaseExisting((current) =>
         current ? { ...current, deletedAt: undefined, isActive: true } : current,
       )
     } else {

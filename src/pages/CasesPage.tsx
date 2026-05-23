@@ -17,10 +17,14 @@ import { supabase } from '../lib/supabaseClient'
 import { normalizeTreatmentIdsSupabase } from '../repo/profileRepo'
 import { buildActualChangeDateMap, buildArchScheduleDates, resolveAlignerArchTotals } from '../lib/alignerChange'
 import { downloadAlignerTreatmentReport, type AlignerTreatmentReportRow } from '../lib/alignerTreatmentReport'
+import { listCasesFirebase } from '../data/caseRepo'
+import { listPatientsFirebase } from '../repo/patientRepo'
+import { listDentistsFirebase } from '../data/dentistRepo'
+import { listClinicsFirebase } from '../repo/clinicRepo'
 
 const phaseLabelMap: Record<CasePhase, string> = {
   planejamento: 'Planejamento',
-  'or\u00E7amento': 'Or\u00E7amento',
+  'orçamento': 'Orçamento',
   contrato_pendente: 'Contrato pendente',
   contrato_aprovado: 'Contrato aprovado',
   em_producao: 'Em produção',
@@ -29,7 +33,7 @@ const phaseLabelMap: Record<CasePhase, string> = {
 
 const phaseToneMap: Record<CasePhase, 'neutral' | 'info' | 'success'> = {
   planejamento: 'neutral',
-  'or\u00E7amento': 'neutral',
+  'orçamento': 'neutral',
   contrato_pendente: 'neutral',
   contrato_aprovado: 'info',
   em_producao: 'info',
@@ -180,10 +184,10 @@ function buildLabStatusByCase(items: Array<{ caseId?: string; status?: string }>
 function caseStatusBadge(item: CaseListItem, liveLabStatus: LiveLabStatus, hasLabOrder: boolean) {
   if (isConcluded(item)) return { label: 'Concluido', tone: 'success' as const }
   if (item.status === 'em_tratamento') return { label: 'Em tratamento', tone: 'info' as const }
-  if (item.status === 'aguardando_reposicao') return { label: 'Aguardando reposi\u00E7\u00E3o', tone: 'danger' as const }
+  if (item.status === 'aguardando_reposicao') return { label: 'Aguardando reposição', tone: 'danger' as const }
   if (item.phase === 'planejamento') return { label: 'Planejamento', tone: 'neutral' as const }
-  if (item.phase === 'or\u00E7amento') return { label: 'Or\u00E7amento', tone: 'neutral' as const }
-  if (item.phase === 'contrato_pendente') return { label: 'Aguardando aprova\u00E7\u00E3o de contrato', tone: 'neutral' as const }
+  if (item.phase === 'orçamento') return { label: 'Orçamento', tone: 'neutral' as const }
+  if (item.phase === 'contrato_pendente') return { label: 'Aguardando aprovação de contrato', tone: 'neutral' as const }
   if (item.phase === 'contrato_aprovado' && !hasLabOrder) return { label: 'Contrato aprovado - gerar OS', tone: 'info' as const }
   if (item.phase === 'contrato_aprovado' && hasLabOrder && !liveLabStatus) return { label: 'OS gerada', tone: 'info' as const }
   if (liveLabStatus === 'prontas') return { label: 'Pronto para entrega', tone: 'info' as const }
@@ -199,6 +203,8 @@ export default function CasesPage() {
   const { db } = useDb()
   const { addToast } = useToast()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
+  const isRemoteMode = isSupabaseMode || isFirebaseMode
   const currentUser = getCurrentUser(db)
   const [supabaseCases, setSupabaseCases] = useState<CaseListItem[]>([])
   const [supabasePatientsById, setSupabasePatientsById] = useState<Map<string, PatientLookup>>(new Map())
@@ -328,6 +334,70 @@ export default function CasesPage() {
     }
   }, [isSupabaseMode])
 
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode) return
+    ;(async () => {
+      const [caseItems, patients, dentists, clinics] = await Promise.all([
+        listCasesFirebase(),
+        listPatientsFirebase(),
+        listDentistsFirebase({ includeDeleted: false, includeInactive: true }),
+        listClinicsFirebase({ includeDeleted: false }),
+      ])
+      if (!active) return
+
+      const patientsMap = new Map<string, PatientLookup>()
+      patients.forEach((patient) => {
+        patientsMap.set(patient.id, { name: patient.name, shortId: patient.shortId, clinicId: patient.clinicId })
+      })
+      setSupabasePatientsById(patientsMap)
+
+      const dentistsMap = new Map<string, { name: string; shortId?: string; gender?: string }>()
+      dentists.forEach((dentist) => {
+        dentistsMap.set(dentist.id, { name: dentist.name, shortId: dentist.shortId, gender: dentist.gender })
+      })
+      setSupabaseDentistsById(dentistsMap)
+
+      const clinicsMap = new Map<string, ClinicLookup>()
+      clinics.forEach((clinic) => {
+        clinicsMap.set(clinic.id, { tradeName: clinic.tradeName })
+      })
+      setSupabaseClinicsById(clinicsMap)
+      setSupabaseLabStatusByCase(new Map())
+      setSupabaseHasLabOrderByCase(new Set())
+      setSupabaseCases(caseItems.map((item) => ({
+        id: item.id,
+        shortId: item.shortId,
+        productType: normalizeProductType(item.productId ?? item.productType),
+        treatmentOrigin: inferTreatmentOrigin(
+          {
+            treatmentOrigin: item.treatmentOrigin,
+            clinicId: item.clinicId,
+          },
+          clinicsMap,
+        ),
+        clinicId: item.clinicId,
+        patientId: item.patientId,
+        patientName: item.patientId ? patientsMap.get(item.patientId)?.name ?? item.patientName : item.patientName,
+        dentistId: item.dentistId,
+        phase: item.phase,
+        status: item.status,
+        treatmentCode: item.treatmentCode,
+        totalTrays: item.totalTrays,
+        totalTraysUpper: item.totalTraysUpper,
+        totalTraysLower: item.totalTraysLower,
+        changeEveryDays: item.changeEveryDays,
+        deliveryLots: item.deliveryLots,
+        installation: item.installation,
+        arch: item.arch,
+        caseDate: item.scanDate ?? item.createdAt.slice(0, 10),
+      })))
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode])
+
   const localPatientsById = useMemo(
     () => new Map(db.patients.map((item) => [item.id, { name: item.name, shortId: item.shortId, clinicId: item.clinicId }])),
     [db.patients],
@@ -373,12 +443,12 @@ export default function CasesPage() {
     [currentUser, db, localClinicsById],
   )
 
-  const cases: CaseListItem[] = isSupabaseMode ? supabaseCases : localCases
-  const patientsById = isSupabaseMode ? supabasePatientsById : localPatientsById
-  const clinicsById = isSupabaseMode ? supabaseClinicsById : localClinicsById
-  const dentistsById = isSupabaseMode ? supabaseDentistsById : localDentistsById
-  const liveLabStatusByCase = isSupabaseMode ? supabaseLabStatusByCase : localLabStatusByCase
-  const hasLabOrderByCase = isSupabaseMode ? supabaseHasLabOrderByCase : localHasLabOrderByCase
+  const cases: CaseListItem[] = isRemoteMode ? supabaseCases : localCases
+  const patientsById = isRemoteMode ? supabasePatientsById : localPatientsById
+  const clinicsById = isRemoteMode ? supabaseClinicsById : localClinicsById
+  const dentistsById = isRemoteMode ? supabaseDentistsById : localDentistsById
+  const liveLabStatusByCase = isRemoteMode ? supabaseLabStatusByCase : localLabStatusByCase
+  const hasLabOrderByCase = isRemoteMode ? supabaseHasLabOrderByCase : localHasLabOrderByCase
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -490,7 +560,7 @@ export default function CasesPage() {
   }
 
   return (
-    <AppShell breadcrumb={['In\u00EDcio', 'Alinhadores']}>
+    <AppShell breadcrumb={['Início', 'Alinhadores']}>
       <section>
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Alinhadores</h1>
         
@@ -523,7 +593,7 @@ export default function CasesPage() {
             variant={showConcluded ? 'primary' : 'secondary'}
             onClick={toggleConcluded}
           >
-            Concluidos
+            Concluídos
           </Button>
           <Button variant="secondary" onClick={() => void handleExportExcel()} disabled={isExportingExcel || reportRows.length === 0}>
             {isExportingExcel ? 'Gerando Excel...' : 'Gerar Excel'}
@@ -540,13 +610,13 @@ export default function CasesPage() {
             <table className="min-w-full text-left">
               <thead className="ui-table-head">
                 <tr>
-                  <th className="px-5 py-3 text-xs uppercase tracking-wide">N\u00BA Caso</th>
+                  <th className="px-5 py-3 text-xs uppercase tracking-wide">Nº Caso</th>
                   <th className="px-5 py-3 text-xs uppercase tracking-wide">Paciente</th>
                   <th className="px-5 py-3 text-xs uppercase tracking-wide">Interno/Externo</th>
                   <th className="px-5 py-3 text-xs uppercase tracking-wide">Placas Sup/Inf</th>
                   <th className="px-5 py-3 text-xs uppercase tracking-wide">Troca (dias)</th>
                   <th className="px-5 py-3 text-xs uppercase tracking-wide">Etapa do tratamento</th>
-                  <th className="px-5 py-3 text-xs uppercase tracking-wide">A\u00E7\u00F5es</th>
+                  <th className="px-5 py-3 text-xs uppercase tracking-wide">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-300/70">

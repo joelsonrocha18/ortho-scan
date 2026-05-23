@@ -6,9 +6,13 @@ import { getCurrentUser } from '../../../../lib/auth'
 import { supabase } from '../../../../lib/supabaseClient'
 import { useDb } from '../../../../lib/useDb'
 import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
+import { createAgendaManualEventFirebase, listAgendaManualEventsFirebase } from '../../../../data/agendaRepo'
 import { isAlignerProductType } from '../../../../types/Product'
 import type { Case } from '../../../../types/Case'
 import { mapSupabaseCaseRow } from '../../../cases/infra/supabase/supabaseCaseMappers'
+import { listPatientsFirebase } from '../../../../repo/patientRepo'
+import { listDentistsFirebase } from '../../../../data/dentistRepo'
+import { listCasesFirebase } from '../../../../data/caseRepo'
 
 export type AgendaManualEventType = 'escaneamento' | 'planejamento'
 export type AgendaEventType = AgendaManualEventType | 'troca_alinhador'
@@ -305,6 +309,7 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
   const { db } = useDb()
   const currentUser = useMemo(() => getCurrentUser(db), [db])
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const supabaseSyncTick = useSupabaseSyncTick(30000)
   const [refreshKey, setRefreshKey] = useState(0)
   const [events, setEvents] = useState<AgendaCalendarEvent[]>([])
@@ -382,6 +387,44 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
         return
       }
 
+      if (isFirebaseMode) {
+        const [manualRows, patientRows, dentistRows, caseItems] = await Promise.all([
+          listAgendaManualEventsFirebase(rangeStartIso, rangeEndIso),
+          listPatientsFirebase(),
+          listDentistsFirebase({ includeDeleted: false, includeInactive: true }),
+          listCasesFirebase(),
+        ])
+        if (!active) return
+
+        const patients = patientRows
+          .filter((patient) => !patient.deletedAt)
+          .map((patient) => ({
+            id: patient.id,
+            name: patient.name,
+            clinicId: patient.clinicId,
+            whatsapp: patient.whatsapp,
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name))
+        const professionals = dentistRows
+          .filter((dentist) => dentist.type === 'dentista' && !dentist.deletedAt)
+          .map((dentist) => ({
+            id: dentist.id,
+            name: dentist.name,
+            clinicId: dentist.clinicId,
+            whatsapp: dentist.whatsapp,
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name))
+        const patientsById = new Map(patients.map((item) => [item.id, item]))
+        const professionalsById = new Map(professionals.map((item) => [item.id, item]))
+        const manualEvents = manualRows.map((row) => toManualCalendarEvent(row, patientsById, professionalsById))
+        const reminders = buildAlignerReminderEvents(caseItems, patientsById, professionalsById, rangeStartKey, rangeEndKey)
+
+        setPatientOptions(patients)
+        setProfessionalOptions(professionals)
+        setEvents([...manualEvents, ...reminders].sort(sortEvents))
+        return
+      }
+
       const scopedPatients = listPatientsForUser(db, currentUser)
         .filter((patient) => !patient.deletedAt)
         .map((patient) => ({
@@ -427,7 +470,7 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
     return () => {
       active = false
     }
-  }, [currentUser, db, isSupabaseMode, rangeEndIso, rangeEndKey, rangeStartIso, rangeStartKey, refreshKey, supabaseSyncTick])
+  }, [currentUser, db, isFirebaseMode, isSupabaseMode, rangeEndIso, rangeEndKey, rangeStartIso, rangeStartKey, refreshKey, supabaseSyncTick])
 
   const createManualEvent = useCallback(
     async (input: CreateAgendaManualEventInput): Promise<{ ok: true } | { ok: false; error: string }> => {
@@ -462,6 +505,26 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
         return { ok: true }
       }
 
+      if (isFirebaseMode) {
+        const now = new Date().toISOString()
+        const nextRow: AgendaManualEventRow = {
+          id: `agenda_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+          clinic_id: clinicId,
+          titulo: title,
+          tipo: input.type,
+          inicio: start.toISOString(),
+          fim: end.toISOString(),
+          id_profissional: input.professionalId || null,
+          id_paciente: input.patientId || null,
+          observacoes: notes,
+          created_at: now,
+          updated_at: now,
+        }
+        await createAgendaManualEventFirebase(nextRow)
+        refresh()
+        return { ok: true }
+      }
+
       const now = new Date().toISOString()
       const nextRow: AgendaManualEventRow = {
         id: `agenda_${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -480,7 +543,7 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
       refresh()
       return { ok: true }
     },
-    [currentUser?.linkedClinicId, isSupabaseMode, patientOptions, professionalOptions, refresh],
+    [currentUser?.linkedClinicId, isFirebaseMode, isSupabaseMode, patientOptions, professionalOptions, refresh],
   )
 
   return {

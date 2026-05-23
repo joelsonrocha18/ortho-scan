@@ -1,8 +1,9 @@
-export type DataMode = 'supabase' | 'local'
+export type DataMode = 'supabase' | 'local' | 'firebase'
 
 function resolveDataMode(): DataMode {
   const raw = (import.meta.env.VITE_DATA_MODE as string | undefined)?.trim().toLowerCase()
   if (raw === 'local') return 'local'
+  if (raw === 'firebase') return 'firebase'
   return 'supabase'
 }
 

@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import type { Clinic } from '../types/Clinic'
 import { clinicCode } from '../lib/entityCode'
+import { listClinicsFirebase } from '../repo/clinicRepo'
 
 function mapSupabaseClinic(row: Record<string, unknown>): Clinic {
   return {
@@ -37,12 +38,14 @@ function mapSupabaseClinic(row: Record<string, unknown>): Clinic {
 export default function ClinicsPage() {
   const { db } = useDb()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'clinics.write')
   const [query, setQuery] = useState('')
   const [showDeleted, setShowDeleted] = useState(false)
   const supabaseSyncTick = useSupabaseSyncTick()
   const [supabaseClinics, setSupabaseClinics] = useState<Clinic[]>([])
+  const [firebaseClinics, setFirebaseClinics] = useState<Clinic[]>([])
 
   useEffect(() => {
     let active = true
@@ -64,9 +67,25 @@ export default function ClinicsPage() {
     }
   }, [isSupabaseMode, supabaseSyncTick])
 
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode) {
+      setFirebaseClinics([])
+      return
+    }
+    ;(async () => {
+      const items = await listClinicsFirebase({ includeDeleted: true })
+      if (!active) return
+      setFirebaseClinics(items)
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode])
+
   const clinics = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const source = isSupabaseMode ? supabaseClinics : db.clinics
+    const source = isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics
     return [...source]
       .filter((clinic) => (showDeleted ? true : !clinic.deletedAt))
       .filter((clinic) => {
@@ -81,7 +100,7 @@ export default function ClinicsPage() {
         )
       })
       .sort((a, b) => a.tradeName.localeCompare(b.tradeName))
-  }, [db.clinics, isSupabaseMode, query, showDeleted, supabaseClinics])
+  }, [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, query, showDeleted, supabaseClinics])
 
   return (
     <AppShell breadcrumb={['Início', 'Clínicas']}>

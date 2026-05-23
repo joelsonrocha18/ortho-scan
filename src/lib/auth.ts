@@ -53,7 +53,7 @@ export function getSessionProfile(): SessionUser | null {
 }
 
 export function getCurrentUser(dbOverride?: { users: User[] }) {
-  if (DATA_MODE === 'supabase') {
+  if (DATA_MODE === 'supabase' || DATA_MODE === 'firebase') {
     const profile = getSessionProfile()
     if (!profile) return null
     return {

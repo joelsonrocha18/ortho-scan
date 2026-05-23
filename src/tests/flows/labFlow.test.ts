@@ -51,7 +51,7 @@ describe('LAB flow and commercial gate', () => {
     expect(tray?.state).toBe('rework')
   })
 
-  it('creates replenishment bank item for partial delivery cases', () => {
+  it('does not auto-create replenishment OS for partial delivery cases', () => {
     const db = loadDb()
     db.cases = db.cases.map((item) => {
       if (item.id !== 'qa_case_1') return item
@@ -70,12 +70,10 @@ describe('LAB flow and commercial gate', () => {
     const items = listLabItems()
     const bankItem = items.find((item) => item.caseId === 'qa_case_1' && item.requestKind === 'reposicao_programada')
 
-    expect(bankItem).toBeTruthy()
-    expect(bankItem?.status).toBe('aguardando_iniciar')
-    expect(bankItem?.requestCode).toMatch(/^ORTH-\d{5}\/\d+$/)
+    expect(bankItem).toBeUndefined()
   })
 
-  it('creates advance OS using the first pending tray number', () => {
+  it('creates requested replenishment OS using the first pending tray number', () => {
     const db = loadDb()
     db.cases = db.cases.map((item) => {
       if (item.id !== 'qa_case_1') return item

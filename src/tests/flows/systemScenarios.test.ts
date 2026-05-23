@@ -71,7 +71,7 @@ describe('System scenarios', () => {
     expect(updated.item.status).toBe('em_producao')
   })
 
-  it('creates programmed replenishment for partial delivery and keeps manual advance OS in aguardando', () => {
+  it('keeps partial delivery without automatic LAB OS and creates manual replenishment on request', () => {
     expect(setTrayState('qa_case_1', 1, 'em_producao').ok).toBe(true)
     expect(setTrayState('qa_case_1', 1, 'pronta').ok).toBe(true)
     const firstTray = setTrayState('qa_case_1', 1, 'entregue')
@@ -90,19 +90,21 @@ describe('System scenarios', () => {
     saveDb(db)
 
     const before = listLabItems()
-    const replenishment = before.find((item) => item.caseId === 'qa_case_1' && item.requestKind === 'reposicao_programada')
-    expect(replenishment).toBeTruthy()
-    if (!replenishment) return
+    const automaticReplenishment = before.find((item) => item.caseId === 'qa_case_1' && item.requestKind === 'reposicao_programada')
+    expect(automaticReplenishment).toBeUndefined()
+    const source = before.find((item) => item.id === 'qa_lab_1')
+    expect(source).toBeTruthy()
+    if (!source) return
 
-    const advance = createAdvanceLabOrder(replenishment.id, { plannedUpperQty: 2, plannedLowerQty: 1 })
+    const advance = createAdvanceLabOrder(source.id, { plannedUpperQty: 2, plannedLowerQty: 1 })
     expect(advance.ok).toBe(true)
     if (!advance.ok) return
     expect(advance.item.requestCode).toMatch(/^ORTH-\d{5}\/\d+$/)
     expect(advance.item.requestKind).toBe('producao')
     expect(advance.item.status).toBe('aguardando_iniciar')
     const after = listLabItems()
-    const sourceStillExists = after.some((item) => item.id === replenishment.id)
-    expect(sourceStillExists).toBe(false)
+    const sourceStillExists = after.some((item) => item.id === source.id)
+    expect(sourceStillExists).toBe(true)
   })
 
   it('blocks regression after delivery and does not auto-create rework OS when moving to CQ', () => {

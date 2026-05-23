@@ -1,5 +1,4 @@
 import { supabase } from '../../../../lib/supabaseClient'
-import { loadSystemSettings } from '../../../../lib/systemSettings'
 import { ok, err, type Result } from '../../../../shared/errors'
 import { BUSINESS_EVENTS, logger } from '../../../../shared/observability'
 import { nowIsoDate, nowIsoDateTime, toIsoDate } from '../../../../shared/utils/date'
@@ -65,18 +64,6 @@ function normalizePatientOptions(
   })) satisfies LabPatientOption[]
 }
 
-function getGuideAutomationLeadDays() {
-  try {
-    const settings = loadSystemSettings()
-    return {
-      enabled: settings.guideAutomation?.enabled !== false,
-      leadDays: Math.max(0, Math.trunc(settings.guideAutomation?.leadDays ?? 10)),
-    }
-  } catch {
-    return { enabled: true, leadDays: 10 }
-  }
-}
-
 export class SupabaseLabRepository implements LabRepository {
   private readonly currentUser: User | null
 
@@ -130,179 +117,6 @@ export class SupabaseLabRepository implements LabRepository {
       .map((row) => asText(asObject(row.data).requestCode))
       .filter(Boolean)
     return ok(requestCodes)
-  }
-
-  private async ensureInitialReplenishmentSeed(
-    source: {
-      caseId?: string
-      trayNumber: number
-      status: LabOrder['status']
-      productType?: LabOrder['productType']
-      productId?: LabOrder['productId']
-      priority?: LabOrder['priority']
-      data: Record<string, unknown>
-    },
-  ) {
-    const clientResult = this.ensureClient()
-    if (!clientResult.ok) return clientResult
-    const client = clientResult.data
-    if (!source.caseId) return ok(null)
-    if (asText(source.data.requestKind, 'producao') !== 'producao') return ok(null)
-    if (source.status !== 'em_producao') return ok(null)
-
-    const [caseRes, rowsRes] = await Promise.all([
-      client.from('cases').select('id, clinic_id, data').eq('id', source.caseId).maybeSingle(),
-      client.from('lab_items').select('id, tray_number, data').eq('case_id', source.caseId).is('deleted_at', null),
-    ])
-    if (caseRes.error || !caseRes.data) {
-      return err(caseRes.error?.message ?? 'Caso vinculado não encontrado.')
-    }
-    if (rowsRes.error) {
-      return err(rowsRes.error.message)
-    }
-
-    const caseData = asObject(caseRes.data.data)
-    const caseRows = (rowsRes.data ?? []) as Array<Record<string, unknown>>
-    const alreadySeeded = caseRows.some((row) => {
-      const rowData = asObject(row.data)
-      return (
-        asText(rowData.requestKind, 'producao') === 'reposicao_programada' &&
-        asNumber(row.tray_number, asNumber(rowData.trayNumber, -1)) === source.trayNumber
-      )
-    })
-    if (alreadySeeded) return ok(null)
-
-    const today = nowIsoDate()
-    const trays = Array.isArray(caseData.trays) ? (caseData.trays as Array<Record<string, unknown>>) : []
-    const trayFromCase = trays.find((tray) => asNumber(tray.trayNumber, -1) === source.trayNumber)
-    const expectedReplacementDate = asText(
-      trayFromCase?.dueDate,
-      asText(source.data.expectedReplacementDate, asText(source.data.dueDate, today)),
-    )
-    const baseCode = asText(caseData.treatmentCode, asText(caseRes.data.id, source.caseId))
-    const nextRevision = nextRequestRevisionFromCodes(
-      baseCode,
-      caseRows
-        .map((row) => asText(asObject(row.data).requestCode))
-        .filter(Boolean),
-    )
-    const nowIso = nowIsoDateTime()
-    const resolvedProductType = normalizeProductType(source.productId ?? source.productType)
-    const seedData = {
-      ...source.data,
-      requestCode: `${baseCode}/${nextRevision}`,
-      requestKind: 'reposicao_programada',
-      expectedReplacementDate,
-      plannedUpperQty: 0,
-      plannedLowerQty: 0,
-      planningDefinedAt: undefined,
-      plannedDate: today,
-      dueDate: expectedReplacementDate,
-      status: 'aguardando_iniciar',
-      notes: `Reposição inicial gerada no início da confeccao da placa #${source.trayNumber}.`,
-    }
-
-    const { error } = await client.from('lab_items').insert({
-      clinic_id: asText(source.data.clinicId, asText(caseRes.data.clinic_id)) || null,
-      case_id: source.caseId,
-      tray_number: source.trayNumber,
-      status: 'aguardando_iniciar',
-      priority: source.priority ?? (asText(source.data.priority, 'Medio') as LabOrder['priority']),
-      notes: asText(seedData.notes) || null,
-      product_type: resolvedProductType,
-      product_id: resolvedProductType,
-      data: seedData,
-      updated_at: nowIso,
-    })
-    if (error) return err(error.message)
-    return ok(null)
-  }
-
-  private async maybeInsertAutomatedReplenishments(cases: Case[], items: LabOrder[]) {
-    const clientResult = this.ensureClient()
-    if (!clientResult.ok) return clientResult
-    const automation = getGuideAutomationLeadDays()
-    if (!automation.enabled) return ok(false)
-
-    const today = nowIsoDate()
-    const caseById = new Map(cases.map((item): [string, Case] => [item.id, item]))
-    const requestCodes = getCanonicalLabOrders(items, { caseById }).map((item) => item.requestCode).filter((code): code is string => Boolean(code))
-    const inserts: Array<Record<string, unknown>> = []
-
-    cases.forEach((caseItem) => {
-      if (caseItem.contract?.status !== 'aprovado') return
-      const trays = caseItem.trays ?? []
-      const hasDelivered = trays.some((tray) => tray.state === 'entregue')
-      const hasPending = trays.some((tray) => tray.state === 'pendente')
-      if (!hasDelivered || !hasPending) return
-
-      trays
-        .filter((tray) => tray.state === 'pendente' && Boolean(tray.dueDate))
-        .forEach((tray) => {
-          const expected = tray.dueDate as string
-          const plannedDate = new Date(`${expected}T00:00:00`)
-          plannedDate.setDate(plannedDate.getDate() - automation.leadDays)
-          const plannedDateIso = plannedDate.toISOString().slice(0, 10)
-          if (plannedDateIso > today) return
-
-          const exists = items.some(
-            (item) =>
-              item.caseId === caseItem.id &&
-              (item.requestKind === 'reposicao_programada' || (item.notes ?? '').toLowerCase().includes('reposi')) &&
-              item.trayNumber === tray.trayNumber &&
-              (item.expectedReplacementDate === expected || item.dueDate === expected),
-          )
-          if (exists) return
-
-          const baseCode = caseCode(caseItem)
-          const revision = nextRequestRevisionFromCodes(baseCode, requestCodes)
-          const requestCode = `${baseCode}/${revision}`
-          requestCodes.push(requestCode)
-          const nowIso = nowIsoDateTime()
-          const resolvedProductType = normalizeProductType(caseItem.productId ?? caseItem.productType)
-          const notes = `Solicitação automática de reposição programada (${caseItem.id}_${tray.trayNumber}_${expected}).`
-
-          inserts.push({
-            clinic_id: caseItem.clinicId ?? null,
-            case_id: caseItem.id,
-            tray_number: tray.trayNumber,
-            status: 'aguardando_iniciar',
-            priority: 'Medio',
-            notes,
-            product_type: resolvedProductType,
-            product_id: resolvedProductType,
-            data: {
-              requestCode,
-              requestKind: 'reposicao_programada',
-              expectedReplacementDate: expected,
-              productType: resolvedProductType,
-              productId: resolvedProductType,
-              requestedProductId: caseItem.requestedProductId,
-              requestedProductLabel: caseItem.requestedProductLabel,
-              arch: caseItem.arch ?? 'ambos',
-              plannedUpperQty: 0,
-              plannedLowerQty: 0,
-              planningDefinedAt: undefined,
-              trayNumber: tray.trayNumber,
-              patientName: caseItem.patientName,
-              patientId: caseItem.patientId,
-              dentistId: caseItem.dentistId,
-              clinicId: caseItem.clinicId,
-              plannedDate: plannedDateIso,
-              dueDate: expected,
-              priority: 'Medio',
-              notes,
-              status: 'aguardando_iniciar',
-            },
-            updated_at: nowIso,
-          })
-        })
-    })
-
-    if (!inserts.length) return ok(false)
-    const { error } = await clientResult.data.from('lab_items').insert(inserts)
-    if (error) return err(error.message)
-    return ok(true)
   }
 
   async loadOverview(): Promise<Result<LabOverview, string>> {
@@ -390,18 +204,7 @@ export class SupabaseLabRepository implements LabRepository {
       casePrintFallbackByCaseId[mapped.id] = buildCasePrintFallback(row, sourceScanData)
       return mapped
     })
-    let items = labRows.map(mapSupabaseLabRow)
-
-    const inserted = await this.maybeInsertAutomatedReplenishments(cases, items)
-    if (!inserted.ok) return inserted
-    if (inserted.data) {
-      const refreshRes = await client
-        .from('lab_items')
-        .select('id, clinic_id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, data')
-        .is('deleted_at', null)
-      if (refreshRes.error) return err(refreshRes.error.message)
-      items = ((refreshRes.data ?? []) as Array<Record<string, unknown>>).map(mapSupabaseLabRow)
-    }
+    const items = labRows.map(mapSupabaseLabRow)
     const caseById = new Map(cases.map((item): [string, Case] => [item.id, item]))
 
     return ok({
@@ -513,19 +316,6 @@ export class SupabaseLabRepository implements LabRepository {
       .select('id, clinic_id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, data')
       .maybeSingle()
     if (error || !data) return err(error?.message ?? 'Não foi possível criar a OS.')
-
-    if (resolvedStatus === 'em_producao') {
-      const seeded = await this.ensureInitialReplenishmentSeed({
-        caseId: input.caseId,
-        trayNumber: input.trayNumber,
-        status: resolvedStatus,
-        productType: resolvedProductType,
-        productId: resolvedProductType,
-        priority: input.priority,
-        data: nextData,
-      })
-      if (!seeded.ok) return seeded
-    }
 
     const order = mapSupabaseLabRow(data as Record<string, unknown>)
     if (order.caseId && (order.requestKind ?? 'producao') === 'producao') {
@@ -654,19 +444,6 @@ export class SupabaseLabRepository implements LabRepository {
       .select('id, clinic_id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, data')
       .maybeSingle()
     if (error || !data) return err(error?.message ?? 'Não foi possível atualizar a OS.')
-
-    if (nextStatus === 'em_producao') {
-      const seeded = await this.ensureInitialReplenishmentSeed({
-        caseId: asText(current.case_id) || undefined,
-        trayNumber: nextData.trayNumber,
-        status: nextStatus,
-        productType: nextProductType,
-        productId: nextProductType,
-        priority: nextData.priority as LabOrder['priority'],
-        data: nextData,
-      })
-      if (!seeded.ok) return seeded
-    }
 
     return ok({ order: mapSupabaseLabRow(data as Record<string, unknown>) })
   }

@@ -6,7 +6,18 @@ import Input from '../components/Input'
 import WhatsappLink from '../components/WhatsappLink'
 import AppShell from '../layouts/AppShell'
 import type { Clinic } from '../types/Clinic'
-import { createClinic, getClinic, restoreClinic, softDeleteClinic, updateClinic } from '../repo/clinicRepo'
+import {
+  createClinic,
+  createClinicFirebase,
+  getClinic,
+  getClinicFirebase,
+  restoreClinic,
+  restoreClinicFirebase,
+  softDeleteClinic,
+  softDeleteClinicFirebase,
+  updateClinic,
+  updateClinicFirebase,
+} from '../repo/clinicRepo'
 import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
@@ -85,6 +96,7 @@ export default function ClinicDetailPage() {
   const navigate = useNavigate()
   const { db } = useDb()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const supabaseSyncTick = useSupabaseSyncTick()
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'clinics.write')
@@ -97,11 +109,13 @@ export default function ClinicDetailPage() {
   const [cepStatus, setCepStatus] = useState('')
   const [cepError, setCepError] = useState('')
   const [existingSupabase, setExistingSupabase] = useState<Clinic | null>(null)
+  const [existingFirebase, setExistingFirebase] = useState<Clinic | null>(null)
   const [loadingSupabase, setLoadingSupabase] = useState(false)
+  const [loadingFirebase, setLoadingFirebase] = useState(false)
   const [isFormDirty, setIsFormDirty] = useState(false)
   const hydratedClinicIdRef = useRef<string | null>(null)
 
-  const existing = isSupabaseMode ? existingSupabase : existingLocal
+  const existing = isSupabaseMode ? existingSupabase : isFirebaseMode ? existingFirebase : existingLocal
 
   const patchForm = (updater: (current: ClinicForm) => ClinicForm) => {
     setIsFormDirty(true)
@@ -154,6 +168,25 @@ export default function ClinicDetailPage() {
   }, [isNew, isSupabaseMode, params.id, supabaseSyncTick])
 
   useEffect(() => {
+    let active = true
+    if (!isFirebaseMode || isNew || !params.id) {
+      setExistingFirebase(null)
+      setLoadingFirebase(false)
+      return
+    }
+    setLoadingFirebase(true)
+    ;(async () => {
+      const data = await getClinicFirebase(params.id!)
+      if (!active) return
+      setExistingFirebase(data)
+      setLoadingFirebase(false)
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, isNew, params.id])
+
+  useEffect(() => {
     if (!existing) {
       hydratedClinicIdRef.current = null
       setIsFormDirty(false)
@@ -204,7 +237,7 @@ export default function ClinicDetailPage() {
     }
   }, [form.address.cep])
 
-  if (!isNew && loadingSupabase) {
+  if (!isNew && (loadingSupabase || loadingFirebase)) {
     return (
       <AppShell breadcrumb={['Início', 'Clínicas']}>
         <Card>
@@ -297,6 +330,16 @@ export default function ClinicDetailPage() {
       return
     }
 
+    if (isNew && isFirebaseMode) {
+      const result = await createClinicFirebase({ ...payload, isActive: payload.isActive ?? true })
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      navigate(`/app/clinics/${result.clinic.id}`, { replace: true })
+      return
+    }
+
     if (isNew) {
       const result = createClinic({ ...payload, isActive: payload.isActive ?? true })
       if (!result.ok) {
@@ -333,6 +376,14 @@ export default function ClinicDetailPage() {
       }
       setExistingSupabase((current) => (current ? { ...current, ...payload, updatedAt: new Date().toISOString() } : current))
       setIsFormDirty(false)
+    } else if (isFirebaseMode) {
+      const result = await updateClinicFirebase(existing.id, payload)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setExistingFirebase(result.clinic)
+      setIsFormDirty(false)
     } else {
       const result = updateClinic(existing.id, payload)
       if (!result.ok) {
@@ -366,6 +417,15 @@ export default function ClinicDetailPage() {
       setExistingSupabase((current) =>
         current ? { ...current, deletedAt: now, isActive: false, updatedAt: now } : current,
       )
+    } else if (isFirebaseMode) {
+      const result = await softDeleteClinicFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setExistingFirebase((current) =>
+        current ? { ...current, deletedAt: new Date().toISOString(), isActive: false, updatedAt: new Date().toISOString() } : current,
+      )
     } else {
       const result = softDeleteClinic(existing.id)
       if (!result.ok) {
@@ -395,6 +455,15 @@ export default function ClinicDetailPage() {
       }
       setExistingSupabase((current) =>
         current ? { ...current, deletedAt: undefined, isActive: true, updatedAt: now } : current,
+      )
+    } else if (isFirebaseMode) {
+      const result = await restoreClinicFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setExistingFirebase((current) =>
+        current ? { ...current, deletedAt: undefined, isActive: true, updatedAt: new Date().toISOString() } : current,
       )
     } else {
       const result = restoreClinic(existing.id)

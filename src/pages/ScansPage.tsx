@@ -12,15 +12,24 @@ import { can } from '../auth/permissions'
 import { DATA_MODE } from '../data/dataMode'
 import {
   addScanAttachment,
+  addScanAttachmentFirebase,
   clearScanAttachmentError,
+  clearScanAttachmentErrorFirebase,
   createCaseFromScan,
+  createCaseFromScanFirebase,
   createScan,
+  createScanFirebase,
   deleteScan,
+  deleteScanFirebase,
+  listScansFirebase,
   markScanAttachmentError,
+  markScanAttachmentErrorFirebase,
   rejectScan,
+  rejectScanFirebase,
   updateScan,
+  updateScanFirebase,
 } from '../data/scanRepo'
-import { updatePatient } from '../repo/patientRepo'
+import { listPatientsFirebase, updatePatient, updatePatientFirebase } from '../repo/patientRepo'
 import { createCaseFromScanSupabase, createScanSupabase, deleteScanSupabase, normalizeTreatmentIdsSupabase, updateScanStatusSupabase } from '../repo/profileRepo'
 import AppShell from '../layouts/AppShell'
 import type { Scan, ScanAttachment } from '../types/Scan'
@@ -32,6 +41,9 @@ import { supabase } from '../lib/supabaseClient'
 import { parsePlanningTrayCounts } from '../lib/archformParser'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { resolveTreatmentOrigin } from '../lib/treatmentOrigin'
+import { listDentistsFirebase } from '../data/dentistRepo'
+import { listClinicsFirebase } from '../repo/clinicRepo'
+import { listCasesFirebase } from '../data/caseRepo'
 
 function archTone(arch: Scan['arch']) {
   if (arch === 'ambos') return 'info' as const
@@ -100,6 +112,8 @@ export default function ScansPage() {
   const canDelete = can(currentUser, 'scans.delete') && currentUser?.role === 'master_admin'
   const canCreateCase = can(currentUser, 'cases.write')
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
+  const isRemoteMode = isSupabaseMode || isFirebaseMode
   const [createOpen, setCreateOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'todos' | Scan['status']>('todos')
@@ -219,7 +233,45 @@ export default function ScansPage() {
     }
   }, [addToast, isSupabaseMode, supabaseRefreshKey, supabaseSyncTick])
 
-  const scans = useMemo(() => (isSupabaseMode ? supabaseScans : canRead ? listScansForUser(db, currentUser) : []), [canRead, isSupabaseMode, supabaseScans, db, currentUser])
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode) return
+    ;(async () => {
+      const [scans, cases, patients, dentists, clinics] = await Promise.all([
+        listScansFirebase(),
+        listCasesFirebase(),
+        listPatientsFirebase(),
+        listDentistsFirebase({ includeDeleted: false, includeInactive: true }),
+        listClinicsFirebase({ includeDeleted: false }),
+      ])
+      if (!active) return
+      setSupabaseScans(scans)
+      setSupabaseCases(cases.map((item) => ({
+        id: item.id,
+        shortId: item.shortId,
+        treatmentCode: item.treatmentCode,
+      })))
+      setSupabasePatients(patients.map((item) => ({
+        id: item.id,
+        shortId: item.shortId,
+        name: item.name,
+        primaryDentistId: item.primaryDentistId,
+        clinicId: item.clinicId,
+      })))
+      setSupabaseDentists(dentists.map((item) => ({
+        id: item.id,
+        name: item.name,
+        gender: item.gender,
+        clinicId: item.clinicId,
+      })))
+      setSupabaseClinics(clinics.map((item) => ({ id: item.id, tradeName: item.tradeName })))
+    })()
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, supabaseRefreshKey])
+
+  const scans = useMemo(() => (isRemoteMode ? supabaseScans : canRead ? listScansForUser(db, currentUser) : []), [canRead, isRemoteMode, supabaseScans, db, currentUser])
   const purposeOptions = useMemo(
     () =>
       Array.from(
@@ -232,8 +284,8 @@ export default function ScansPage() {
     [scans],
   )
   const caseLookupSource = useMemo(
-    () => (isSupabaseMode ? supabaseCases : db.cases.map((item) => ({ id: item.id, shortId: item.shortId, treatmentCode: item.treatmentCode }))),
-    [isSupabaseMode, supabaseCases, db.cases],
+    () => (isRemoteMode ? supabaseCases : db.cases.map((item) => ({ id: item.id, shortId: item.shortId, treatmentCode: item.treatmentCode }))),
+    [isRemoteMode, supabaseCases, db.cases],
   )
   const caseShortById = useMemo(
     () => new Map(caseLookupSource.map((item) => [item.id, item.shortId])),
@@ -244,8 +296,8 @@ export default function ScansPage() {
     [caseLookupSource],
   )
   const patientLookupSource = useMemo(
-    () => (isSupabaseMode ? supabasePatients : db.patients.map((item) => ({ id: item.id, shortId: item.shortId, name: item.name, primaryDentistId: item.primaryDentistId, clinicId: item.clinicId }))),
-    [isSupabaseMode, supabasePatients, db.patients],
+    () => (isRemoteMode ? supabasePatients : db.patients.map((item) => ({ id: item.id, shortId: item.shortId, name: item.name, primaryDentistId: item.primaryDentistId, clinicId: item.clinicId }))),
+    [isRemoteMode, supabasePatients, db.patients],
   )
   const patientsById = useMemo(
     () => new Map(patientLookupSource.map((item) => [item.id, item.name])),
@@ -258,10 +310,10 @@ export default function ScansPage() {
   const clinicLookupById = useMemo(
     () =>
       new Map(
-        (isSupabaseMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt))
+        (isRemoteMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt))
           .map((item) => [item.id, { tradeName: item.tradeName }]),
       ),
-    [isSupabaseMode, supabaseClinics, db.clinics],
+    [isRemoteMode, supabaseClinics, db.clinics],
   )
   const filteredScans = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -301,12 +353,12 @@ export default function ScansPage() {
     })
   }, [archFilter, caseShortById, clinicLookupById, originFilter, patientLookupById, patientsById, scans, search, statusFilter, purposeFilter])
   const dentists = useMemo(
-    () => (isSupabaseMode ? supabaseDentists : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt)),
-    [isSupabaseMode, supabaseDentists, db.dentists],
+    () => (isRemoteMode ? supabaseDentists : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt)),
+    [isRemoteMode, supabaseDentists, db.dentists],
   )
   const clinics = useMemo(
-    () => (isSupabaseMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt)),
-    [isSupabaseMode, supabaseClinics, db.clinics],
+    () => (isRemoteMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt)),
+    [isRemoteMode, supabaseClinics, db.clinics],
   )
   const clinicsForModal = useMemo(
     () => clinics.map((item) => ({ id: item.id, name: item.tradeName })),
@@ -460,6 +512,13 @@ export default function ScansPage() {
       addToast({ type: 'info', title: 'Exame reprovado' })
       return
     }
+    if (isFirebaseMode) {
+      const result = await rejectScanFirebase(id)
+      if (!result) return addToast({ type: 'error', title: 'Falha ao reprovar exame' })
+      setSupabaseRefreshKey((current) => current + 1)
+      addToast({ type: 'info', title: 'Exame reprovado' })
+      return
+    }
     rejectScan(id)
     addToast({ type: 'info', title: 'Exame reprovado' })
   }
@@ -473,6 +532,15 @@ export default function ScansPage() {
     if (isSupabaseMode) {
       const result = await deleteScanSupabase(scan.id)
       if (!result.ok) return addToast({ type: 'error', title: result.error })
+      if (details?.id === scan.id) {
+        setDetails(null)
+      }
+      setSupabaseRefreshKey((current) => current + 1)
+      addToast({ type: 'success', title: 'Escaneamento excluído' })
+      return
+    }
+    if (isFirebaseMode) {
+      await deleteScanFirebase(scan.id)
       if (details?.id === scan.id) {
         setDetails(null)
       }
@@ -567,6 +635,24 @@ export default function ScansPage() {
         attachments: normalizeScanAttachments([...targetScan.attachments, nextAttachment]),
         updatedAt: now,
       }
+    } else if (isFirebaseMode) {
+      const result = await addScanAttachmentFirebase(scanId, {
+        file: payload.file,
+        name: payload.file.name,
+        kind: payload.kind,
+        slotId: payload.slotId,
+        rxType: payload.rxType,
+        arch: payload.arch,
+        mime: payload.file.type,
+        size: payload.file.size,
+        url,
+        filePath,
+        isLocal,
+        note: payload.note,
+        attachedAt: payload.attachedAt,
+      })
+      if (!result) return
+      nextScan = result
     } else {
       const result: Scan | null = await addScanAttachment(scanId, {
         file: payload.file,
@@ -669,6 +755,18 @@ export default function ScansPage() {
         }
       }
       setSupabaseRefreshKey((current) => current + 1)
+    } else if (isFirebaseMode && payload.kind === 'projeto' && detectedSource) {
+      const saved = await updateScanFirebase(scanId, {
+        planningDetectedUpperTrays: nextScan.planningDetectedUpperTrays,
+        planningDetectedLowerTrays: nextScan.planningDetectedLowerTrays,
+        planningDetectedAt: nextScan.planningDetectedAt,
+        planningDetectedSource: nextScan.planningDetectedSource,
+        attachments: nextScan.attachments,
+      })
+      if (saved) {
+        nextScan = saved
+        setSupabaseRefreshKey((current) => current + 1)
+      }
     } else if (payload.kind === 'projeto' && detectedSource) {
       const saved = updateScan(scanId, {
         planningDetectedUpperTrays: nextScan.planningDetectedUpperTrays,
@@ -681,11 +779,23 @@ export default function ScansPage() {
     }
 
     setDetails((current) => (current && current.id === scanId ? nextScan : current))
-      addToast({ type: 'success', title: 'Novo anexo adicionado ao histórico' })
+    if (isFirebaseMode) {
+      setSupabaseRefreshKey((current) => current + 1)
+    }
+    addToast({ type: 'success', title: 'Novo anexo adicionado ao histórico' })
   }
 
   const flagAttachmentError = (scanId: string, attachmentId: string, reason: string) => {
     if (!canWrite) return
+    if (isFirebaseMode) {
+      void markScanAttachmentErrorFirebase(scanId, attachmentId, reason).then((result) => {
+        if (!result) return
+        setDetails((current) => (current && current.id === scanId ? result : current))
+        setSupabaseRefreshKey((current) => current + 1)
+        addToast({ type: 'info', title: 'Anexo marcado como erro' })
+      })
+      return
+    }
     const result = markScanAttachmentError(scanId, attachmentId, reason)
     if (!result) return
     setDetails((current) => (current && current.id === scanId ? result : current))
@@ -694,6 +804,15 @@ export default function ScansPage() {
 
   const clearAttachmentError = (scanId: string, attachmentId: string) => {
     if (!canWrite) return
+    if (isFirebaseMode) {
+      void clearScanAttachmentErrorFirebase(scanId, attachmentId).then((result) => {
+        if (!result) return
+        setDetails((current) => (current && current.id === scanId ? result : current))
+        setSupabaseRefreshKey((current) => current + 1)
+        addToast({ type: 'success', title: 'Erro removido do anexo' })
+      })
+      return
+    }
     const result = clearScanAttachmentError(scanId, attachmentId)
     if (!result) return
     setDetails((current) => (current && current.id === scanId ? result : current))
@@ -739,6 +858,23 @@ export default function ScansPage() {
         addToast({ type: 'error', title: `Falha ao aprovar exame: ${error.message}` })
         return false
       }
+      setSupabaseRefreshKey((current) => current + 1)
+      addToast({ type: 'success', title: 'Exame finalizado e aprovado' })
+      return true
+    }
+
+    if (isFirebaseMode) {
+      const saved = await updateScanFirebase(targetScan.id, {
+        ...payload,
+        status: 'aprovado',
+        linkedCaseId: targetScan.linkedCaseId,
+        updatedAt: now,
+      })
+      if (!saved) {
+        addToast({ type: 'error', title: 'Falha ao aprovar exame' })
+        return false
+      }
+      setDetails((current) => (current && current.id === targetScan.id ? saved : current))
       setSupabaseRefreshKey((current) => current + 1)
       addToast({ type: 'success', title: 'Exame finalizado e aprovado' })
       return true
@@ -966,6 +1102,18 @@ export default function ScansPage() {
             addToast({ type: 'success', title: 'Exame salvo' })
             return true
           }
+          if (isFirebaseMode) {
+            await createScanFirebase(payload)
+            if (options?.setPrimaryDentist && payload.patientId && payload.dentistId) {
+              const patient = patientLookupSource.find((item) => item.id === payload.patientId)
+              if (patient && !patient.primaryDentistId) {
+                await updatePatientFirebase(patient.id, { primaryDentistId: payload.dentistId })
+              }
+            }
+            setSupabaseRefreshKey((current) => current + 1)
+            addToast({ type: 'success', title: 'Exame salvo' })
+            return true
+          }
           await createScan(payload)
           if (options?.setPrimaryDentist && payload.patientId && payload.dentistId) {
             const patient = db.patients.find((item) => item.id === payload.patientId)
@@ -994,7 +1142,13 @@ export default function ScansPage() {
           if (!approvalTarget) return false
           const approved = await finalizeAndApproveScan(approvalTarget, payload)
           if (!approved) return false
-          if (!isSupabaseMode && options?.setPrimaryDentist && payload.patientId && payload.dentistId) {
+          if (isFirebaseMode && options?.setPrimaryDentist && payload.patientId && payload.dentistId) {
+            const patient = patientLookupSource.find((item) => item.id === payload.patientId)
+            if (patient && !patient.primaryDentistId) {
+              await updatePatientFirebase(patient.id, { primaryDentistId: payload.dentistId })
+            }
+            setSupabaseRefreshKey((current) => current + 1)
+          } else if (!isSupabaseMode && options?.setPrimaryDentist && payload.patientId && payload.dentistId) {
             const patient = db.patients.find((item) => item.id === payload.patientId)
             if (patient && !patient.primaryDentistId) {
               updatePatient(patient.id, { primaryDentistId: payload.dentistId })
@@ -1046,6 +1200,19 @@ export default function ScansPage() {
               setSupabaseRefreshKey((current) => current + 1)
               addToast({ type: 'success', title: 'Caso criado a partir do exame' })
               navigate('/app/cases')
+            })()
+            return
+          }
+          if (isFirebaseMode) {
+            void (async () => {
+              const result = await createCaseFromScanFirebase(createCaseTarget.id, payload)
+              if (!result.ok) {
+                addToast({ type: 'error', title: 'Não foi possível criar o caso', message: result.error })
+                return
+              }
+              setSupabaseRefreshKey((current) => current + 1)
+              addToast({ type: 'success', title: 'Caso criado a partir do exame' })
+              navigate(`/app/cases/${result.caseId}`)
             })()
             return
           }

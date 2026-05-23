@@ -4,6 +4,7 @@ import { can } from '../../../../auth/permissions'
 import { listCasesForUser } from '../../../../auth/scope'
 import { useToast } from '../../../../app/ToastProvider'
 import { DATA_MODE } from '../../../../data/dataMode'
+import { getCaseFirebase } from '../../../../data/caseRepo'
 import { getCurrentUser } from '../../../../lib/auth'
 import { buildChangeSchedule } from '../../../../lib/alignerChange'
 import { buildPatientPortalWhatsappHref, buildPatientPortalWhatsappMessage, resolvePatientPortalAccessCode } from '../../../../lib/accessLinks'
@@ -55,13 +56,14 @@ export function useCaseDetailController() {
   const { db } = useDb()
   const { addToast } = useToast()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const { updateCaseStatus, addCaseNote, publishPlanningVersion, approvePlanningVersion, listCaseTimeline } = useCaseModuleActions(currentUser)
   const labRepository = useMemo(() => createLabRepository(currentUser), [currentUser])
   const registerTrayRework = useMemo(() => new RegisterReworkUseCase(labRepository, currentUser), [currentUser, labRepository])
   const canWrite = can(currentUser, 'cases.write')
-  const canWriteLocalOnly = canWrite && !isSupabaseMode
-  const canManageTray = canWrite
+  const canWriteLocalOnly = canWrite && DATA_MODE === 'local'
+  const canManageTray = canWrite && DATA_MODE !== 'firebase'
   const canReadLab = can(currentUser, 'lab.read')
   const canDeleteCase = can(currentUser, 'cases.delete') && currentUser?.role === 'master_admin'
   const [selectedTray, setSelectedTray] = useState<CaseTray | null>(null)
@@ -89,10 +91,34 @@ export function useCaseDetailController() {
   const supabaseSyncTick = useSupabaseSyncTick()
   const supabaseDetail = useCaseSupabaseDetail(params.id, isSupabaseMode, supabaseSyncTick)
   const refreshSupabase = supabaseDetail.refreshSupabase
+  const [firebaseCase, setFirebaseCase] = useState<Case | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode || !params.id) {
+      setFirebaseCase(null)
+      return
+    }
+    void getCaseFirebase(params.id, { hydrateRelations: true }).then((caseItem) => {
+      if (!active) return
+      setFirebaseCase(caseItem)
+    })
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, params.id, supabaseSyncTick])
 
   const currentCase = useMemo(
-    () => (isSupabaseMode ? supabaseDetail.supabaseCase : params.id ? db.cases.find((item) => item.id === params.id) ?? null : null),
-    [db.cases, isSupabaseMode, params.id, supabaseDetail.supabaseCase],
+    () => (
+      isSupabaseMode
+        ? supabaseDetail.supabaseCase
+        : isFirebaseMode
+          ? firebaseCase
+          : params.id
+            ? db.cases.find((item) => item.id === params.id) ?? null
+            : null
+    ),
+    [db.cases, firebaseCase, isFirebaseMode, isSupabaseMode, params.id, supabaseDetail.supabaseCase],
   )
   const resolvedCase = currentCase
   const displayedTrays = useMemo(
@@ -102,8 +128,8 @@ export function useCaseDetailController() {
   const timelineRefreshSignature = `${params.id ?? ''}::${supabaseSyncTick}::${db.auditLogs?.length ?? 0}::${resolvedCase?.updatedAt ?? ''}::${resolvedCase?.timelineEntries?.length ?? 0}`
   const { timelineEntries } = useCaseTimeline(resolvedCase?.id, listCaseTimeline, timelineRefreshSignature)
   const localSourceScan = useMemo(
-    () => (!isSupabaseMode && resolvedCase?.sourceScanId ? db.scans.find((item) => item.id === resolvedCase.sourceScanId) : undefined),
-    [db.scans, isSupabaseMode, resolvedCase],
+    () => (DATA_MODE === 'local' && resolvedCase?.sourceScanId ? db.scans.find((item) => item.id === resolvedCase.sourceScanId) : undefined),
+    [db.scans, resolvedCase],
   )
   const isAlignerCase = useMemo(
     () => (resolvedCase ? isAlignerProductType(normalizeProductType(resolvedCase.productId ?? resolvedCase.productType)) : false),
@@ -331,6 +357,7 @@ export function useCaseDetailController() {
   }, [currentCaseAccessCodes, db.patientDocuments.length, resolvedCase?.id, resolvedCase?.patientId, supabaseSyncTick])
 
   useEffect(() => {
+    if (DATA_MODE === 'firebase') return
     if (!resolvedCase?.installation) return
     if (resolvedCase.status === 'finalizado') return
     const nextStatus = CaseLifecycleService.deriveTreatmentStatus({
@@ -381,7 +408,7 @@ export function useCaseDetailController() {
     setOptimisticActualChangeDates(null)
   }, [resolvedCase?.id, resolvedCase?.updatedAt])
 
-  const pageState: PageState = !resolvedCase ? 'not_found' : (!isSupabaseMode && !scopedCases.some((item) => item.id === resolvedCase.id) ? 'forbidden' : 'ready')
+  const pageState: PageState = !resolvedCase ? 'not_found' : (DATA_MODE === 'local' && !scopedCases.some((item) => item.id === resolvedCase.id) ? 'forbidden' : 'ready')
   const openTrayModal = (tray: CaseTray) => {
     if (!canManageTray || !resolvedCase) return
     setSelectedTray(tray)

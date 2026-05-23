@@ -37,7 +37,6 @@ import type {
 } from '../../application/ports/LabRepository'
 import {
   buildResolvedRequestCode,
-  ensureInitialReplenishmentSeed,
   isDeliveredToDentist,
   listLocalLabOrders,
   nextPendingTrayNumber,
@@ -281,7 +280,6 @@ export class LocalLabRepository implements LabRepository {
     refreshCaseDomainState(db, nextItem.caseId)
 
     const sync = syncLabItemToCaseTray(nextItem, db)
-    const seededReplenishment = ensureInitialReplenishmentSeed(db, toLabOrder(nextItem))
     pushAudit(db, {
       entity: 'lab',
       entityId: nextItem.id,
@@ -297,20 +295,6 @@ export class LocalLabRepository implements LabRepository {
         stage: nextItem.stage,
       },
     })
-    if (seededReplenishment) {
-      pushAudit(db, {
-        entity: 'lab',
-        entityId: seededReplenishment.id,
-        action: 'lab.replenishment_seeded',
-        message: 'Reposição inicial gerada automaticamente.',
-        context: {
-          labOrderId: seededReplenishment.id,
-          caseId: seededReplenishment.caseId,
-          requestCode: seededReplenishment.requestCode ?? seededReplenishment.id,
-          trayNumber: seededReplenishment.trayNumber,
-        },
-      })
-    }
     saveDb(db)
     if (nextItem.caseId && (nextItem.requestKind ?? 'producao') === 'producao') {
       logger.business(BUSINESS_EVENTS.LAB_SENT, 'Caso enviado para o LAB.', {
@@ -460,7 +444,6 @@ export class LocalLabRepository implements LabRepository {
 
     const updatedOrder = changed as LabItem
     const sync = syncLabItemToCaseTray(updatedOrder, db)
-    const seededReplenishment = ensureInitialReplenishmentSeed(db, toLabOrder(updatedOrder))
     refreshCaseDomainState(db, previousCaseId)
     refreshCaseDomainState(db, updatedOrder.caseId)
     pushAudit(db, {
@@ -476,14 +459,6 @@ export class LocalLabRepository implements LabRepository {
         stage: updatedOrder.stage,
       },
     })
-    if (seededReplenishment) {
-      pushAudit(db, {
-        entity: 'lab',
-        entityId: seededReplenishment.id,
-        action: 'lab.replenishment_seeded',
-        message: `Reposição inicial ${seededReplenishment.requestCode ?? seededReplenishment.id} gerada automaticamente.`,
-      })
-    }
     saveDb(db)
     return ok({
       order: toLabOrder(updatedOrder),
@@ -574,13 +549,13 @@ export class LocalLabRepository implements LabRepository {
       return err('Caso vinculado não encontrado.')
     }
     if (linkedCase.contract?.status !== 'aprovado') {
-      return err('Contrato não aprovado para gerar OS antecipada.')
+      return err('Contrato não aprovado para gerar reposição.')
     }
 
     const plannedUpperQty = Math.max(0, Math.trunc(input.plannedUpperQty))
     const plannedLowerQty = Math.max(0, Math.trunc(input.plannedLowerQty))
     if (plannedUpperQty + plannedLowerQty <= 0) {
-      return err('Informe quantidade maior que zero para gerar OS antecipada.')
+      return err('Informe quantidade maior que zero para gerar reposição.')
     }
 
     const invalidPlan = validatePlanForCase(linkedCase, { plannedUpperQty, plannedLowerQty } as LabOrder)
@@ -590,7 +565,7 @@ export class LocalLabRepository implements LabRepository {
 
     const nextTrayNumber = nextPendingTrayNumber(linkedCase)
     if (!nextTrayNumber) {
-      return err('Não há placas pendentes para gerar OS antecipada.')
+      return err('Não há placas pendentes para gerar reposição.')
     }
 
     const nowIso = nowIsoDateTime()
@@ -629,7 +604,7 @@ export class LocalLabRepository implements LabRepository {
       dueDate,
       status: 'aguardando_iniciar',
       priority: 'Urgente',
-      notes: `OS antecipada gerada manualmente a partir de ${source.requestCode ?? source.id}.`,
+      notes: `Reposição solicitada manualmente a partir de ${source.requestCode ?? source.id}.`,
       createdAt: nowIso,
       updatedAt: nowIso,
     }, nowIso)
@@ -640,13 +615,13 @@ export class LocalLabRepository implements LabRepository {
       entity: 'lab',
       entityId: source.id,
       action: 'lab.advance_source_consumed',
-      message: `Base de reposição ${source.requestCode ?? source.id} consumida para antecipacao.`,
+      message: `Base de reposição ${source.requestCode ?? source.id} consumida pela solicitação manual.`,
     })
     pushAudit(db, {
       entity: 'lab',
       entityId: nextItem.id,
       action: 'lab.advance_created',
-      message: `OS antecipada ${nextItem.requestCode ?? nextItem.id} criada para ${nextItem.patientName}.`,
+      message: `Reposição ${nextItem.requestCode ?? nextItem.id} criada para ${nextItem.patientName}.`,
     })
     saveDb(db)
     return ok({
