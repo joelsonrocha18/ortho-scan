@@ -14,7 +14,18 @@ import type { Case } from '../types/Case'
 import { useDb } from '../lib/useDb'
 import { can } from '../auth/permissions'
 import { listPatientsForUser } from '../auth/scope'
-import { createPatient, getPatient, restorePatient, softDeletePatient, updatePatient } from '../repo/patientRepo'
+import {
+  createPatient,
+  createPatientFirebase,
+  getPatient,
+  getPatientFirebase,
+  restorePatient,
+  restorePatientFirebase,
+  softDeletePatient,
+  softDeletePatientFirebase,
+  updatePatient,
+  updatePatientFirebase,
+} from '../repo/patientRepo'
 import {
   addPatientDoc,
   deletePatientDoc,
@@ -26,8 +37,8 @@ import {
 } from '../repo/patientDocsRepo'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
-import { updateScan } from '../data/scanRepo'
-import { updateCase } from '../data/caseRepo'
+import { listScansFirebase, updateScan, updateScanFirebase } from '../data/scanRepo'
+import { listCasesFirebase, updateCase, updateCaseFirebase } from '../data/caseRepo'
 import { buildPatientPortalWhatsappHref, buildPatientPortalWhatsappMessage, resolvePatientPortalAccessCode } from '../lib/accessLinks'
 import { getCurrentUser } from '../lib/auth'
 import { loadSystemSettings } from '../lib/systemSettings'
@@ -38,6 +49,8 @@ import { DATA_MODE } from '../data/dataMode'
 import { supabase } from '../lib/supabaseClient'
 import { patientCode } from '../lib/entityCode'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
+import { listDentistsFirebase } from '../data/dentistRepo'
+import { listClinicsFirebase } from '../repo/clinicRepo'
 
 type PatientForm = {
   firstName: string
@@ -189,12 +202,14 @@ export default function PatientDetailPage() {
   const canDocsWrite = can(currentUser, 'docs.write')
   const canDocsAdmin = currentUser?.role === 'master_admin' || currentUser?.role === 'dentist_admin' || currentUser?.role === 'receptionist'
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const supabaseSyncTick = useSupabaseSyncTick()
   const isNew = params.id === 'new'
   const localExisting = useMemo(() => (!isNew && params.id ? getPatient(params.id) : null), [isNew, params.id])
   const [supabaseExisting, setSupabaseExisting] = useState<Patient | null>(null)
+  const [firebaseExisting, setFirebaseExisting] = useState<Patient | null>(null)
   const [loadingExisting, setLoadingExisting] = useState(false)
-  const existing = isSupabaseMode ? supabaseExisting : localExisting
+  const existing = isSupabaseMode ? supabaseExisting : isFirebaseMode ? firebaseExisting : localExisting
   const scopedPatients = useMemo(() => listPatientsForUser(db, currentUser), [db, currentUser])
 
   const [form, setForm] = useState<PatientForm>(emptyForm)
@@ -219,16 +234,22 @@ export default function PatientDetailPage() {
   const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [supabasePatientScans, setSupabasePatientScans] = useState<Scan[]>([])
   const [supabasePatientCases, setSupabasePatientCases] = useState<Case[]>([])
+  const [firebaseDentists, setFirebaseDentists] = useState<typeof supabaseDentists>([])
+  const [firebaseClinics, setFirebaseClinics] = useState<typeof supabaseClinics>([])
+  const [firebasePatientScans, setFirebasePatientScans] = useState<Scan[]>([])
+  const [firebasePatientCases, setFirebasePatientCases] = useState<Case[]>([])
   const dentists = useMemo(
     () =>
       isSupabaseMode
         ? supabaseDentists
-        : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt),
-    [db.dentists, isSupabaseMode, supabaseDentists],
+        : isFirebaseMode
+          ? firebaseDentists
+          : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt),
+    [db.dentists, firebaseDentists, isFirebaseMode, isSupabaseMode, supabaseDentists],
   )
   const clinics = useMemo(
-    () => (isSupabaseMode ? supabaseClinics : db.clinics.filter((item) => !item.deletedAt)),
-    [db.clinics, isSupabaseMode, supabaseClinics],
+    () => (isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
+    [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, supabaseClinics],
   )
   const [docs, setDocs] = useState<PatientDocument[]>([])
 
@@ -263,9 +284,46 @@ export default function PatientDetailPage() {
   }, [isSupabaseMode])
 
   useEffect(() => {
+    if (!isFirebaseMode) return
+    let active = true
+    void (async () => {
+      const [clinicsRows, dentistsRows] = await Promise.all([
+        listClinicsFirebase({ includeDeleted: false }),
+        listDentistsFirebase({ includeDeleted: false, includeInactive: false }),
+      ])
+      if (!active) return
+      setFirebaseClinics(
+        clinicsRows.map((row) => ({
+          id: row.id,
+          tradeName: row.tradeName,
+        })),
+      )
+      setFirebaseDentists(
+        dentistsRows
+          .filter((row) => row.type === 'dentista')
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            gender: row.gender === 'feminino' ? 'feminino' : 'masculino',
+            whatsapp: row.whatsapp,
+            clinicId: row.clinicId,
+          })),
+      )
+    })().catch((error) => {
+      console.error('Falha ao carregar vínculos do Firebase.', error)
+      if (!active) return
+      setFirebaseClinics([])
+      setFirebaseDentists([])
+    })
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode])
+
+  useEffect(() => {
     if (!isSupabaseMode || !supabase || isNew || !params.id) {
       setSupabaseExisting(null)
-      setLoadingExisting(false)
+      if (!isFirebaseMode) setLoadingExisting(false)
       return
     }
     let active = true
@@ -319,29 +377,55 @@ export default function PatientDetailPage() {
     return () => {
       active = false
     }
-  }, [isNew, isSupabaseMode, params.id, supabaseSyncTick])
+  }, [isFirebaseMode, isNew, isSupabaseMode, params.id, supabaseSyncTick])
+
+  useEffect(() => {
+    if (!isFirebaseMode || isNew || !params.id) {
+      setFirebaseExisting(null)
+      if (!isSupabaseMode) setLoadingExisting(false)
+      return
+    }
+    let active = true
+    setLoadingExisting(true)
+    void (async () => {
+      const patient = await getPatientFirebase(params.id!)
+      if (!active) return
+      setFirebaseExisting(patient)
+      setLoadingExisting(false)
+    })().catch((error) => {
+      console.error('Falha ao carregar paciente do Firebase.', error)
+      if (!active) return
+      setFirebaseExisting(null)
+      setLoadingExisting(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, isNew, isSupabaseMode, params.id])
 
   const scans = useMemo(() => {
     if (!existing) return []
     if (isSupabaseMode) return supabasePatientScans
+    if (isFirebaseMode) return firebasePatientScans
     const name = safeText(existing.name).toLowerCase()
     return db.scans.filter(
       (scan) =>
         (scan.patientId && scan.patientId === existing.id) ||
         (!scan.patientId && scan.patientName.toLowerCase() === name),
     )
-  }, [db.scans, existing, isSupabaseMode, supabasePatientScans])
+  }, [db.scans, existing, firebasePatientScans, isFirebaseMode, isSupabaseMode, supabasePatientScans])
 
   const cases = useMemo(() => {
     if (!existing) return []
     if (isSupabaseMode) return supabasePatientCases
+    if (isFirebaseMode) return firebasePatientCases
     const name = safeText(existing.name).toLowerCase()
     return db.cases.filter(
       (caseItem) =>
         (caseItem.patientId && caseItem.patientId === existing.id) ||
         (!caseItem.patientId && caseItem.patientName.toLowerCase() === name),
       )
-  }, [db.cases, existing, isSupabaseMode, supabasePatientCases])
+  }, [db.cases, existing, firebasePatientCases, isFirebaseMode, isSupabaseMode, supabasePatientCases])
   const latestCaseForPortalShare = useMemo(() => {
     const activeCases = cases.filter((item) => item.status !== 'finalizado')
     const source = activeCases.length > 0 ? activeCases : cases
@@ -603,6 +687,39 @@ export default function PatientDetailPage() {
   }, [existing, isSupabaseMode, supabaseSyncTick])
 
   useEffect(() => {
+    if (!isFirebaseMode || !existing) {
+      setFirebasePatientScans([])
+      setFirebasePatientCases([])
+      return
+    }
+    let active = true
+    void (async () => {
+      const [allScans, allCases] = await Promise.all([
+        listScansFirebase(),
+        listCasesFirebase(),
+      ])
+      if (!active) return
+      const name = safeText(existing.name).toLowerCase()
+      setFirebasePatientScans(
+        allScans
+          .filter((scan) => (scan.patientId && scan.patientId === existing.id) || (!scan.patientId && scan.patientName.toLowerCase() === name))
+          .sort((a, b) => b.scanDate.localeCompare(a.scanDate)),
+      )
+      setFirebasePatientCases(
+        allCases.filter((caseItem) => (caseItem.patientId && caseItem.patientId === existing.id) || (!caseItem.patientId && caseItem.patientName.toLowerCase() === name)),
+      )
+    })().catch((error) => {
+      console.error('Falha ao carregar histórico do paciente no Firebase.', error)
+      if (!active) return
+      setFirebasePatientScans([])
+      setFirebasePatientCases([])
+    })
+    return () => {
+      active = false
+    }
+  }, [existing, isFirebaseMode])
+
+  useEffect(() => {
     let active = true
     if (docs.length === 0) {
       setDocPreviewUrls({})
@@ -703,7 +820,7 @@ export default function PatientDetailPage() {
     }
   }, [form.address.cep])
 
-  if (!isSupabaseMode && !isNew && existing && !scopedPatients.some((item) => item.id === existing.id)) {
+  if (DATA_MODE === 'local' && !isNew && existing && !scopedPatients.some((item) => item.id === existing.id)) {
     return (
       <AppShell breadcrumb={['Início', 'Pacientes']}>
         <Card className="ui-surface-panel">
@@ -853,6 +970,28 @@ export default function PatientDetailPage() {
       return
     }
 
+    if (isFirebaseMode) {
+      if (isNew) {
+        const result = await createPatientFirebase(payload)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setError('')
+        navigate('/app/patients', { replace: true })
+        return
+      }
+      if (!existing) return
+      const result = await updatePatientFirebase(existing.id, payload)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setError('')
+      navigate('/app/patients', { replace: true })
+      return
+    }
+
     if (isNew) {
       const result = createPatient(payload)
       if (!result.ok) {
@@ -891,6 +1030,12 @@ export default function PatientDetailPage() {
         setError(deleteError.message)
         return
       }
+    } else if (isFirebaseMode) {
+      const result = await softDeletePatientFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
     } else {
       const result = softDeletePatient(existing.id)
       if (!result.ok) {
@@ -915,6 +1060,15 @@ export default function PatientDetailPage() {
         return
       }
       setSupabaseExisting((current) => (current ? { ...current, deletedAt: undefined } : current))
+      return
+    }
+    if (isFirebaseMode) {
+      const result = await restorePatientFirebase(existing.id)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setFirebaseExisting((current) => (current ? { ...current, deletedAt: undefined } : current))
       return
     }
     restorePatient(existing.id)
@@ -946,6 +1100,21 @@ export default function PatientDetailPage() {
       setError('')
       setSupabasePatientScans((current) => current.map((scan) => ({ ...scan, patientId: existing.id })))
       setSupabasePatientCases((current) => current.map((caseItem) => ({ ...caseItem, patientId: existing.id })))
+      return
+    }
+    if (isFirebaseMode) {
+      const name = existing.name.toLowerCase()
+      const scansToUpdate = firebasePatientScans.filter((scan) => !scan.patientId && scan.patientName.toLowerCase() === name)
+      const casesToUpdate = firebasePatientCases.filter((caseItem) => !caseItem.patientId && caseItem.patientName.toLowerCase() === name)
+      await Promise.all([
+        ...scansToUpdate.map((scan) => updateScanFirebase(scan.id, { patientId: existing.id })),
+        ...casesToUpdate.map((caseItem) => updateCaseFirebase(caseItem.id, { patientId: existing.id })),
+      ])
+      setFirebasePatientScans((current) => current.map((scan) => ({ ...scan, patientId: existing.id })))
+      setFirebasePatientCases((current) => current.map((caseItem) => ({ ...caseItem, patientId: existing.id })))
+      if (scansToUpdate.length || casesToUpdate.length) {
+        setError('')
+      }
       return
     }
     const name = existing.name.toLowerCase()

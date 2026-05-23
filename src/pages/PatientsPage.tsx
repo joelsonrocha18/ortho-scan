@@ -18,6 +18,11 @@ import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { resolveRequestedProductLabel } from '../lib/productLabel'
 import type { Scan } from '../types/Scan'
 import { patientCode } from '../lib/entityCode'
+import { createPatientFirebase, listPatientsFirebase } from '../repo/patientRepo'
+import { listDentistsFirebase } from '../data/dentistRepo'
+import { listClinicsFirebase } from '../repo/clinicRepo'
+import { listCasesFirebase } from '../data/caseRepo'
+import { createScanFirebase } from '../data/scanRepo'
 
 function nowIso() {
   return new Date().toISOString()
@@ -31,6 +36,7 @@ function toScanDateIso(scanDate?: string) {
 export default function PatientsPage() {
   const { db } = useDb()
   const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'patients.write')
   const [query, setQuery] = useState('')
@@ -57,6 +63,10 @@ export default function PatientsPage() {
   const [supabaseDentistsById, setSupabaseDentistsById] = useState<Map<string, string>>(new Map())
   const [supabaseClinicsById, setSupabaseClinicsById] = useState<Map<string, string>>(new Map())
   const [supabaseProductHistoryByPatient, setSupabaseProductHistoryByPatient] = useState<Map<string, string[]>>(new Map())
+  const [firebasePatients, setFirebasePatients] = useState<typeof supabasePatients>([])
+  const [firebaseDentistsById, setFirebaseDentistsById] = useState<Map<string, string>>(new Map())
+  const [firebaseClinicsById, setFirebaseClinicsById] = useState<Map<string, string>>(new Map())
+  const [firebaseProductHistoryByPatient, setFirebaseProductHistoryByPatient] = useState<Map<string, string[]>>(new Map())
 
   useEffect(() => {
     let active = true
@@ -136,18 +146,82 @@ export default function PatientsPage() {
     }
   }, [isSupabaseMode, supabaseRefreshKey, supabaseSyncTick])
 
+  useEffect(() => {
+    let active = true
+    if (!isFirebaseMode) return
+    ;(async () => {
+      const [patients, dentists, clinics, cases] = await Promise.all([
+        listPatientsFirebase({ includeDeleted: true }),
+        listDentistsFirebase({ includeDeleted: false, includeInactive: false }),
+        listClinicsFirebase({ includeDeleted: false }),
+        listCasesFirebase(),
+      ])
+      if (!active) return
+
+      setFirebasePatients(
+        patients.map((row) => ({
+          id: row.id,
+          shortId: row.shortId,
+          name: row.name,
+          cpf: row.cpf,
+          phone: row.phone,
+          whatsapp: row.whatsapp,
+          primaryDentistId: row.primaryDentistId,
+          clinicId: row.clinicId,
+          deletedAt: row.deletedAt,
+        })),
+      )
+
+      setFirebaseDentistsById(new Map(dentists.map((dentist) => [dentist.id, dentist.name ?? ''])))
+      setFirebaseClinicsById(new Map(clinics.map((clinic) => [clinic.id, clinic.tradeName ?? ''])))
+
+      const history = new Map<string, string[]>()
+      for (const item of cases) {
+        if (!item.patientId) continue
+        const productLabel = resolveRequestedProductLabel({
+          requestedProductLabel: item.requestedProductLabel,
+          requestedProductId: item.requestedProductId,
+          productType: item.productType ?? 'alinhador_12m',
+          productId: item.productId ?? item.requestedProductId ?? item.productType ?? 'alinhador_12m',
+        })
+        const current = history.get(item.patientId) ?? []
+        if (!current.includes(productLabel)) {
+          history.set(item.patientId, [...current, productLabel])
+        }
+      }
+      setFirebaseProductHistoryByPatient(history)
+    })().catch((error) => {
+      console.error('Falha ao carregar pacientes do Firebase.', error)
+      if (!active) return
+      setFirebasePatients([])
+      setFirebaseDentistsById(new Map())
+      setFirebaseClinicsById(new Map())
+      setFirebaseProductHistoryByPatient(new Map())
+    })
+    return () => {
+      active = false
+    }
+  }, [isFirebaseMode, supabaseRefreshKey])
+
   const localPatients = useMemo(() => listPatientsForUser(db, currentUser), [db, currentUser])
-  const sourcePatients = isSupabaseMode ? supabasePatients : localPatients
+  const sourcePatients = isSupabaseMode ? supabasePatients : isFirebaseMode ? firebasePatients : localPatients
   const dentistsById = useMemo(
-    () => (isSupabaseMode ? supabaseDentistsById : new Map(db.dentists.map((dentist) => [dentist.id, dentist.name]))),
-    [db.dentists, isSupabaseMode, supabaseDentistsById],
+    () =>
+      isSupabaseMode
+        ? supabaseDentistsById
+        : isFirebaseMode
+          ? firebaseDentistsById
+          : new Map(db.dentists.map((dentist) => [dentist.id, dentist.name])),
+    [db.dentists, firebaseDentistsById, isFirebaseMode, isSupabaseMode, supabaseDentistsById],
   )
   const clinicsById = useMemo(
     () =>
       isSupabaseMode
         ? supabaseClinicsById
-        : new Map(db.clinics.filter((clinic) => !clinic.deletedAt).map((clinic) => [clinic.id, clinic.tradeName])),
-    [db.clinics, isSupabaseMode, supabaseClinicsById],
+        : isFirebaseMode
+          ? firebaseClinicsById
+          : new Map(db.clinics.filter((clinic) => !clinic.deletedAt).map((clinic) => [clinic.id, clinic.tradeName])),
+    [db.clinics, firebaseClinicsById, isFirebaseMode, isSupabaseMode, supabaseClinicsById],
   )
   const dentistOptions = useMemo(
     () =>
@@ -185,7 +259,11 @@ export default function PatientsPage() {
     })
     return history
   }, [db.cases, db.labItems, db.scans])
-  const productHistoryByPatient = isSupabaseMode ? supabaseProductHistoryByPatient : localProductHistoryByPatient
+  const productHistoryByPatient = isSupabaseMode
+    ? supabaseProductHistoryByPatient
+    : isFirebaseMode
+      ? firebaseProductHistoryByPatient
+      : localProductHistoryByPatient
 
   const patients = useMemo(
     () =>
@@ -265,6 +343,55 @@ export default function PatientsPage() {
               arch: 'ambos',
               importedFromSpreadsheet: true,
             },
+          })
+        }
+        existing.add(normalized)
+        inserted += 1
+      }
+
+      setSupabaseRefreshKey((current) => current + 1)
+      setImporting(false)
+      const uniqueErrors = Array.from(new Set(errors))
+      const details = uniqueErrors.length > 0 ? ` Erro: ${uniqueErrors[0]}.` : ''
+      setImportMessage(`Importação concluída. Inseridos: ${inserted}, ignorados: ${skipped}, falhas: ${failed}.${details}`)
+      return
+    }
+
+    if (isFirebaseMode) {
+      const existing = new Set(firebasePatients.map((item) => item.name.trim().toLowerCase()))
+      let inserted = 0
+      let skipped = 0
+      let failed = 0
+      const errors: string[] = []
+
+      for (const row of parsed.rows) {
+        const normalized = row.name.trim().toLowerCase()
+        if (!normalized || existing.has(normalized)) {
+          skipped += 1
+          continue
+        }
+        const nameParts = row.name.trim().split(/\s+/).filter(Boolean)
+        const createPatientRes = await createPatientFirebase({
+          name: row.name.trim(),
+          firstName: nameParts[0],
+          lastName: nameParts.slice(1).join(' ') || undefined,
+          birthDate: row.scanDate ?? new Date().toISOString().slice(0, 10),
+          notes: row.scanDate ? `Data escaneamento importada: ${row.scanDate}` : undefined,
+        })
+        if (!createPatientRes.ok) {
+          failed += 1
+          errors.push(createPatientRes.error)
+          continue
+        }
+        if (row.scanDate) {
+          await createScanFirebase({
+            patientName: row.name.trim(),
+            patientId: createPatientRes.patient.id,
+            scanDate: row.scanDate,
+            arch: 'ambos',
+            attachments: [],
+            status: 'pendente',
+            notes: 'Importado por planilha',
           })
         }
         existing.add(normalized)
