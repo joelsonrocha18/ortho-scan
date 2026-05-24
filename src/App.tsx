@@ -21,8 +21,6 @@ const DentistDetailPage = lazy(() => import('./pages/DentistDetailPage'))
 const DentistsPage = lazy(() => import('./pages/DentistsPage'))
 const ClinicDetailPage = lazy(() => import('./pages/ClinicDetailPage'))
 const ClinicsPage = lazy(() => import('./pages/ClinicsPage'))
-const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'))
-const MigrationPage = lazy(() => import('./pages/MigrationPage'))
 const LabPage = lazy(() => import('./pages/LabPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
 const InventoryPage = lazy(() => import('./pages/InventoryPage'))
@@ -171,12 +169,6 @@ export default function App() {
             <Route path="/app/pricing" element={withSuspense(<PricingPolicyPage />)} />
             <Route path="/app/inventory" element={withSuspense(<InventoryPage />)} />
             <Route path="/app/contracts" element={withSuspense(<BillingContractsPage />)} />
-          </Route>
-          <Route element={<ProtectedRoute permission="settings.read" />}>
-            <Route path="/app/settings/diagnostics" element={withSuspense(<DiagnosticsPage />)} />
-          </Route>
-          <Route element={<ProtectedRoute permission="settings.write" />}>
-            <Route path="/app/settings/migration" element={withSuspense(<MigrationPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

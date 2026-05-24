@@ -1,9 +1,12 @@
 import {
   browserSessionPersistence,
+  GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
   type User as FirebaseAuthUser,
 } from 'firebase/auth'
@@ -14,7 +17,7 @@ import { logger } from '../lib/logger'
 import { clearCurrentPushSubscription } from '../pwa/pushSubscriptionRepo'
 import { createUnauthorizedError } from '../shared/errors'
 import { validateSignInInput } from '../shared/validators'
-import type { AuthProvider, SessionUser } from './session'
+import type { AuthProvider, SessionUser, SocialAuthProvider } from './session'
 
 type FirebaseProfileRecord = {
   role?: string
@@ -108,6 +111,15 @@ async function resolveCurrentSession(): Promise<SessionUser | null> {
   return session
 }
 
+function createFirebaseSocialProvider(provider: SocialAuthProvider) {
+  if (provider === 'google') {
+    const googleProvider = new GoogleAuthProvider()
+    googleProvider.setCustomParameters({ prompt: 'select_account' })
+    return googleProvider
+  }
+  return new OAuthProvider('apple.com')
+}
+
 export const authFirebase: AuthProvider & {
   sendPasswordReset(email: string): Promise<void>
 } = {
@@ -149,6 +161,31 @@ export const authFirebase: AuthProvider & {
         })
       }
       throw error instanceof Error ? createUnauthorizedError(error.message) : createUnauthorizedError('Falha de autenticacao Firebase.')
+    }
+  },
+
+  async signInWithProvider(provider: SocialAuthProvider) {
+    if (!auth) throw firebaseNotConfiguredError()
+
+    try {
+      await setPersistence(auth, browserSessionPersistence)
+      const credential = await signInWithPopup(auth, createFirebaseSocialProvider(provider))
+      const profile = await loadFirebaseProfile(credential.user.uid)
+      const session = profile ? buildSession(credential.user.uid, credential.user.email, profile) : null
+      if (!session) {
+        await firebaseSignOut(auth)
+        clearSession()
+        throw createUnauthorizedError('Conta social sem perfil autorizado no sistema.')
+      }
+      setSessionProfile(session)
+      logger.info('Autenticacao social Firebase concluida.', {
+        flow: 'auth.firebase.social_sign_in',
+        provider,
+        userId: session.id,
+        role: session.role,
+      })
+    } catch (error) {
+      throw error instanceof Error ? createUnauthorizedError(error.message) : createUnauthorizedError('Falha de autenticacao social Firebase.')
     }
   },
 

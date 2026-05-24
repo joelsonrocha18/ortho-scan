@@ -1,7 +1,7 @@
 import { loadDb, saveDb } from '../data/db'
 import { nowIsoDateTime } from '../shared/utils/date'
 import { createEntityId } from '../shared/utils/id'
-import type { Role, User } from '../types/User'
+import type { AccessMethod, Role, User } from '../types/User'
 
 export function listUsers(includeDeleted = false) {
   return loadDb()
@@ -15,6 +15,7 @@ export function getUser(id: string) {
 
 export function createUser(payload: {
   name: string
+  accessMethod?: AccessMethod
   username?: string
   email: string
   password: string
@@ -40,6 +41,7 @@ export function createUser(payload: {
   const user: User = {
     id: createEntityId('user'),
     name: payload.name.trim(),
+    accessMethod: payload.accessMethod ?? (payload.username?.trim() ? 'username' : 'email'),
     username: payload.username?.trim() || undefined,
     email: payload.email.trim(),
     password: payload.password,

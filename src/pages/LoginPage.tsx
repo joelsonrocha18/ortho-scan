@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { HeartPulse, Stethoscope } from 'lucide-react'
+import { Apple, Chrome, HeartPulse, Stethoscope } from 'lucide-react'
 import BrandLockup from '../components/BrandLockup'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import Input from '../components/Input'
 import { getAuthProvider } from '../auth/authProvider'
+import type { SocialAuthProvider } from '../auth/session'
+import { DATA_MODE } from '../data/dataMode'
 
 type LoginErrors = {
   email?: string
@@ -20,6 +22,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [errors, setErrors] = useState<LoginErrors>({})
   const [loading, setLoading] = useState(false)
+  const [socialLoading, setSocialLoading] = useState<SocialAuthProvider | null>(null)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -50,6 +53,21 @@ export default function LoginPage() {
       setErrors({ email: message })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSocialSignIn = async (provider: SocialAuthProvider) => {
+    setErrors({})
+    setSocialLoading(provider)
+    try {
+      await getAuthProvider().signInWithProvider(provider)
+      await getAuthProvider().getCurrentUser()
+      navigate('/app/dashboard', { replace: true })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Falha ao autenticar.'
+      setErrors({ email: message })
+    } finally {
+      setSocialLoading(null)
     }
   }
 
@@ -142,6 +160,18 @@ export default function LoginPage() {
             <Button type="submit" className="w-full">
               {loading ? 'Entrando...' : 'Entrar'}
             </Button>
+            {DATA_MODE !== 'local' ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button type="button" variant="secondary" className="border-white/15 bg-white/10 text-white hover:bg-white/15" disabled={Boolean(socialLoading)} onClick={() => void handleSocialSignIn('google')}>
+                  <Chrome className="mr-2 h-4 w-4" />
+                  {socialLoading === 'google' ? 'Conectando...' : 'Google'}
+                </Button>
+                <Button type="button" variant="secondary" className="border-white/15 bg-white/10 text-white hover:bg-white/15" disabled={Boolean(socialLoading)} onClick={() => void handleSocialSignIn('apple')}>
+                  <Apple className="mr-2 h-4 w-4" />
+                  {socialLoading === 'apple' ? 'Conectando...' : 'Apple'}
+                </Button>
+              </div>
+            ) : null}
             <div className="text-right">
               <Link to="/reset-password" className="text-xs font-semibold text-baby-100 hover:text-white">
                 Esqueci minha senha

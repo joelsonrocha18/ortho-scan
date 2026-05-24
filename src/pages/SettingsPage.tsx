@@ -1,8 +1,8 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, RefreshCw, Send, Trash2, UserRound, WandSparkles } from 'lucide-react'
+import { Apple, Chrome, ExternalLink, Eye, EyeOff, LockKeyhole, Mail, Pause, PenLine, Play, RefreshCw, Send, ShieldCheck, Trash2, UserRound, WandSparkles } from 'lucide-react'
 import { getAuthProvider } from '../auth/authProvider'
-import { can, groupedPermissionsForRole, permissionLabel, profileDescription, profileLabel, type PermissionModule } from '../auth/permissions'
+import { can, groupedPermissionsForRole, permissionLabel, profileDescription, profileLabel, type Permission, type PermissionModule } from '../auth/permissions'
 import { useToast } from '../app/ToastProvider'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
@@ -10,7 +10,6 @@ import Card from '../components/Card'
 import Input from '../components/Input'
 import WhatsappLink from '../components/WhatsappLink'
 import { DATA_MODE } from '../data/dataMode'
-import { DB_KEY } from '../data/db'
 import AppShell from '../layouts/AppShell'
 import { getCurrentUser } from '../lib/auth'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
@@ -33,27 +32,68 @@ import { createUser, resetUserPassword, setUserActive, softDeleteUser, updateUse
 import { requestPasswordReset, sendAccessEmail } from '../repo/accessRepo'
 import { listClinicsSupabase, listDentistsSupabase, type ClinicOption, type DentistOption } from '../repo/directoryRepo'
 import { inviteUser, listProfiles, setProfileActive, softDeleteProfile, updateProfile } from '../repo/profileRepo'
-import { PRODUCT_TYPE_LABEL } from '../types/Product'
-import type { Role, User } from '../types/User'
+import type { AccessMethod, Role, User } from '../types/User'
 import { useDb } from '../lib/useDb'
-import { loadExcelJS } from '../lib/loadExcelJS'
 import { sendWhatsappServiceMessage } from '../lib/whatsappService'
 
-type MainTab = 'registration' | 'users' | 'pricing' | 'whatsapp' | 'system_update' | 'system_diagnostics'
+type MainTab = 'registration' | 'users' | 'pricing' | 'whatsapp'
 type ModalTab = 'personal' | 'access' | 'profile' | 'link'
 type PasswordMode = 'auto' | 'manual'
-type ReportDatasetKey = 'patients' | 'dentists' | 'clinics' | 'users' | 'scans' | 'cases' | 'labItems'
-type ReportFieldOption = { key: string; label: string }
+type SettingsUserForm = {
+  name: string
+  accessMethod: AccessMethod
+  username: string
+  email: string
+  password: string
+  cpf: string
+  cep: string
+  birthDate: string
+  phone: string
+  whatsapp: string
+  street: string
+  number: string
+  district: string
+  city: string
+  state: string
+  addressLine: string
+  role: Role
+  isActive: boolean
+  linkedDentistId: string
+  linkedClinicId: string
+  sendAccessEmail: boolean
+}
 const ROLE_LIST: Role[] = ['master_admin', 'dentist_admin', 'dentist_client', 'clinic_client', 'lab_tech', 'receptionist']
-const MODULE_ORDER: PermissionModule[] = ['Painel', 'Agenda', 'Pacientes', 'Exames', 'Alinhadores', 'Laboratório', 'Usuários', 'Configurações']
-const REPORT_DATASETS: Array<{ key: ReportDatasetKey; label: string }> = [
-  { key: 'patients', label: 'Pacientes' },
-  { key: 'dentists', label: 'Dentistas' },
-  { key: 'clinics', label: 'Clínicas' },
-  { key: 'users', label: 'Usuários' },
-  { key: 'scans', label: 'Exames' },
-  { key: 'cases', label: 'Alinhadores' },
-  { key: 'labItems', label: 'Laboratório' },
+const PASSWORD_ACCESS_METHODS: AccessMethod[] = ['username', 'email']
+const SOCIAL_ACCESS_METHODS: AccessMethod[] = ['google', 'apple']
+const ACCESS_METHOD_OPTIONS: Array<{
+  id: AccessMethod
+  label: string
+  description: string
+  icon: typeof UserRound
+}> = [
+  { id: 'username', label: 'Usuário', description: 'Login por usuário e senha.', icon: UserRound },
+  { id: 'email', label: 'E-mail', description: 'Login por e-mail e senha.', icon: Mail },
+  { id: 'google', label: 'Conta Google', description: 'Autenticação pela conta Google.', icon: Chrome },
+  { id: 'apple', label: 'Conta Apple', description: 'Autenticação pela conta Apple.', icon: Apple },
+]
+
+function accessMethodLabel(accessMethod?: AccessMethod, username?: string) {
+  const resolved = accessMethod ?? (username ? 'username' : 'email')
+  return ACCESS_METHOD_OPTIONS.find((option) => option.id === resolved)?.label ?? 'E-mail'
+}
+const MODULE_ORDER: PermissionModule[] = [
+  'Painel',
+  'Agenda',
+  'Pacientes',
+  'Exames',
+  'Alinhadores',
+  'Laboratório',
+  'Dentistas',
+  'Clínicas',
+  'Usuários',
+  'Configurações',
+  'Documentos',
+  'IA',
 ]
 const TOOTH_OPTIONS = [
   '18', '17', '16', '15', '14', '13', '12', '11',
@@ -127,77 +167,6 @@ function splitAddressLine(addressLine?: string) {
   return { street, number, district, city, state }
 }
 
-function downloadFile(fileName: string, content: string, mime = 'text/plain') {
-  const blob = new Blob([content], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
-}
-
-function prettifyFieldLabel(key: string) {
-  return key
-    .replace(/\./g, ' / ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function flattenForReport(value: unknown, prefix = '', output: Record<string, unknown> = {}) {
-  if (value == null) {
-    if (prefix) output[prefix] = ''
-    return output
-  }
-  if (Array.isArray(value)) {
-    output[prefix] = value
-      .map((item) => {
-        if (item == null) return ''
-        if (typeof item === 'object') return JSON.stringify(item)
-        return String(item)
-      })
-      .join(' | ')
-    return output
-  }
-  if (typeof value !== 'object') {
-    output[prefix] = value
-    return output
-  }
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    const nextPrefix = prefix ? `${prefix}.${key}` : key
-    if (item != null && typeof item === 'object' && !Array.isArray(item)) {
-      flattenForReport(item, nextPrefix, output)
-      continue
-    }
-    flattenForReport(item, nextPrefix, output)
-  }
-  return output
-}
-
-function createdAtDate(input: Record<string, unknown>) {
-  const value = input.createdAt ?? input.created_at
-  if (typeof value !== 'string' || !value) return null
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed
-}
-
-function reportRowProductType(input: Record<string, unknown>) {
-  const data = (input.data && typeof input.data === 'object') ? (input.data as Record<string, unknown>) : {}
-  const value = input.productType ?? input.product_type ?? data.productType
-  return typeof value === 'string' ? value : ''
-}
-
-function reportRowProductionStatus(input: Record<string, unknown>) {
-  const data = (input.data && typeof input.data === 'object') ? (input.data as Record<string, unknown>) : {}
-  const value = input.status ?? data.status
-  return typeof value === 'string' ? value : ''
-}
-
 function normalizeEmail(value?: string | null) {
   return (value ?? '').trim().toLowerCase()
 }
@@ -217,6 +186,48 @@ function buildWhatsappQrUrl(baseUrl?: string, adminToken?: string) {
   if (!normalizedBaseUrl || !adminToken?.trim()) return ''
   const params = new URLSearchParams({ token: adminToken.trim() })
   return `${normalizedBaseUrl}/qr?${params.toString()}`
+}
+
+function PermissionStatusBadge() {
+  return (
+    <span className="inline-flex min-w-[72px] items-center justify-center rounded bg-lime-600 px-2 py-0.5 text-[10px] font-bold uppercase leading-4 text-white shadow-sm">
+      Permitido
+    </span>
+  )
+}
+
+function permissionEnvironmentLabel(permission: Permission) {
+  return `Ambiente ${permissionLabel(permission)}`
+}
+
+function PermissionMatrix({ grouped }: { grouped: Partial<Record<PermissionModule, Permission[]>> }) {
+  const modules = MODULE_ORDER.filter((module) => (grouped[module] ?? []).length > 0)
+
+  if (modules.length === 0) {
+    return <p className="px-4 py-3 text-sm text-slate-500">Nenhum módulo permitido para este perfil.</p>
+  }
+
+  return (
+    <div className="divide-y divide-slate-200">
+      {modules.map((module) => (
+        <div key={module} className="grid grid-cols-[120px_minmax(0,1fr)] sm:grid-cols-[160px_minmax(0,1fr)]">
+          <div className="flex items-start justify-end bg-slate-100 px-4 py-4 text-right text-xs font-medium text-slate-600">
+            {module}
+          </div>
+          <div className="px-4 py-3">
+            <div className="divide-y divide-dotted divide-slate-300">
+              {(grouped[module] ?? []).map((permission) => (
+                <div key={permission} className="flex min-h-7 items-center gap-2 py-1.5 text-xs text-slate-900 sm:text-sm">
+                  <PermissionStatusBadge />
+                  <span>{permissionEnvironmentLabel(permission)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function normalizeUserCreationError(error: string) {
@@ -283,14 +294,6 @@ export default function SettingsPage() {
   }, [db.users, isSupabaseMode, supabaseUsers])
 
   const [mainTab, setMainTab] = useState<MainTab>('registration')
-  const [reportModalOpen, setReportModalOpen] = useState(false)
-  const [reportDataset, setReportDataset] = useState<ReportDatasetKey>('patients')
-  const [reportStartDate, setReportStartDate] = useState('')
-  const [reportEndDate, setReportEndDate] = useState('')
-  const [reportProductType, setReportProductType] = useState('')
-  const [reportProductionStatus, setReportProductionStatus] = useState('')
-  const [selectedReportFields, setSelectedReportFields] = useState<string[]>([])
-  const [exportingReport, setExportingReport] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [modalTab, setModalTab] = useState<ModalTab>('personal')
@@ -298,7 +301,31 @@ export default function SettingsPage() {
   const [passwordMode, setPasswordMode] = useState<PasswordMode>('auto')
   const [submittingUser, setSubmittingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', username: '', email: '', password: '', cpf: '', cep: '', birthDate: '', phone: '', whatsapp: '', street: '', number: '', district: '', city: '', state: '', addressLine: '', role: 'receptionist' as Role, isActive: true, linkedDentistId: '', linkedClinicId: '', sendAccessEmail: true })
+  const defaultAccessMethod: AccessMethod = DATA_MODE === 'local' ? 'username' : 'email'
+  const buildEmptyUserForm = (): SettingsUserForm => ({
+    name: '',
+    accessMethod: defaultAccessMethod,
+    username: '',
+    email: '',
+    password: isSupabaseMode ? '' : generatePassword(),
+    cpf: '',
+    cep: '',
+    birthDate: '',
+    phone: '',
+    whatsapp: '',
+    street: '',
+    number: '',
+    district: '',
+    city: '',
+    state: '',
+    addressLine: '',
+    role: 'receptionist',
+    isActive: true,
+    linkedDentistId: '',
+    linkedClinicId: '',
+    sendAccessEmail: true,
+  })
+  const [form, setForm] = useState<SettingsUserForm>(() => buildEmptyUserForm())
   const [cepStatus, setCepStatus] = useState('')
   const [cepError, setCepError] = useState('')
   const [settingsState, setSettingsState] = useState(() => loadSystemSettings())
@@ -415,7 +442,7 @@ export default function SettingsPage() {
     setEditingUser(null)
     setModalTab('personal')
     setPasswordMode(isSupabaseMode ? 'manual' : 'auto')
-    setForm({ name: '', username: '', email: '', password: isSupabaseMode ? '' : generatePassword(), cpf: '', cep: '', birthDate: '', phone: '', whatsapp: '', street: '', number: '', district: '', city: '', state: '', addressLine: '', role: 'receptionist', isActive: true, linkedDentistId: '', linkedClinicId: '', sendAccessEmail: true })
+    setForm(buildEmptyUserForm())
     setCepStatus('')
     setCepError('')
     setError(null)
@@ -427,7 +454,7 @@ export default function SettingsPage() {
     setModalTab('personal')
     setPasswordMode('manual')
     const addressParts = splitAddressLine(user.addressLine)
-    setForm({ name: user.name, username: user.username ?? '', email: user.email, password: '', cpf: user.cpf ?? '', cep: user.cep ?? '', street: addressParts.street, number: addressParts.number, district: addressParts.district, city: addressParts.city, state: addressParts.state, birthDate: user.birthDate ?? '', phone: user.phone ?? '', whatsapp: user.whatsapp ?? '', addressLine: user.addressLine ?? '', role: user.role, isActive: user.isActive, linkedDentistId: user.linkedDentistId ?? '', linkedClinicId: user.linkedClinicId ?? '', sendAccessEmail: false })
+    setForm({ name: user.name, accessMethod: user.accessMethod ?? (user.username ? 'username' : 'email'), username: user.username ?? '', email: user.email, password: '', cpf: user.cpf ?? '', cep: user.cep ?? '', street: addressParts.street, number: addressParts.number, district: addressParts.district, city: addressParts.city, state: addressParts.state, birthDate: user.birthDate ?? '', phone: user.phone ?? '', whatsapp: user.whatsapp ?? '', addressLine: user.addressLine ?? '', role: user.role, isActive: user.isActive, linkedDentistId: user.linkedDentistId ?? '', linkedClinicId: user.linkedClinicId ?? '', sendAccessEmail: false })
     setCepStatus('')
     setCepError('')
     setError(null)
@@ -494,8 +521,9 @@ export default function SettingsPage() {
       if (isSupabaseMode && !editingUser) {
         if (!form.name.trim()) return setError('Nome é obrigatório.')
         if (!form.email.trim()) return setError('E-mail é obrigatório.')
-        if (!form.password.trim()) return setError('Senha é obrigatória.')
-        if (form.password.trim().length < 8) return setError('Senha deve ter no mínimo 8 caracteres.')
+        if (form.accessMethod === 'username' && !form.username.trim()) return setError('Usuário é obrigatório para este método de acesso.')
+        if (isPasswordAccess && !form.password.trim()) return setError('Senha é obrigatória.')
+        if (isPasswordAccess && form.password.trim().length < 8) return setError('Senha deve ter no mínimo 8 caracteres.')
         if (form.phone.trim() && !isValidFixedPhone(form.phone)) return setError('Telefone fixo inválido.')
         if (form.whatsapp.trim() && !isValidMobilePhone(form.whatsapp)) return setError('Celular/WhatsApp inválido.')
         if (!INVITE_ROLE_LIST.includes(form.role)) {
@@ -513,7 +541,7 @@ export default function SettingsPage() {
           clinicId: form.linkedClinicId || clinicOptions[0]?.id || '',
           dentistId: form.linkedDentistId || undefined,
           fullName: form.name.trim() || undefined,
-          password: form.password.trim(),
+          password: isPasswordAccess ? form.password.trim() : undefined,
           cpf: form.cpf.trim() || undefined,
           phone: form.whatsapp.trim() || undefined,
           accessToken: submitAccessToken,
@@ -553,12 +581,14 @@ export default function SettingsPage() {
       }
 
       if (!form.name.trim() || !form.email.trim()) return setError('Nome e e-mail são obrigatórios.')
-      if (!editingUser && !form.password.trim()) return setError('Senha é obrigatória para novo usuário.')
+      if (form.accessMethod === 'username' && !form.username.trim()) return setError('Usuário é obrigatório para este método de acesso.')
+      if (!editingUser && isPasswordAccess && !form.password.trim()) return setError('Senha é obrigatória para novo usuário.')
       if (form.phone.trim() && !isValidFixedPhone(form.phone)) return setError('Telefone fixo inválido.')
       if (form.whatsapp.trim() && !isValidMobilePhone(form.whatsapp)) return setError('Celular/WhatsApp inválido.')
       const basePayload = {
         name: form.name.trim(),
-        username: form.username.trim() || undefined,
+        accessMethod: form.accessMethod,
+        username: form.accessMethod === 'username' ? form.username.trim() || undefined : undefined,
         email: form.email.trim(),
         cpf: form.cpf.trim() || undefined,
         cep: form.cep.trim() || undefined,
@@ -579,7 +609,7 @@ export default function SettingsPage() {
       }
       const result = editingUser
         ? updateUser(editingUser.id, { ...basePayload, ...(form.password.trim() ? { password: form.password.trim() } : {}) })
-        : createUser({ ...basePayload, password: form.password.trim() })
+        : createUser({ ...basePayload, password: isPasswordAccess ? form.password.trim() : generatePassword() })
       if (!result.ok) return setError(result.error)
       setModalOpen(false)
       addToast({ type: 'success', title: editingUser ? 'Usuário atualizado' : 'Usuário criado' })
@@ -843,10 +873,6 @@ export default function SettingsPage() {
     setSettingsState(next)
   }
 
-  const exportBackup = () => {
-    downloadFile(`backup_orthoscan_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ db: JSON.parse(localStorage.getItem(DB_KEY) ?? '{}'), settings: settingsState }, null, 2), 'application/json')
-  }
-
   const modalPermissions = groupedPermissionsForRole(form.role)
   const showLinkTab = !isSupabaseMode || ROLE_REQUIRES_LINK.includes(form.role)
   const availableRoleList = isSupabaseMode && !editingUser ? INVITE_ROLE_LIST : ROLE_LIST
@@ -855,127 +881,10 @@ export default function SettingsPage() {
     if (!form.linkedClinicId) return dentistOptions
     return dentistOptions.filter((dentist) => (dentist.clinicId ? dentist.clinicId === form.linkedClinicId : true))
   }, [dentistOptions, form.linkedClinicId, form.role])
-
-  const reportRows = useMemo<Record<string, unknown>[]>(() => {
-    const byDataset: Record<ReportDatasetKey, Record<string, unknown>[]> = {
-      patients: db.patients as unknown as Record<string, unknown>[],
-      dentists: db.dentists as unknown as Record<string, unknown>[],
-      clinics: db.clinics as unknown as Record<string, unknown>[],
-      users: users as unknown as Record<string, unknown>[],
-      scans: db.scans as unknown as Record<string, unknown>[],
-      cases: db.cases as unknown as Record<string, unknown>[],
-      labItems: db.labItems as unknown as Record<string, unknown>[],
-    }
-    return byDataset[reportDataset] ?? []
-  }, [db.cases, db.clinics, db.dentists, db.labItems, db.patients, db.scans, reportDataset, users])
-
-  const reportFieldOptions = useMemo<ReportFieldOption[]>(() => {
-    const keys = new Set<string>()
-    reportRows.forEach((row) => {
-      const flattened = flattenForReport(row)
-      Object.keys(flattened).forEach((key) => keys.add(key))
-    })
-    return Array.from(keys)
-      .sort((a, b) => a.localeCompare(b))
-      .map((key) => ({ key, label: prettifyFieldLabel(key) }))
-  }, [reportRows])
-
-  const reportProductTypeOptions = useMemo(() => {
-    const options = new Set<string>()
-    reportRows.forEach((row) => {
-      const value = reportRowProductType(row)
-      if (value) options.add(value)
-    })
-    return Array.from(options).sort((a, b) => a.localeCompare(b))
-  }, [reportRows])
-
-  const reportStatusOptions = useMemo(() => {
-    const options = new Set<string>()
-    reportRows.forEach((row) => {
-      const value = reportRowProductionStatus(row)
-      if (value) options.add(value)
-    })
-    return Array.from(options).sort((a, b) => a.localeCompare(b))
-  }, [reportRows])
-
-  useEffect(() => {
-    setSelectedReportFields((current) => {
-      const allowed = new Set(reportFieldOptions.map((item) => item.key))
-      const valid = current.filter((key) => allowed.has(key))
-      if (valid.length > 0) return valid
-      const preferred = ['id', 'name', 'fullName', 'email', 'createdAt']
-      const defaults = preferred.filter((key) => allowed.has(key))
-      if (defaults.length > 0) return defaults
-      return reportFieldOptions.slice(0, 8).map((item) => item.key)
-    })
-  }, [reportFieldOptions])
-
-  const exportReport = async () => {
-    if (exportingReport) return
-    if (!selectedReportFields.length) {
-      addToast({ type: 'error', title: 'Selecione ao menos um campo para exportar.' })
-      return
-    }
-    if (reportStartDate && reportEndDate && reportStartDate > reportEndDate) {
-      addToast({ type: 'error', title: 'A data inicial deve ser menor ou igual a data final.' })
-      return
-    }
-    const startDate = reportStartDate ? new Date(`${reportStartDate}T00:00:00`) : null
-    const endDate = reportEndDate ? new Date(`${reportEndDate}T23:59:59`) : null
-    const filteredRows = reportRows.filter((row) => {
-      if (!startDate && !endDate) return true
-      const created = createdAtDate(row)
-      if (!created) return false
-      if (startDate && created < startDate) return false
-      if (endDate && created > endDate) return false
-      return true
-    }).filter((row) => {
-      if (!reportProductType) return true
-      return reportRowProductType(row) === reportProductType
-    }).filter((row) => {
-      if (!reportProductionStatus) return true
-      return reportRowProductionStatus(row) === reportProductionStatus
-    })
-    if (!filteredRows.length) {
-      addToast({ type: 'error', title: 'Nenhum registro encontrado para os filtros selecionados.' })
-      return
-    }
-    setExportingReport(true)
-    try {
-      const ExcelJS = await loadExcelJS()
-      const headers = selectedReportFields
-      const table = [
-        headers.map((field) => prettifyFieldLabel(field)),
-        ...filteredRows.map((row) => {
-          const flattened = flattenForReport(row)
-          return headers.map((field) => String(flattened[field] ?? ''))
-        }),
-      ]
-      const workbook = new ExcelJS.Workbook()
-      const worksheet = workbook.addWorksheet('Relatorio')
-      table.forEach((line) => {
-        worksheet.addRow(line)
-      })
-      const datasetLabel = REPORT_DATASETS.find((item) => item.key === reportDataset)?.label ?? reportDataset
-      const fileName = `relatorio_${datasetLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`
-      const content = await workbook.xlsx.writeBuffer()
-      const blob = new Blob([content], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = fileName
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      URL.revokeObjectURL(url)
-      addToast({ type: 'success', title: `Relatorio gerado com ${filteredRows.length} registro(s).` })
-    } catch (error) {
-      console.error(error)
-      addToast({ type: 'error', title: 'Falha ao preparar exportação. Tente novamente.' })
-    } finally {
-      setExportingReport(false)
-    }
-  }
+  const isPasswordAccess = PASSWORD_ACCESS_METHODS.includes(form.accessMethod)
+  const isSocialAccess = SOCIAL_ACCESS_METHODS.includes(form.accessMethod)
+  const selectedAccessOption = ACCESS_METHOD_OPTIONS.find((item) => item.id === form.accessMethod) ?? ACCESS_METHOD_OPTIONS[0]
+  const socialProviderLabel = form.accessMethod === 'apple' ? 'Apple' : 'Google'
 
   return (
     <AppShell breadcrumb={['Início', 'Configurações']}>
@@ -990,8 +899,6 @@ export default function SettingsPage() {
             { id: 'users', label: 'Usuários' },
             { id: 'pricing', label: 'Política de preço' },
             { id: 'whatsapp', label: 'WhatsApp' },
-            { id: 'system_update', label: 'Atualização do sistema' },
-            { id: 'system_diagnostics', label: 'Diagnóstico do sistema' },
           ].map((item) => (
             <button key={item.id} type="button" onClick={() => setMainTab(item.id as MainTab)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${mainTab === item.id ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{item.label}</button>
           ))}
@@ -1023,7 +930,7 @@ export default function SettingsPage() {
                   <td className="px-5 py-4">
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 rounded-lg bg-brand-100 p-2 text-brand-700"><UserRound className="h-4 w-4" /></div>
-                      <div><p className="text-sm font-semibold text-slate-900">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p><div className="mt-2"><Badge tone="info">{profileLabel(user.role)}</Badge></div></div>
+                      <div><p className="text-sm font-semibold text-slate-900">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p><p className="mt-1 text-xs text-slate-500">Acesso: {accessMethodLabel(user.accessMethod, user.username)}</p><div className="mt-2"><Badge tone="info">{profileLabel(user.role)}</Badge></div></div>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm text-slate-700">{profileLabel(user.role)}</td>
@@ -1078,21 +985,32 @@ export default function SettingsPage() {
             </table>
           </div>
         </Card>
-        <Card>
-          <h2 className="text-lg font-semibold text-slate-900">Perfis e permissões</h2>
-          <div className="mt-4 space-y-4">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="text-lg font-semibold text-slate-900">Permissões</h2>
+          </div>
+          <div className="space-y-5 p-5">
             {ROLE_LIST.map((role) => {
               const grouped = groupedPermissionsForRole(role)
-              return <div key={role} className="rounded-lg border border-slate-200 p-4">
-                <p className="font-semibold text-slate-900">{profileLabel(role)}</p>
-                <p className="mt-1 text-xs text-slate-500">{profileDescription(role)}</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {MODULE_ORDER.filter((module) => (grouped[module] ?? []).length > 0).map((module) => <div key={`${role}_${module}`} className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{module}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">{(grouped[module] ?? []).map((permission) => <Badge key={permission} tone="neutral">{permissionLabel(permission)}</Badge>)}</div>
-                  </div>)}
+              return (
+                <div key={role} className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-slate-200 sm:grid-cols-[160px_minmax(0,1fr)]">
+                    <div className="bg-slate-100 px-4 py-4 text-right text-xs font-medium text-slate-600">
+                      Módulos Permitidos
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-lime-50 text-lime-700">
+                        <ShieldCheck className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-lime-700">{profileLabel(role)}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{profileDescription(role)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <PermissionMatrix grouped={grouped} />
                 </div>
-              </div>
+              )
             })}
           </div>
         </Card>
@@ -1474,53 +1392,6 @@ export default function SettingsPage() {
         </Card>
       </section> : null}
 
-      {mainTab === 'system_update' ? <section className="mt-4 space-y-4">
-        <Card><h2 className="text-lg font-semibold text-slate-900">Backup</h2><div className="mt-3"><Button onClick={exportBackup}>Gerar backup</Button></div></Card>
-        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold text-slate-900">Relatórios</h2></div><Button onClick={() => setReportModalOpen(true)}>Abrir gerador de relatório</Button></Card>
-      </section> : null}
-
-      {mainTab === 'system_diagnostics' ? <section className="mt-4"><Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold text-slate-900">Diagnóstico do sistema</h2></div><Link to="/app/settings/diagnostics" className="inline-flex"><Button>Abrir diagnóstico</Button></Link></Card></section> : null}
-
-      {reportModalOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 px-3 sm:px-4">
-        <Card className="w-full max-w-5xl overflow-hidden p-0">
-          <div className="flex items-center justify-between bg-brand-500 px-5 py-4 text-white">
-            <h2 className="text-lg font-semibold">Gerar relatório</h2>
-            <button type="button" className="text-xl leading-none text-white/90 hover:text-white" onClick={() => setReportModalOpen(false)} aria-label="Fechar">x</button>
-          </div>
-          <div className="space-y-4 p-5">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Base de dados</label><select value={reportDataset} onChange={(event) => setReportDataset(event.target.value as ReportDatasetKey)} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">{REPORT_DATASETS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Data inicial (criação)</label><Input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Data final (criação)</label><Input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Tipo de produto</label><select value={reportProductType} onChange={(event) => setReportProductType(event.target.value)} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="">Todos</option>{reportProductTypeOptions.map((value) => <option key={value} value={value}>{PRODUCT_TYPE_LABEL[value as keyof typeof PRODUCT_TYPE_LABEL] ?? value}</option>)}</select></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Status de produção</label><select value={reportProductionStatus} onChange={(event) => setReportProductionStatus(event.target.value)} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="">Todos</option>{reportStatusOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
-            </div>
-            <div className="rounded-lg border border-slate-200 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-base font-semibold text-slate-900">Selecione os campos desejados</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => setSelectedReportFields(reportFieldOptions.map((item) => item.key))}>Selecionar todos</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setSelectedReportFields([])}>Limpar</Button>
-                </div>
-              </div>
-              <p className="mt-1 text-xs text-slate-500">{selectedReportFields.length} campo(s) selecionado(s)</p>
-              <div className="mt-4 max-h-[48vh] overflow-auto rounded-lg border border-slate-200 p-3">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {reportFieldOptions.map((field) => <label key={field.key} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-50">
-                    <input type="checkbox" checked={selectedReportFields.includes(field.key)} onChange={(event) => setSelectedReportFields((current) => event.target.checked ? [...current, field.key] : current.filter((item) => item !== field.key))} />
-                    <span>{field.label}</span>
-                  </label>)}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setReportModalOpen(false)}>Fechar</Button>
-              <Button disabled={exportingReport} onClick={() => void exportReport()}>{exportingReport ? 'Preparando exportação...' : 'Exportar planilha'}</Button>
-            </div>
-          </div>
-        </Card>
-      </div> : null}
-
       {modalOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
         <Card className="w-full max-w-3xl">
           <h2 className="text-xl font-semibold text-slate-900">
@@ -1528,8 +1399,8 @@ export default function SettingsPage() {
           </h2>
           <div className="mt-4 flex flex-wrap gap-2">
             {(isSupabaseMode
-              ? [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso (usuário e senha)' }, { id: 'profile', label: 'Perfil e permissões' }, ...(showLinkTab ? [{ id: 'link', label: 'Vínculo' }] : [])]
-              : [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso (login e senha)' }, { id: 'profile', label: 'Perfil e permissões' }, { id: 'link', label: 'Vínculo' }]
+              ? [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso' }, { id: 'profile', label: 'Perfil e permissões' }, ...(showLinkTab ? [{ id: 'link', label: 'Vínculo' }] : [])]
+              : [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso' }, { id: 'profile', label: 'Perfil e permissões' }, { id: 'link', label: 'Vínculo' }]
             ).map((tab) => <button key={tab.id} type="button" onClick={() => setModalTab(tab.id as ModalTab)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${modalTab === tab.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{tab.label}</button>)}
           </div>
           {modalTab === 'personal' ? <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1559,24 +1430,132 @@ export default function SettingsPage() {
             <div><label className="mb-1 block text-sm font-medium text-slate-700">Estado</label><Input value={form.state} onChange={(event) => setForm((c) => ({ ...c, state: event.target.value.toUpperCase().slice(0, 2) }))} /></div>
           </div> : null}
           {modalTab === 'access' ? <div className="mt-4 space-y-4">
-            <div><label className="mb-1 block text-sm font-medium text-slate-700">Usuário</label><Input aria-label="Usuário" value={form.username} placeholder="nome.sobrenome" onChange={(event) => setForm((c) => ({ ...c, username: event.target.value }))} /></div>
-            <div><label className="mb-1 block text-sm font-medium text-slate-700">E-mail (login)</label><Input aria-label="E-mail (login)" type="email" value={form.email} onChange={(event) => setForm((c) => ({ ...c, email: event.target.value }))} /></div>
-            <div><label className="mb-1 block text-sm font-medium text-slate-700">Senha</label><div className="flex items-center gap-2"><div className="relative flex-1"><Input aria-label="Senha" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => setForm((c) => ({ ...c, password: event.target.value }))} className="pr-12" /><button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><Button variant={passwordMode === 'manual' ? 'secondary' : 'ghost'} size="sm" onClick={() => setPasswordMode('manual')}>Manual</Button><Button variant={passwordMode === 'auto' ? 'secondary' : 'ghost'} size="sm" onClick={() => { setPasswordMode('auto'); setForm((c) => ({ ...c, password: generatePassword() })) }}>Auto</Button></div></div>
-            <div className="flex flex-wrap gap-2"><Button variant="secondary" size="sm" onClick={() => setForm((c) => ({ ...c, password: generatePassword() }))}><WandSparkles className="mr-2 h-4 w-4" />Gerar senha automática</Button><Button variant="ghost" size="sm" onClick={async () => {
-              if (!form.email.trim()) return addToast({ type: 'error', title: 'Informe um e-mail.' })
-              if (DATA_MODE === 'supabase') {
-                const result = await sendAccessEmail({ email: form.email.trim(), fullName: form.name.trim() || undefined })
-                if (!result.ok) return addToast({ type: 'error', title: result.error })
-                return addToast({ type: 'success', title: `Acesso enviado para ${form.email}` })
-              }
-              addToast({ type: 'info', title: `Acesso enviado para ${form.email || '-'}` })
-            }}><Mail className="mr-2 h-4 w-4" />Enviar acesso por e-mail</Button></div>
-            {isSupabaseMode ? <p className="text-xs text-slate-500">Login principal por e-mail e senha.</p> : null}
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-700">Método de acesso</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {ACCESS_METHOD_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const active = form.accessMethod === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        setForm((current) => ({
+                          ...current,
+                          accessMethod: option.id,
+                          username: option.id === 'username' ? current.username : '',
+                          password: PASSWORD_ACCESS_METHODS.includes(option.id) ? current.password : '',
+                        }))
+                        if (SOCIAL_ACCESS_METHODS.includes(option.id)) setPasswordMode('manual')
+                      }}
+                      className={`flex min-h-[76px] items-start gap-3 rounded-lg border px-3 py-3 text-left transition ${active ? 'border-brand-500 bg-baby-50 text-brand-800 shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-baby-300 hover:bg-baby-50/40'}`}
+                    >
+                      <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg ${active ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold">{option.label}</span>
+                        <span className="mt-1 block text-xs text-slate-500">{option.description}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {form.accessMethod === 'username' ? (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Usuário</label>
+                <Input aria-label="Usuário" value={form.username} placeholder="nome.sobrenome" onChange={(event) => setForm((c) => ({ ...c, username: event.target.value }))} />
+              </div>
+            ) : null}
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">{isSocialAccess ? `E-mail da conta ${socialProviderLabel}` : 'E-mail'}</label>
+              <Input aria-label="E-mail" type="email" value={form.email} placeholder={isSocialAccess ? `usuario@${form.accessMethod === 'apple' ? 'icloud.com' : 'gmail.com'}` : 'usuario@orthoscan.com'} onChange={(event) => setForm((c) => ({ ...c, email: event.target.value }))} />
+            </div>
+
+            {isPasswordAccess ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Senha</label>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Input aria-label="Senha" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(event) => setForm((c) => ({ ...c, password: event.target.value }))} className="pr-12" />
+                      <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                    <Button variant={passwordMode === 'manual' ? 'secondary' : 'ghost'} size="sm" onClick={() => setPasswordMode('manual')}>Manual</Button>
+                    <Button variant={passwordMode === 'auto' ? 'secondary' : 'ghost'} size="sm" onClick={() => { setPasswordMode('auto'); setForm((c) => ({ ...c, password: generatePassword() })) }}>Auto</Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setForm((c) => ({ ...c, password: generatePassword() }))}><WandSparkles className="mr-2 h-4 w-4" />Gerar senha automática</Button>
+                  <Button variant="ghost" size="sm" onClick={async () => {
+                    if (!form.email.trim()) return addToast({ type: 'error', title: 'Informe um e-mail.' })
+                    if (DATA_MODE === 'supabase') {
+                      const result = await sendAccessEmail({ email: form.email.trim(), fullName: form.name.trim() || undefined })
+                      if (!result.ok) return addToast({ type: 'error', title: result.error })
+                      return addToast({ type: 'success', title: `Acesso enviado para ${form.email}` })
+                    }
+                    addToast({ type: 'info', title: `Acesso enviado para ${form.email || '-'}` })
+                  }}><Mail className="mr-2 h-4 w-4" />Enviar acesso por e-mail</Button>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border border-baby-200 bg-baby-50 px-4 py-3 text-sm text-brand-800">
+                O usuário entrará com {selectedAccessOption.label}. Mantenha o e-mail igual ao da conta do provedor e habilite o provedor no Firebase ou Supabase.
+              </div>
+            )}
           </div> : null}
-          {modalTab === 'profile' ? <div className="mt-4 space-y-4"><div><label className="mb-1 block text-sm font-medium text-slate-700">Perfil</label><select value={form.role} onChange={(event) => {
-            const nextRole = event.target.value as Role
-            setForm((c) => ({ ...c, role: nextRole, linkedDentistId: nextRole === 'dentist_client' ? c.linkedDentistId : '' }))
-          }} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">{availableRoleList.map((role) => <option key={role} value={role}>{profileLabel(role)}</option>)}</select>{isSupabaseMode ? <p className="mt-1 text-xs text-slate-500">Criação por e-mail e senha.</p> : null}{isSupabaseMode && form.role === 'dentist_admin' ? <div className="mt-3"><label className="mb-1 block text-sm font-medium text-slate-700">Clínica vinculada</label><select value={form.linkedClinicId} onChange={(event) => setForm((c) => ({ ...c, linkedClinicId: event.target.value }))} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="">Selecione</option>{clinicOptions.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.tradeName}</option>)}</select></div> : null}</div><div className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{profileDescription(form.role)}</p><div className="mt-2 space-y-2">{MODULE_ORDER.filter((module) => (modalPermissions[module] ?? []).length > 0).map((module) => <div key={module}><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{module}</p><div className="mt-1 flex flex-wrap gap-2">{(modalPermissions[module] ?? []).map((permission) => <Badge key={permission} tone="neutral">{permissionLabel(permission)}</Badge>)}</div></div>)}</div></div></div> : null}
+          {modalTab === 'profile' ? (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Perfil</label>
+                <select
+                  value={form.role}
+                  onChange={(event) => {
+                    const nextRole = event.target.value as Role
+                    setForm((c) => ({ ...c, role: nextRole, linkedDentistId: nextRole === 'dentist_client' ? c.linkedDentistId : '' }))
+                  }}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                >
+                  {availableRoleList.map((role) => <option key={role} value={role}>{profileLabel(role)}</option>)}
+                </select>
+                {isSupabaseMode ? <p className="mt-1 text-xs text-slate-500">Criação por e-mail e senha.</p> : null}
+                {isSupabaseMode && form.role === 'dentist_admin' ? (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Clínica vinculada</label>
+                    <select
+                      value={form.linkedClinicId}
+                      onChange={(event) => setForm((c) => ({ ...c, linkedClinicId: event.target.value }))}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                    >
+                      <option value="">Selecione</option>
+                      {clinicOptions.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.tradeName}</option>)}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+                <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-slate-200 sm:grid-cols-[160px_minmax(0,1fr)]">
+                  <div className="bg-slate-100 px-4 py-4 text-right text-xs font-medium text-slate-600">
+                    Módulos Permitidos
+                  </div>
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-lime-50 text-lime-700">
+                      <ShieldCheck className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-lime-700">{profileLabel(form.role)}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{profileDescription(form.role)}</p>
+                    </div>
+                  </div>
+                </div>
+                <PermissionMatrix grouped={modalPermissions} />
+              </div>
+            </div>
+          ) : null}
           {modalTab === 'link' && showLinkTab ? <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Clínica vinculada</label><select value={form.linkedClinicId} onChange={(event) => setForm((c) => ({ ...c, linkedClinicId: event.target.value, linkedDentistId: '' }))} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="">Selecione</option>{clinicOptions.map((clinic) => <option key={clinic.id} value={clinic.id}>{clinic.tradeName}</option>)}</select></div>{form.role === 'dentist_client' ? <div className="sm:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Dentista responsável</label><select value={form.linkedDentistId} onChange={(event) => setForm((c) => ({ ...c, linkedDentistId: event.target.value }))} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="">Selecione</option>{dentistsForSelect.map((dentist) => <option key={dentist.id} value={dentist.id}>{dentist.name}</option>)}</select></div> : null}</div> : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
           <div className="mt-6 flex justify-end gap-2">

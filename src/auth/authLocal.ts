@@ -87,6 +87,9 @@ export const authLocal: AuthProvider = {
     saveDb(db)
     logger.info('Autenticacao local concluida.', { flow: 'auth.sign_in', userId: user.id, role: user.role })
   },
+  async signInWithProvider() {
+    throw createUnauthorizedError('Login social disponível apenas nos modos Firebase ou Supabase.')
+  },
   async signOut() {
     try {
       await clearCurrentPushSubscription()

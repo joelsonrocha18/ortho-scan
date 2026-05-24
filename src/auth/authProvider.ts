@@ -33,6 +33,18 @@ export function getAuthProvider(): AuthProvider {
         dentistId: user?.dentistId,
       })
     },
+    async signInWithProvider(providerName) {
+      const provider = await loadAuthProvider()
+      await provider.signInWithProvider(providerName)
+      const user = await provider.getCurrentUser()
+      identifyAnalyticsUser(user)
+      captureAnalyticsEvent('auth.social_sign_in_succeeded', {
+        provider: providerName,
+        role: user?.role,
+        clinicId: user?.clinicId,
+        dentistId: user?.dentistId,
+      })
+    },
     async signOut() {
       const provider = await loadAuthProvider()
       const user = await provider.getCurrentUser().catch(() => null)

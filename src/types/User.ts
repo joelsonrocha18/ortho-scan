@@ -6,10 +6,13 @@ export type Role =
   | 'lab_tech'
   | 'receptionist'
 
+export type AccessMethod = 'username' | 'email' | 'google' | 'apple'
+
 export type User = {
   id: string
   shortId?: string
   name: string
+  accessMethod?: AccessMethod
   username?: string
   email: string
   password?: string

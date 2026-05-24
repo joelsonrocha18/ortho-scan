@@ -46,6 +46,14 @@ export const authSupabase: AuthProvider = {
     }
     logger.info('Autenticacao Supabase concluida.', { flow: 'auth.sign_in', email: credentials.email })
   },
+  async signInWithProvider(provider) {
+    if (!supabase) throw new Error('Supabase nÃ£o configurado.')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/app/dashboard` },
+    })
+    if (error) throw createUnauthorizedError(error.message)
+  },
   async signOut() {
     if (!supabase) return
     try {

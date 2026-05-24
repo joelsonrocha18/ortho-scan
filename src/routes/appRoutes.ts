@@ -23,6 +23,4 @@ export const APP_ROUTE_PATHS = [
   '/app/clinics',
   '/app/clinics/:id',
   '/app/settings',
-  '/app/settings/diagnostics',
-  '/app/settings/migration',
 ]

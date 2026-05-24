@@ -1342,6 +1342,8 @@ function migrateUser(raw: LegacyUser): User {
     id: raw.id,
     shortId: raw.shortId,
     name: raw.name?.trim() || 'Usuário',
+    accessMethod: raw.accessMethod ?? (raw.username ? 'username' : 'email'),
+    username: raw.username,
     email: raw.email?.trim() || 'user@orthoscan.local',
     password: raw.password,
     role: raw.role ?? 'receptionist',
