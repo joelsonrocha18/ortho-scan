@@ -104,6 +104,9 @@ function ensureFirebaseAuthObserver() {
 
 async function resolveCurrentSession(): Promise<SessionUser | null> {
   if (!auth) return null
+  const redirectSession = await resolveFirebaseRedirectResult()
+  if (redirectSession) return redirectSession
+
   const user = auth.currentUser ?? await ensureFirebaseAuthObserver()
   if (!user) return null
   const profile = await loadFirebaseProfile(user.uid)
@@ -128,7 +131,34 @@ function createFirebaseSocialProvider(provider: SocialAuthProvider) {
 
 function isSocialPopupFallbackError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code: unknown }).code === 'string' &&
-    ['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/operation-not-supported-in-this-environment', 'auth/interaction-not-supported'].includes((error as { code: string }).code)
+    ['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/operation-not-supported-in-this-environment', 'auth/interaction-not-supported', 'auth/internal-error'].includes((error as { code: string }).code)
+}
+
+async function resolveFirebaseRedirectResult(): Promise<SessionUser | null> {
+  if (!auth) return null
+
+  try {
+    const result = await getRedirectResult(auth)
+    const user = result?.user
+    if (!user) return null
+
+    const profile = await loadFirebaseProfile(user.uid)
+    const session = profile ? buildSession(user.uid, user.email, profile) : null
+    if (!session) {
+      await firebaseSignOut(auth)
+      clearSession()
+      return null
+    }
+
+    setSessionProfile(session)
+    return session
+  } catch (error) {
+    logger.warn('Falha ao processar redirect Firebase Auth.', {
+      flow: 'auth.firebase.redirect_result',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
 }
 
 async function signInWithFirebaseProvider(provider: SocialAuthProvider) {
