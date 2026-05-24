@@ -13,6 +13,7 @@ const PUSH_NOTIFICATIONS_ENABLED = ((import.meta.env.VITE_WEB_PUSH_ENABLED as st
 const CaseDetailPage = lazy(() => import('./pages/CaseDetailPage'))
 const CasesPage = lazy(() => import('./pages/CasesPage'))
 const AgendaPage = lazy(() => import('./pages/AgendaPage'))
+const BillingContractsPage = lazy(() => import('./pages/BillingContractsPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const DentistAccessPage = lazy(() => import('./pages/DentistAccessPage'))
 const DentistPortalPage = lazy(() => import('./pages/DentistPortalPage'))
@@ -24,6 +25,7 @@ const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'))
 const MigrationPage = lazy(() => import('./pages/MigrationPage'))
 const LabPage = lazy(() => import('./pages/LabPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
+const InventoryPage = lazy(() => import('./pages/InventoryPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const LegalLgpdPage = lazy(() => import('./pages/LegalLgpdPage'))
 const LegalPrivacyPage = lazy(() => import('./pages/LegalPrivacyPage'))
@@ -34,6 +36,7 @@ const PatientPortalPage = lazy(() => import('./pages/PatientPortalPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'))
 const PatientsPage = lazy(() => import('./pages/PatientsPage'))
+const PricingPolicyPage = lazy(() => import('./pages/PricingPolicyPage'))
 const PublicAccessPage = lazy(() => import('./pages/PublicAccessPage'))
 const ScansPage = lazy(() => import('./pages/ScansPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -163,6 +166,11 @@ export default function App() {
           </Route>
           <Route element={<ProtectedRoute permission="settings.read" />}>
             <Route path="/app/settings" element={withSuspense(<SettingsPage />)} />
+          </Route>
+          <Route element={<ProtectedRoute permission="settings.read" />}>
+            <Route path="/app/pricing" element={withSuspense(<PricingPolicyPage />)} />
+            <Route path="/app/inventory" element={withSuspense(<InventoryPage />)} />
+            <Route path="/app/contracts" element={withSuspense(<BillingContractsPage />)} />
           </Route>
           <Route element={<ProtectedRoute permission="settings.read" />}>
             <Route path="/app/settings/diagnostics" element={withSuspense(<DiagnosticsPage />)} />
