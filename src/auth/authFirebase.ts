@@ -7,6 +7,7 @@ import {
   setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   type User as FirebaseAuthUser,
 } from 'firebase/auth'
@@ -115,9 +116,39 @@ function createFirebaseSocialProvider(provider: SocialAuthProvider) {
   if (provider === 'google') {
     const googleProvider = new GoogleAuthProvider()
     googleProvider.setCustomParameters({ prompt: 'select_account' })
+    googleProvider.addScope('profile')
+    googleProvider.addScope('email')
     return googleProvider
   }
-  return new OAuthProvider('apple.com')
+  const appleProvider = new OAuthProvider('apple.com')
+  appleProvider.addScope('email')
+  appleProvider.addScope('name')
+  return appleProvider
+}
+
+function isSocialPopupFallbackError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code: unknown }).code === 'string' &&
+    ['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/operation-not-supported-in-this-environment', 'auth/interaction-not-supported'].includes((error as { code: string }).code)
+}
+
+async function signInWithFirebaseProvider(provider: SocialAuthProvider) {
+  if (!auth) throw firebaseNotConfiguredError()
+  const firebaseProvider = createFirebaseSocialProvider(provider)
+
+  try {
+    return await signInWithPopup(auth, firebaseProvider)
+  } catch (error) {
+    if (isSocialPopupFallbackError(error)) {
+      logger.warn('Popup social login bloqueado; usando redirect.', {
+        flow: 'auth.firebase.social_sign_in.fallback',
+        provider,
+        errorCode: (error as { code: string }).code,
+      })
+      await signInWithRedirect(auth, firebaseProvider)
+      return null
+    }
+    throw error
+  }
 }
 
 export const authFirebase: AuthProvider & {
@@ -169,7 +200,8 @@ export const authFirebase: AuthProvider & {
 
     try {
       await setPersistence(auth, browserSessionPersistence)
-      const credential = await signInWithPopup(auth, createFirebaseSocialProvider(provider))
+      const credential = await signInWithFirebaseProvider(provider)
+      if (!credential) return
       const profile = await loadFirebaseProfile(credential.user.uid)
       const session = profile ? buildSession(credential.user.uid, credential.user.email, profile) : null
       if (!session) {

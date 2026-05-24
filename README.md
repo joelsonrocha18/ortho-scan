@@ -84,10 +84,15 @@ npm run build
 ### 2) Variáveis de ambiente na Vercel
 
 - `VITE_DATA_MODE=local` para demo simples (dados no navegador)
-- `VITE_DATA_MODE=supabase` para produção multiusuário
-- Se usar Supabase, também configurar:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+- `VITE_DATA_MODE=firebase` para produção multiusuário
+- Se usar Firebase, também configurar:
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_MEASUREMENT_ID`
 
 ### 3) Publicação
 

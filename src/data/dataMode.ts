@@ -4,7 +4,7 @@ function resolveDataMode(): DataMode {
   const raw = (import.meta.env.VITE_DATA_MODE as string | undefined)?.trim().toLowerCase()
   if (raw === 'local') return 'local'
   if (raw === 'firebase') return 'firebase'
-  return 'supabase'
+  return 'firebase'
 }
 
 export const DATA_MODE: DataMode = resolveDataMode()

@@ -6,7 +6,7 @@ Data do mapeamento: 2026-05-15
 
 O OrthoScan e um sistema web para gestao clinica e laboratorial em ortodontia digital. A aplicacao cobre cadastro de pacientes, dentistas e clinicas, recebimento de escaneamentos, criacao e acompanhamento de casos de alinhadores, pipeline de laboratorio, portal de acesso publico para pacientes/dentistas, documentos, notificacoes, diagnosticos e configuracoes administrativas.
 
-O sistema esta implementado principalmente como SPA React + TypeScript + Vite, com suporte a PWA, execucao local/offline com persistencia no navegador, modo multiusuario com Supabase, rotas protegidas por RBAC, testes unitarios e E2E, deploy via Vercel/Docker/Nginx e empacotamento desktop via Electron.
+O sistema esta implementado principalmente como SPA React + TypeScript + Vite, com suporte a PWA, execucao local/offline com persistencia no navegador, modo multiusuario com Firebase, rotas protegidas por RBAC, testes unitarios e E2E, deploy via Vercel/Docker/Nginx e empacotamento desktop via Electron.
 
 ## 2. Metricas do reposititorio
 
@@ -27,7 +27,7 @@ Observacao: `node_modules` e `dist` foram ignorados no mapeamento estrutural.
 | Frontend | React 19, TypeScript, Vite 7, React Router 7 |
 | UI | Tailwind CSS, lucide-react, componentes proprios |
 | Estado/persistencia local | SQL.js/localStorage e repositorios locais |
-| Backend remoto | Supabase Auth, Postgres, RLS, Storage, Edge Functions |
+| Backend remoto | Firebase Auth, Firestore, RLS-like rules, Storage, Edge Functions legacy |
 | PWA | vite-plugin-pwa com service worker customizado |
 | Testes | Vitest, Testing Library, Playwright |
 | Desktop | Electron + electron-builder |
@@ -94,10 +94,10 @@ Modulos principais:
 ### 6.1 Autenticacao e acesso
 
 - O modo de dados e definido por `VITE_DATA_MODE`.
-- Valor padrao: `supabase`.
-- Em modo `supabase`, autentica via Supabase Auth.
+- Valor padrao: `firebase`.
+- Em modo `firebase`, autentica via Firebase Auth.
 - Em modo `local`, usa provedor local.
-- A camada `authProvider` escolhe dinamicamente entre `authSupabase` e `authLocal`.
+- A camada `authProvider` escolhe dinamicamente entre `authFirebase` e `authLocal`.
 - A autorizacao usa permissoes declarativas em `src/auth/permissions.ts`.
 
 Perfis mapeados:
@@ -161,15 +161,15 @@ Entidades locais principais:
 - `users`
 - `auditLogs`
 
-### 7.2 Modo Supabase
+### 7.2 Modo Firebase
 
-O modo Supabase usa:
+O modo Firebase usa:
 
-- Supabase Auth para sessao.
-- Postgres para dados relacionais.
-- RLS para isolamento por perfil/escopo.
+- Firebase Auth para sessao.
+- Firestore para dados relacionais e documentos.
+- Regras de segurança para isolamento por perfil/escopo.
 - Storage para arquivos.
-- Edge Functions para operacoes privilegiadas e integracoes.
+- Edge Functions legado para operacoes privilegiadas e integracoes.
 
 Tabelas e areas identificadas nas migrations:
 
@@ -273,9 +273,11 @@ Os testes cobrem banco/migracao local, RBAC, PWA, fluxos de negocio, modulos `la
 
 Frontend:
 
-- `VITE_DATA_MODE=local|supabase`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+- `VITE_DATA_MODE=local|firebase`
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
 - `VITE_STORAGE_PROVIDER=supabase|microsoft_drive`
 - `VITE_WEB_PUSH_ENABLED=true|false`
 - `VITE_FORCE_HTTPS=1`

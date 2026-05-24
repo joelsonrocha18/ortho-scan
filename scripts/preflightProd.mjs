@@ -6,8 +6,10 @@ const root = process.cwd()
 
 const requiredVars = [
   'VITE_DATA_MODE',
-  'VITE_SUPABASE_URL',
-  'VITE_SUPABASE_ANON_KEY',
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
   'VITE_APP_URL',
 ]
 
@@ -40,7 +42,7 @@ function validate() {
   const merged = { ...envLocal, ...envProduction, ...process.env }
 
   const missing = requiredVars.filter((key) => !String(merged[key] ?? '').trim())
-  const weakDataMode = String(merged.VITE_DATA_MODE ?? '').trim().toLowerCase() !== 'supabase'
+  const weakDataMode = String(merged.VITE_DATA_MODE ?? '').trim().toLowerCase() !== 'firebase'
   const missingRecommended = recommendedVars.filter((key) => !String(merged[key] ?? '').trim())
 
   console.log('Preflight de producao')
@@ -54,10 +56,10 @@ function validate() {
   }
 
   if (weakDataMode) {
-    console.error('- ERRO: VITE_DATA_MODE deve ser "supabase" em producao.')
+    console.error('- ERRO: VITE_DATA_MODE deve ser "firebase" em producao.')
     process.exitCode = 1
   } else {
-    console.log('- OK: VITE_DATA_MODE=supabase.')
+    console.log('- OK: VITE_DATA_MODE=firebase.')
   }
 
   if (missingRecommended.length > 0) {

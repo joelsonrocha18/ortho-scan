@@ -2,16 +2,17 @@
 
 ## Variáveis de ambiente obrigatórias
 
-- `VITE_DATA_MODE=supabase`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `VITE_STORAGE_PROVIDER` (`supabase` ou `microsoft_drive`)
+- `VITE_DATA_MODE=firebase`
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
 - `VITE_RELEASE` (ex.: `2026-02-16.1`)
 - `VITE_MONITORING_ENABLED=true` para enviar erros do frontend ao proxy seguro
-- `VITE_MONITORING_ENDPOINT` (opcional; se vazio, usa `<VITE_SUPABASE_URL>/functions/v1/frontend-monitoring`)
+- `VITE_MONITORING_ENDPOINT` (opcional; se vazio, usa o endpoint configurado no sistema de monitoramento)
 - `VITE_PUBLIC_POSTHOG_TOKEN` e `VITE_PUBLIC_POSTHOG_HOST` para analytics de produto
 
-Para Supabase Edge Functions:
+Para funcionalidades legadas que ainda dependem de Supabase Edge Functions:
 
 - `SUPABASE_URL`
 - `SERVICE_ROLE_KEY` (ou `SUPABASE_SERVICE_ROLE_KEY`)

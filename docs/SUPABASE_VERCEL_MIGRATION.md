@@ -1,5 +1,7 @@
 # Migração Supabase + Vercel
 
+> Nota: este documento descreve o fluxo legado de implantação com Supabase. A versão atual do projeto usa Firebase como modo remoto principal, então este material deve ser usado apenas como referência histórica ou para migração de funcionalidades legadas.
+
 Runbook para conectar o OrthoScan ao Supabase e publicar na Vercel.
 
 ## Pré-requisitos
