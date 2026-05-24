@@ -11,19 +11,19 @@ import { buildPatientPortalWhatsappHref, buildPatientPortalWhatsappMessage, reso
 import { resolveRequestedProductLabel } from '../../../../lib/productLabel'
 import { loadSystemSettings } from '../../../../lib/systemSettings'
 import { useDb } from '../../../../lib/useDb'
-import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
 import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../../../../lib/whatsappService'
 import { listPatientDocs, resolvePatientDocUrl } from '../../../../repo/patientDocsRepo'
 import { downloadBlob } from '../../../../repo/storageRepo'
 import { formatPtBrDateTime, nowIsoDate } from '../../../../shared/utils/date'
 import type { Case, CaseTray, TrayState } from '../../../../types/Case'
+import type { LabItem } from '../../../../types/Lab'
 import { isAlignerProductType, normalizeProductType } from '../../../../types/Product'
 import { RegisterReworkUseCase } from '../../../lab'
 import { createLabRepository } from '../../../lab/infra'
 import { CaseLifecycleService, toReadableCaseCode as formatReadableCaseCode } from '../../domain'
 import { useCaseDetailActions } from './useCaseDetailActions'
 import { useCaseModuleActions } from './useCaseModuleActions'
-import { useCaseSupabaseDetail } from './useCaseSupabaseDetail'
+import { listLabOrdersFirebase } from '../../../lab/infra/firebase/FirestoreLabRepository'
 import { useCaseTimeline } from './useCaseTimeline'
 import {
   caseProgress,
@@ -55,7 +55,6 @@ export function useCaseDetailController() {
   const navigate = useNavigate()
   const { db } = useDb()
   const { addToast } = useToast()
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const { updateCaseStatus, addCaseNote, publishPlanningVersion, approvePlanningVersion, listCaseTimeline } = useCaseModuleActions(currentUser)
@@ -88,44 +87,48 @@ export function useCaseDetailController() {
   const [optimisticTrays, setOptimisticTrays] = useState<CaseTray[] | null>(null)
   const [optimisticActualChangeDates, setOptimisticActualChangeDates] = useState<NonNullable<Case['installation']>['actualChangeDates'] | null>(null)
   const initializedCaseIdRef = useRef<string | null>(null)
-  const supabaseSyncTick = useSupabaseSyncTick()
-  const supabaseDetail = useCaseSupabaseDetail(params.id, isSupabaseMode, supabaseSyncTick)
-  const refreshSupabase = supabaseDetail.refreshSupabase
   const [firebaseCase, setFirebaseCase] = useState<Case | null>(null)
+  const [firebaseLabItems, setFirebaseLabItems] = useState<LabItem[]>([])
+  const [firebaseRefreshKey, setFirebaseRefreshKey] = useState(0)
+  const refreshFirebase = () => setFirebaseRefreshKey((current) => current + 1)
 
   useEffect(() => {
     let active = true
     if (!isFirebaseMode || !params.id) {
       setFirebaseCase(null)
+      setFirebaseLabItems([])
       return
     }
-    void getCaseFirebase(params.id, { hydrateRelations: true }).then((caseItem) => {
+    void (async () => {
+      const [caseItem, labOrders] = await Promise.all([
+        getCaseFirebase(params.id!, { hydrateRelations: true }),
+        listLabOrdersFirebase(),
+      ])
       if (!active) return
       setFirebaseCase(caseItem)
-    })
+      setFirebaseLabItems(labOrders.filter((item) => item.caseId === params.id))
+    })()
     return () => {
       active = false
     }
-  }, [isFirebaseMode, params.id, supabaseSyncTick])
+  }, [isFirebaseMode, params.id, firebaseRefreshKey])
 
   const currentCase = useMemo(
     () => (
-      isSupabaseMode
-        ? supabaseDetail.supabaseCase
-        : isFirebaseMode
-          ? firebaseCase
-          : params.id
-            ? db.cases.find((item) => item.id === params.id) ?? null
-            : null
+      isFirebaseMode
+        ? firebaseCase
+        : params.id
+          ? db.cases.find((item) => item.id === params.id) ?? null
+          : null
     ),
-    [db.cases, firebaseCase, isFirebaseMode, isSupabaseMode, params.id, supabaseDetail.supabaseCase],
+    [db.cases, firebaseCase, isFirebaseMode, params.id],
   )
   const resolvedCase = currentCase
   const displayedTrays = useMemo(
     () => optimisticTrays ?? resolvedCase?.trays ?? [],
     [optimisticTrays, resolvedCase?.trays],
   )
-  const timelineRefreshSignature = `${params.id ?? ''}::${supabaseSyncTick}::${db.auditLogs?.length ?? 0}::${resolvedCase?.updatedAt ?? ''}::${resolvedCase?.timelineEntries?.length ?? 0}`
+  const timelineRefreshSignature = `${params.id ?? ''}::${firebaseRefreshKey}::${db.auditLogs?.length ?? 0}::${resolvedCase?.updatedAt ?? ''}::${resolvedCase?.timelineEntries?.length ?? 0}`
   const { timelineEntries } = useCaseTimeline(resolvedCase?.id, listCaseTimeline, timelineRefreshSignature)
   const localSourceScan = useMemo(
     () => (DATA_MODE === 'local' && resolvedCase?.sourceScanId ? db.scans.find((item) => item.id === resolvedCase.sourceScanId) : undefined),
@@ -202,7 +205,10 @@ export function useCaseDetailController() {
   const nextTrayRequired = useMemo(() => (hasUpperArch && hasLowerArch ? Math.max(0, Math.min(deliveredUpper, deliveredLower)) + 1 : hasUpperArch ? Math.max(0, Math.trunc(deliveredUpper)) + 1 : hasLowerArch ? Math.max(0, Math.trunc(deliveredLower)) + 1 : 0), [deliveredLower, deliveredUpper, hasLowerArch, hasUpperArch])
   const maxPlannedTrays = Math.max(totalUpper, totalLower)
   const nextReplacementDueDate = useMemo(() => (nextTrayRequired <= 0 || nextTrayRequired > maxPlannedTrays ? undefined : changeSchedule.find((row) => row.trayNumber === nextTrayRequired)?.changeDate), [changeSchedule, maxPlannedTrays, nextTrayRequired])
-  const linkedLabItems = useMemo(() => (resolvedCase ? (isSupabaseMode ? supabaseDetail.supabaseLabItems : db.labItems.filter((item) => item.caseId === resolvedCase.id)) : []), [db.labItems, isSupabaseMode, resolvedCase, supabaseDetail.supabaseLabItems])
+  const linkedLabItems = useMemo(
+    () => (resolvedCase ? (isFirebaseMode ? firebaseLabItems : db.labItems.filter((item) => item.caseId === resolvedCase.id)) : []),
+    [db.labItems, firebaseLabItems, isFirebaseMode, resolvedCase],
+  )
   const dentistDeliveryDateByArchTray = useMemo(() => {
     const upper = new Map<number, string>()
     const lower = new Map<number, string>()
@@ -243,7 +249,7 @@ export function useCaseDetailController() {
   const replenishmentAlerts = useMemo(() => (resolvedCase ? getReplenishmentAlerts(resolvedCase.id, nextReplacementDueDate, todayIso) : []), [nextReplacementDueDate, resolvedCase, todayIso])
   const patientDisplayName = useMemo(() => (!resolvedCase ? '' : !resolvedCase.patientId ? resolvedCase.patientName : db.patients.find((item) => item.id === resolvedCase.patientId)?.name ?? resolvedCase.patientName), [db.patients, resolvedCase])
   const patientRecord = useMemo(() => (resolvedCase?.patientId ? db.patients.find((item) => item.id === resolvedCase.patientId) : undefined), [db.patients, resolvedCase])
-  const patientWhatsapp = useMemo(() => (isSupabaseMode ? supabaseDetail.supabaseCaseRefs.patientWhatsapp ?? patientRecord?.whatsapp ?? patientRecord?.phone : patientRecord?.whatsapp ?? patientRecord?.phone), [isSupabaseMode, patientRecord?.phone, patientRecord?.whatsapp, supabaseDetail.supabaseCaseRefs.patientWhatsapp])
+  const patientWhatsapp = useMemo(() => patientRecord?.whatsapp ?? patientRecord?.phone, [patientRecord?.phone, patientRecord?.whatsapp])
   const patientPortalAccessCode = useMemo(() => resolvePatientPortalAccessCode(resolvedCase), [resolvedCase])
   const patientPortalWhatsappHref = useMemo(
     () =>
@@ -264,14 +270,26 @@ export function useCaseDetailController() {
   )
   const dentistsById = useMemo(() => new Map(db.dentists.map((item) => [item.id, item])), [db.dentists])
   const clinicsById = useMemo(() => new Map(db.clinics.map((item) => [item.id, item])), [db.clinics])
-  const clinicName = isSupabaseMode ? (supabaseDetail.supabaseCaseRefs.clinicName ?? (resolvedCase?.clinicId ? clinicsById.get(resolvedCase.clinicId)?.tradeName : undefined)) : (resolvedCase?.clinicId ? clinicsById.get(resolvedCase.clinicId)?.tradeName : undefined)
+  const clinicName = resolvedCase?.clinicId ? clinicsById.get(resolvedCase.clinicId)?.tradeName : undefined
   const dentist = resolvedCase?.dentistId ? dentistsById.get(resolvedCase.dentistId) : undefined
   const requester = resolvedCase?.requestedByDentistId ? dentistsById.get(resolvedCase.requestedByDentistId) : undefined
-  const dentistNameResolved = isSupabaseMode ? (supabaseDetail.supabaseCaseRefs.dentistName ?? dentist?.name) : dentist?.name
-  const requesterNameResolved = isSupabaseMode ? (supabaseDetail.supabaseCaseRefs.requesterName ?? requester?.name) : requester?.name
-  const dentistLabel = dentistNameResolved ? `${(isSupabaseMode ? supabaseDetail.supabaseCaseRefs.dentistGender : dentist?.gender) === 'feminino' ? 'Dra.' : 'Dr.'} ${dentistNameResolved}` : '-'
-  const requesterLabel = requesterNameResolved ? `${(isSupabaseMode ? supabaseDetail.supabaseCaseRefs.requesterGender : requester?.gender) === 'feminino' ? 'Dra.' : 'Dr.'} ${requesterNameResolved}` : dentistLabel
-  const displayProductLabel = useMemo(() => (!resolvedCase ? '-' : resolveRequestedProductLabel({ requestedProductLabel: isSupabaseMode ? supabaseDetail.supabaseCaseRefs.requestedProductLabel : resolvedCase.requestedProductLabel ?? localSourceScan?.purposeLabel, requestedProductId: isSupabaseMode ? supabaseDetail.supabaseCaseRefs.requestedProductId : resolvedCase.requestedProductId ?? localSourceScan?.purposeProductId, productType: resolvedCase.productType ?? localSourceScan?.purposeProductType, productId: resolvedCase.productId ?? localSourceScan?.purposeProductId, alignerFallbackLabel: isAlignerCase ? 'Alinhadores' : undefined })), [isAlignerCase, isSupabaseMode, localSourceScan, resolvedCase, supabaseDetail.supabaseCaseRefs.requestedProductId, supabaseDetail.supabaseCaseRefs.requestedProductLabel])
+  const dentistNameResolved = dentist?.name
+  const requesterNameResolved = requester?.name
+  const dentistLabel = dentistNameResolved ? `${dentist?.gender === 'feminino' ? 'Dra.' : 'Dr.'} ${dentistNameResolved}` : '-'
+  const requesterLabel = requesterNameResolved ? `${requester?.gender === 'feminino' ? 'Dra.' : 'Dr.'} ${requesterNameResolved}` : dentistLabel
+  const displayProductLabel = useMemo(
+    () =>
+      !resolvedCase
+        ? '-'
+        : resolveRequestedProductLabel({
+            requestedProductLabel: resolvedCase.requestedProductLabel ?? localSourceScan?.purposeLabel,
+            requestedProductId: resolvedCase.requestedProductId ?? localSourceScan?.purposeProductId,
+            productType: resolvedCase.productType ?? localSourceScan?.purposeProductType,
+            productId: resolvedCase.productId ?? localSourceScan?.purposeProductId,
+            alignerFallbackLabel: isAlignerCase ? 'Alinhadores' : undefined,
+          }),
+    [isAlignerCase, localSourceScan, resolvedCase],
+  )
   const displayCaseCode = resolvedCase ? formatReadableCaseCode(resolvedCase.treatmentCode ?? resolvedCase.id) : '-'
   const displayTreatmentOrigin = useMemo(() => (!resolvedCase ? 'externo' as const : ((clinicName ?? '').trim().toUpperCase() === 'ARRIMO' || (resolvedCase.clinicId ?? '').trim().toLowerCase() === 'clinic_arrimo' || (resolvedCase.clinicId ?? '').trim().toLowerCase() === 'cli-0001' ? 'interno' as const : resolvedCase.treatmentOrigin === 'interno' ? 'interno' as const : 'externo' as const)), [clinicName, resolvedCase])
   const headerProgressCards = useMemo(() => ([...(hasUpperArch ? [{ label: 'Progresso - Superior', delivered: patientProgressUpper.delivered, total: patientProgressUpper.total, percent: patientProgressUpper.percent, caption: 'Baseado na data real de troca do paciente.' }] : []), ...(hasLowerArch ? [{ label: 'Progresso - Inferior', delivered: patientProgressLower.delivered, total: patientProgressLower.total, percent: patientProgressLower.percent, caption: 'Baseado na data real de troca do paciente.' }] : [])]), [hasLowerArch, hasUpperArch, patientProgressLower, patientProgressUpper])
@@ -354,7 +372,7 @@ export function useCaseDetailController() {
     return () => {
       cancelled = true
     }
-  }, [currentCaseAccessCodes, db.patientDocuments.length, resolvedCase?.id, resolvedCase?.patientId, supabaseSyncTick])
+  }, [currentCaseAccessCodes, db.patientDocuments.length, resolvedCase?.id, resolvedCase?.patientId, firebaseRefreshKey])
 
   useEffect(() => {
     if (DATA_MODE === 'firebase') return
@@ -380,9 +398,9 @@ export function useCaseDetailController() {
         nextPhase: 'em_producao',
         reason: 'Status recalculado pelo ciclo de tratamento.',
       }))
-      if (result.ok && isSupabaseMode) refreshSupabase()
+      if (result.ok && isFirebaseMode) refreshFirebase()
     })()
-  }, [isSupabaseMode, nextReplacementDueDate, patientProgressLower.delivered, patientProgressUpper.delivered, refreshSupabase, resolvedCase, todayIso, totalLower, totalUpper, updateCaseStatus])
+  }, [false, nextReplacementDueDate, patientProgressLower.delivered, patientProgressUpper.delivered, refreshFirebase, resolvedCase, todayIso, totalLower, totalUpper, updateCaseStatus])
 
   useEffect(() => {
     if (!resolvedCase) {
@@ -431,7 +449,7 @@ export function useCaseDetailController() {
     }
     setPlanningVersionNote('')
     addToast({ type: 'success', title: 'Nova versão publicada' })
-    if (isSupabaseMode) refreshSupabase()
+    if (isFirebaseMode) refreshFirebase()
   }
 
   const handleApprovePlanningVersion = async (versionId: string) => {
@@ -445,13 +463,14 @@ export function useCaseDetailController() {
       return
     }
     addToast({ type: 'success', title: 'Versao aprovada' })
-    if (isSupabaseMode) refreshSupabase()
+    if (isFirebaseMode) refreshFirebase()
   }
 
   const actions = useCaseDetailActions({
     currentCase: resolvedCase,
     currentUser,
-    isSupabaseMode,
+    isFirebaseMode,
+    refreshFirebase,
     canWrite,
     canWriteLocalOnly,
     canManageTray,
@@ -490,7 +509,7 @@ export function useCaseDetailController() {
     dentistLabel,
     requesterLabel,
     displayProductLabel,
-    patientBirthDate: isSupabaseMode ? supabaseDetail.supabaseCaseRefs.patientBirthDate : (resolvedCase?.patientId ? db.patients.find((item) => item.id === resolvedCase.patientId)?.birthDate : undefined),
+    patientBirthDate: resolvedCase?.patientId ? db.patients.find((item) => item.id === resolvedCase.patientId)?.birthDate : undefined,
     patientDisplayName,
     patientWhatsapp,
     currentContractApprovedAt: resolvedCase?.contract?.approvedAt,
@@ -499,7 +518,6 @@ export function useCaseDetailController() {
     addCaseNote,
     addToast,
     navigate: (to, options) => navigate(to, options),
-    refreshSupabase,
     setOptimisticTrays,
     setOptimisticActualChangeDates,
     setSelectedTray,

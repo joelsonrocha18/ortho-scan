@@ -25,7 +25,7 @@ export default function ResetPasswordPage() {
       setError('Informe seu e-mail.')
       return
     }
-    if (DATA_MODE !== 'supabase') {
+    if (DATA_MODE !== 'firebase') {
       setMessage('No modo local, solicite ao administrador a redefinição.')
       return
     }
@@ -54,8 +54,8 @@ export default function ResetPasswordPage() {
       setError('As senhas não conferem.')
       return
     }
-    if (DATA_MODE !== 'supabase') {
-      setError('Redefinição por token disponível apenas em modo Supabase.')
+    if (DATA_MODE !== 'firebase') {
+      setError('Redefinição por token no Firebase usa o link enviado por e-mail (Firebase Auth).')
       return
     }
     setLoading(true)

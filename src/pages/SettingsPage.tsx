@@ -15,7 +15,6 @@ import { getCurrentUser } from '../lib/auth'
 import { fetchCep, isValidCep, normalizeCep } from '../lib/cep'
 import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import { formatFixedPhone, formatMobilePhone, isValidFixedPhone, isValidMobilePhone } from '../lib/phone'
-import { supabase } from '../lib/supabaseClient'
 import {
   addAuditEntry,
   applyTheme,
@@ -30,7 +29,11 @@ import {
 import { loadSystemSettingsSupabase, saveSystemSettingsSupabase } from '../repo/systemSettingsRepo'
 import { createUser, resetUserPassword, setUserActive, softDeleteUser, updateUser } from '../repo/userRepo'
 import { requestPasswordReset, sendAccessEmail } from '../repo/accessRepo'
-import { listClinicsSupabase, listDentistsSupabase, type ClinicOption, type DentistOption } from '../repo/directoryRepo'
+import { listClinicsFirebase } from '../repo/clinicRepo'
+import { listDentistsFirebase } from '../data/dentistRepo'
+
+type ClinicOption = { id: string; tradeName: string }
+type DentistOption = { id: string; name: string; clinicId: string | null }
 import { inviteUser, listProfiles, setProfileActive, softDeleteProfile, updateProfile } from '../repo/profileRepo'
 import type { AccessMethod, Role, User } from '../types/User'
 import { useDb } from '../lib/useDb'
@@ -117,7 +120,7 @@ function formatCurrencyBrl(value?: number) {
   return (value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-// In Supabase mode, collaborator onboarding via link is for operational profiles only (no admin).
+// In Firebase mode, collaborator onboarding is for operational profiles only (no admin).
 const INVITE_ROLE_LIST: Role[] = ['dentist_admin', 'dentist_client', 'clinic_client', 'lab_tech', 'receptionist']
 const ROLE_REQUIRES_LINK: Role[] = ['dentist_client', 'clinic_client', 'lab_tech', 'receptionist']
 const ROLE_REQUIRES_CLINIC: Role[] = ['dentist_admin', 'dentist_client', 'clinic_client', 'lab_tech', 'receptionist']
@@ -258,8 +261,8 @@ function mapProfilesToUsers(profiles: Awaited<ReturnType<typeof listProfiles>>):
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-async function reloadSupabaseUsers(isSupabaseMode: boolean, onLoaded: (users: User[]) => void) {
-  if (!isSupabaseMode) return
+async function reloadFirebaseUsers(isFirebaseMode: boolean, onLoaded: (users: User[]) => void) {
+  if (!isFirebaseMode) return
   const profiles = await listProfiles()
   const invalidProfiles = profiles.filter((profile) => profile.deleted_at == null && !isValidEmail(profile.login_email))
   if (invalidProfiles.length > 0) {
@@ -272,26 +275,26 @@ export default function SettingsPage() {
   const { db } = useDb()
   const { addToast } = useToast()
   const currentUser = getCurrentUser(db)
-  const isSupabaseMode = DATA_MODE === 'supabase'
+  const isFirebaseMode = DATA_MODE === 'firebase'
 
   const dentistsLocal = useMemo(() => db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt), [db.dentists])
   const clinicsLocal = useMemo(() => db.clinics.filter((item) => !item.deletedAt), [db.clinics])
-  const [clinicsSupabase, setClinicsSupabase] = useState<ClinicOption[]>([])
-  const [dentistsSupabase, setDentistsSupabase] = useState<DentistOption[]>([])
+  const [clinicsFirebase, setClinicsFirebase] = useState<ClinicOption[]>([])
+  const [dentistsFirebase, setDentistsFirebase] = useState<DentistOption[]>([])
   const clinicOptions = useMemo<ClinicOption[]>(() => {
-    if (isSupabaseMode) return clinicsSupabase
+    if (isFirebaseMode) return clinicsFirebase
     return clinicsLocal.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName }))
-  }, [clinicsLocal, clinicsSupabase, isSupabaseMode])
+  }, [clinicsLocal, clinicsFirebase, isFirebaseMode])
   const dentistOptions = useMemo<DentistOption[]>(() => {
-    if (isSupabaseMode) return dentistsSupabase
+    if (isFirebaseMode) return dentistsFirebase
     return dentistsLocal.map((dentist) => ({ id: dentist.id, name: dentist.name, clinicId: dentist.clinicId ?? null }))
-  }, [dentistsLocal, dentistsSupabase, isSupabaseMode])
+  }, [dentistsLocal, dentistsFirebase, isFirebaseMode])
 
-  const [supabaseUsers, setSupabaseUsers] = useState<User[]>([])
+  const [firebaseUsers, setFirebaseUsers] = useState<User[]>([])
   const users = useMemo(() => {
-    if (isSupabaseMode) return supabaseUsers
+    if (isFirebaseMode) return firebaseUsers
     return [...db.users].sort((a, b) => a.name.localeCompare(b.name))
-  }, [db.users, isSupabaseMode, supabaseUsers])
+  }, [db.users, isFirebaseMode, firebaseUsers])
 
   const [mainTab, setMainTab] = useState<MainTab>('registration')
   const [modalOpen, setModalOpen] = useState(false)
@@ -307,7 +310,7 @@ export default function SettingsPage() {
     accessMethod: defaultAccessMethod,
     username: '',
     email: '',
-    password: isSupabaseMode ? '' : generatePassword(),
+    password: isFirebaseMode ? '' : generatePassword(),
     cpf: '',
     cep: '',
     birthDate: '',
@@ -369,29 +372,38 @@ export default function SettingsPage() {
 
   const persistSettings = async (next: SystemSettings) => {
     saveSystemSettings(next)
-    if (!isSupabaseMode) return
+    if (!isFirebaseMode) return
     await saveSystemSettingsSupabase(next)
   }
 
   useEffect(() => {
     let active = true
-    if (!isSupabaseMode) {
-      setClinicsSupabase([])
-      setDentistsSupabase([])
+    if (!isFirebaseMode) {
+      setClinicsFirebase([])
+      setDentistsFirebase([])
       return
     }
-    Promise.all([listClinicsSupabase(), listDentistsSupabase()]).then(([clinics, dentists]) => {
+    Promise.all([
+      listClinicsFirebase({ includeDeleted: false }),
+      listDentistsFirebase({ includeDeleted: false, includeInactive: false }),
+    ]).then(([clinics, dentists]) => {
       if (!active) return
-      setClinicsSupabase(clinics)
-      setDentistsSupabase(dentists)
+      setClinicsFirebase(clinics.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName })))
+      setDentistsFirebase(
+        dentists.map((dentist) => ({
+          id: dentist.id,
+          name: dentist.name,
+          clinicId: dentist.clinicId ?? null,
+        })),
+      )
     })
     return () => {
       active = false
     }
-  }, [isSupabaseMode])
+  }, [isFirebaseMode])
 
   useEffect(() => {
-    if (!isSupabaseMode) return
+    if (!isFirebaseMode) return
     let active = true
     void (async () => {
       const remote = await loadSystemSettingsSupabase()
@@ -421,27 +433,27 @@ export default function SettingsPage() {
     return () => {
       active = false
     }
-  }, [isSupabaseMode])
+  }, [isFirebaseMode])
 
   useEffect(() => {
     let active = true
-    if (!isSupabaseMode) {
-      setSupabaseUsers([])
+    if (!isFirebaseMode) {
+      setFirebaseUsers([])
       return
     }
-    reloadSupabaseUsers(isSupabaseMode, (loadedUsers) => {
+    reloadFirebaseUsers(isFirebaseMode, (loadedUsers) => {
       if (!active) return
-      setSupabaseUsers(loadedUsers)
+      setFirebaseUsers(loadedUsers)
     })
     return () => {
       active = false
     }
-  }, [isSupabaseMode])
+  }, [isFirebaseMode])
 
   const openNew = () => {
     setEditingUser(null)
     setModalTab('personal')
-    setPasswordMode(isSupabaseMode ? 'manual' : 'auto')
+    setPasswordMode(isFirebaseMode ? 'manual' : 'auto')
     setForm(buildEmptyUserForm())
     setCepStatus('')
     setCepError('')
@@ -497,28 +509,7 @@ export default function SettingsPage() {
     setError(null)
 
     try {
-      let submitAccessToken = ''
-      if (isSupabaseMode) {
-        if (!supabase) return setError('Supabase não configurado.')
-        const { data, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError) {
-          setError('Sessão expirada. Saia e entre novamente.')
-          return
-        }
-        submitAccessToken = data.session?.access_token ?? ''
-        console.info('[configuracoes-usuarios] resumo da sessão no envio', {
-          hasSession: Boolean(data.session),
-          tokenLength: submitAccessToken.length,
-          expiresAt: data.session?.expires_at ?? null,
-          userId: data.session?.user?.id ?? null,
-        })
-        if (!submitAccessToken) {
-          setError('Sessão expirada. Saia e entre novamente.')
-          return
-        }
-      }
-
-      if (isSupabaseMode && !editingUser) {
+      if (isFirebaseMode && !editingUser) {
         if (!form.name.trim()) return setError('Nome é obrigatório.')
         if (!form.email.trim()) return setError('E-mail é obrigatório.')
         if (form.accessMethod === 'username' && !form.username.trim()) return setError('Usuário é obrigatório para este método de acesso.')
@@ -544,7 +535,6 @@ export default function SettingsPage() {
           password: isPasswordAccess ? form.password.trim() : undefined,
           cpf: form.cpf.trim() || undefined,
           phone: form.whatsapp.trim() || undefined,
-          accessToken: submitAccessToken,
         })
         if (!result.ok) {
           if (result.code === 'unauthorized') return setError('Sessão expirada. Saia e entre novamente.')
@@ -552,13 +542,13 @@ export default function SettingsPage() {
           if (result.code === 'network_error') return setError(result.error)
           return setError(normalizeUserCreationError(result.error))
         }
-        await reloadSupabaseUsers(isSupabaseMode, setSupabaseUsers)
+        await reloadFirebaseUsers(isFirebaseMode, setFirebaseUsers)
         setModalOpen(false)
         addToast({ type: 'success', title: 'Usuário criado', message: 'Acesso liberado com e-mail e senha cadastrados.' })
         return
       }
 
-      if (isSupabaseMode && editingUser) {
+      if (isFirebaseMode && editingUser) {
         if (form.phone.trim() && !isValidFixedPhone(form.phone)) return setError('Telefone fixo inválido.')
         if (form.whatsapp.trim() && !isValidMobilePhone(form.whatsapp)) return setError('Celular/WhatsApp inválido.')
         const result = await updateProfile(editingUser.id, {
@@ -571,7 +561,7 @@ export default function SettingsPage() {
           is_active: form.isActive,
         })
         if (!result.ok) return setError(result.error)
-        await reloadSupabaseUsers(isSupabaseMode, setSupabaseUsers)
+        await reloadFirebaseUsers(isFirebaseMode, setFirebaseUsers)
         setModalOpen(false)
         if (currentUser?.id === editingUser.id) {
           await getAuthProvider().getCurrentUser()
@@ -874,8 +864,8 @@ export default function SettingsPage() {
   }
 
   const modalPermissions = groupedPermissionsForRole(form.role)
-  const showLinkTab = !isSupabaseMode || ROLE_REQUIRES_LINK.includes(form.role)
-  const availableRoleList = isSupabaseMode && !editingUser ? INVITE_ROLE_LIST : ROLE_LIST
+  const showLinkTab = !isFirebaseMode || ROLE_REQUIRES_LINK.includes(form.role)
+  const availableRoleList = isFirebaseMode && !editingUser ? INVITE_ROLE_LIST : ROLE_LIST
   const dentistsForSelect = useMemo(() => {
     if (form.role !== 'dentist_client') return dentistOptions
     if (!form.linkedClinicId) return dentistOptions
@@ -939,19 +929,19 @@ export default function SettingsPage() {
                   <td className="px-5 py-4"><div className="flex flex-wrap gap-2">
                     {canManageUsers ? <Button size="sm" variant="secondary" onClick={() => openEdit(user)} title="Editar"><PenLine className="h-4 w-4" /></Button> : null}
                     {canManageUsers ? <Button size="sm" variant="ghost" onClick={async () => {
-                      if (DATA_MODE === 'supabase') {
+                      if (isFirebaseMode) {
                         if (user.role === 'master_admin' && user.isActive && currentUser?.id !== user.id) {
                           return addToast({ type: 'error', title: 'Não é permitido desativar outro administrador master.' })
                         }
                         const result = await setProfileActive(user.id, !user.isActive)
                         if (!result.ok) return addToast({ type: 'error', title: result.error })
-                        await reloadSupabaseUsers(isSupabaseMode, setSupabaseUsers)
+                        await reloadFirebaseUsers(isFirebaseMode, setFirebaseUsers)
                         return
                       }
                       setUserActive(user.id, !user.isActive)
                     }} title={user.isActive ? 'Desativar' : 'Ativar'}>{user.isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</Button> : null}
                     {canManageUsers ? <Button size="sm" variant="ghost" onClick={async () => {
-                      if (DATA_MODE === 'supabase') {
+                      if (isFirebaseMode) {
                         const result = await requestPasswordReset({ email: user.email })
                         if (!result.ok) return addToast({ type: 'error', title: result.error })
                         if (result.warning) return addToast({ type: 'error', title: result.warning })
@@ -962,7 +952,7 @@ export default function SettingsPage() {
                       addToast({ type: 'info', title: `Senha temporária: ${p}` })
                     }} title="Redefinir senha"><LockKeyhole className="h-4 w-4" /></Button> : null}
                     {canManageUsers ? <Button size="sm" variant="ghost" onClick={async () => {
-                      if (DATA_MODE === 'supabase') {
+                      if (isFirebaseMode) {
                         const result = await sendAccessEmail({ email: user.email, fullName: user.name })
                         if (!result.ok) return addToast({ type: 'error', title: result.error })
                         return addToast({ type: 'success', title: `Acesso enviado para ${user.email}` })
@@ -970,11 +960,11 @@ export default function SettingsPage() {
                       addToast({ type: 'info', title: `Acesso enviado para ${user.email}` })
                     }} title="Enviar acesso por e-mail"><Mail className="h-4 w-4" /></Button> : null}
                     {canDeleteUsers ? <Button size="sm" variant="ghost" className="text-red-600" onClick={async () => {
-                      if (DATA_MODE === 'supabase') {
+                      if (isFirebaseMode) {
                         if (user.role === 'master_admin') return addToast({ type: 'error', title: 'Não é permitido excluir o administrador master.' })
                         const result = await softDeleteProfile(user.id)
                         if (!result.ok) return addToast({ type: 'error', title: result.error })
-                        await reloadSupabaseUsers(isSupabaseMode, setSupabaseUsers)
+                        await reloadFirebaseUsers(isFirebaseMode, setFirebaseUsers)
                         return
                       }
                       softDeleteUser(user.id)
@@ -1398,7 +1388,7 @@ export default function SettingsPage() {
             {editingUser ? 'Editar usuário' : 'Novo usuário'}
           </h2>
           <div className="mt-4 flex flex-wrap gap-2">
-            {(isSupabaseMode
+            {(isFirebaseMode
               ? [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso' }, { id: 'profile', label: 'Perfil e permissões' }, ...(showLinkTab ? [{ id: 'link', label: 'Vínculo' }] : [])]
               : [{ id: 'personal', label: 'Dados pessoais' }, { id: 'access', label: 'Acesso' }, { id: 'profile', label: 'Perfil e permissões' }, { id: 'link', label: 'Vínculo' }]
             ).map((tab) => <button key={tab.id} type="button" onClick={() => setModalTab(tab.id as ModalTab)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${modalTab === tab.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{tab.label}</button>)}
@@ -1493,7 +1483,7 @@ export default function SettingsPage() {
                   <Button variant="secondary" size="sm" onClick={() => setForm((c) => ({ ...c, password: generatePassword() }))}><WandSparkles className="mr-2 h-4 w-4" />Gerar senha automática</Button>
                   <Button variant="ghost" size="sm" onClick={async () => {
                     if (!form.email.trim()) return addToast({ type: 'error', title: 'Informe um e-mail.' })
-                    if (DATA_MODE === 'supabase') {
+                    if (isFirebaseMode) {
                       const result = await sendAccessEmail({ email: form.email.trim(), fullName: form.name.trim() || undefined })
                       if (!result.ok) return addToast({ type: 'error', title: result.error })
                       return addToast({ type: 'success', title: `Acesso enviado para ${form.email}` })
@@ -1504,7 +1494,7 @@ export default function SettingsPage() {
               </>
             ) : (
               <div className="rounded-lg border border-baby-200 bg-baby-50 px-4 py-3 text-sm text-brand-800">
-                O usuário entrará com {selectedAccessOption.label}. Mantenha o e-mail igual ao da conta do provedor e habilite o provedor no Firebase ou Supabase.
+                O usuário entrará com {selectedAccessOption.label}. Mantenha o e-mail igual ao da conta do provedor e habilite o provedor no Firebase.
               </div>
             )}
           </div> : null}
@@ -1522,8 +1512,8 @@ export default function SettingsPage() {
                 >
                   {availableRoleList.map((role) => <option key={role} value={role}>{profileLabel(role)}</option>)}
                 </select>
-                {isSupabaseMode ? <p className="mt-1 text-xs text-slate-500">Criação por e-mail e senha.</p> : null}
-                {isSupabaseMode && form.role === 'dentist_admin' ? (
+                {isFirebaseMode ? <p className="mt-1 text-xs text-slate-500">Criação por e-mail e senha.</p> : null}
+                {isFirebaseMode && form.role === 'dentist_admin' ? (
                   <div className="mt-3">
                     <label className="mb-1 block text-sm font-medium text-slate-700">Clínica vinculada</label>
                     <select

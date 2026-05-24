@@ -37,8 +37,8 @@ export default function OnboardingInvitePage() {
 
   useEffect(() => {
     let active = true
-    if (DATA_MODE !== 'supabase' && DATA_MODE !== 'firebase') {
-      setInviteState({ status: 'invalid', message: 'Fluxo de convite disponível apenas em modo Supabase ou Firebase.' })
+    if (DATA_MODE !== 'firebase') {
+      setInviteState({ status: 'invalid', message: 'Fluxo de convite disponível apenas em modo Firebase.' })
       return
     }
     if (!token) {

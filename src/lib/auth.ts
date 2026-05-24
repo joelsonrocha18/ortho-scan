@@ -5,7 +5,6 @@ import type { SessionUser } from '../auth/session'
 import {
   clearLegacyPersistentAuthStorage,
   SESSION_PROFILE_KEY,
-  SESSION_SUPABASE_ACCESS_TOKEN_KEY,
   SESSION_USER_KEY,
   readSessionStorageValue,
 } from './authStorage'
@@ -25,21 +24,11 @@ export function setSessionUserId(userId: string) {
 export function clearSession() {
   sessionStorage.removeItem(SESSION_USER_KEY)
   sessionStorage.removeItem(SESSION_PROFILE_KEY)
-  sessionStorage.removeItem(SESSION_SUPABASE_ACCESS_TOKEN_KEY)
   clearLegacyPersistentAuthStorage()
 }
 
 export function setSessionProfile(profile: SessionUser) {
   sessionStorage.setItem(SESSION_PROFILE_KEY, JSON.stringify(profile))
-}
-
-export function setSupabaseAccessToken(token: string) {
-  if (!token) return
-  sessionStorage.setItem(SESSION_SUPABASE_ACCESS_TOKEN_KEY, token)
-}
-
-export function getSupabaseAccessToken() {
-  return readSession(SESSION_SUPABASE_ACCESS_TOKEN_KEY)
 }
 
 export function getSessionProfile(): SessionUser | null {
@@ -53,7 +42,7 @@ export function getSessionProfile(): SessionUser | null {
 }
 
 export function getCurrentUser(dbOverride?: { users: User[] }) {
-  if (DATA_MODE === 'supabase' || DATA_MODE === 'firebase') {
+  if (DATA_MODE === 'firebase') {
     const profile = getSessionProfile()
     if (!profile) return null
     return {

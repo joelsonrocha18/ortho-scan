@@ -3,13 +3,13 @@ import { MessageCircle, Send } from 'lucide-react'
 import { useDb } from '../lib/useDb'
 import { getCurrentUser } from '../lib/auth'
 import { DATA_MODE } from '../data/dataMode'
-import { supabase } from '../lib/supabaseClient'
 import {
   ensureInternalDirectRoom,
   listInternalChatContacts,
   listInternalChatMessages,
   markInternalChatRoomRead,
   sendInternalChatMessage,
+  subscribeInternalChatMessages,
   type InternalChatContact,
   type InternalChatMessage,
 } from '../repo/internalChatRepo'
@@ -41,7 +41,7 @@ export default function InternalChatWidget() {
   const [unreadCount, setUnreadCount] = useState(0)
   const listRef = useRef<HTMLDivElement | null>(null)
 
-  const isSupabaseMode = DATA_MODE === 'supabase' && Boolean(supabase)
+  const isFirebaseChatEnabled = DATA_MODE === 'firebase'
   const displayName = (currentUser?.name ?? currentUser?.email ?? '').trim() || 'Usuário'
   const myUserId = currentUser?.id ?? ''
   const selectedContact = useMemo(
@@ -55,8 +55,7 @@ export default function InternalChatWidget() {
   }, [messages, open])
 
   useEffect(() => {
-    const sb = supabase
-    if (!open || !isSupabaseMode || !currentUser || !sb) return
+    if (!open || !isFirebaseChatEnabled || !currentUser) return
     let active = true
     setError(null)
     void listInternalChatContacts({ userId: currentUser.id, clinicId: currentUser.linkedClinicId }).then((result) => {
@@ -73,7 +72,7 @@ export default function InternalChatWidget() {
     return () => {
       active = false
     }
-  }, [currentUser, isSupabaseMode, open, selectedContactId])
+  }, [currentUser, isFirebaseChatEnabled, open, selectedContactId])
 
   useEffect(() => {
     if (!open || !selectedContactId || !currentUser) return
@@ -108,31 +107,21 @@ export default function InternalChatWidget() {
   }, [currentUser, open, selectedContactId])
 
   useEffect(() => {
-    const sb = supabase
-    if (!isSupabaseMode || !currentUser || !sb) return
-    const channel = sb
-      .channel('internal-chat-private-stream')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'internal_chat_messages' },
-        (payload) => {
-          const row = payload.new as InternalChatMessage
-          if (!row.room_key || row.room_key !== activeRoomKey) return
-          const isMine = row.sender_user_id === currentUser.id
-          setMessages((current) => [...current, row].slice(-200))
-          if (!isMine && (!open || document.visibilityState !== 'visible')) {
-            setUnreadCount((current) => current + 1)
-          } else if (open) {
-            void markInternalChatRoomRead({ userId: currentUser.id, roomKey: row.room_key, readAt: row.created_at })
-            setUnreadCount(0)
-          }
-        },
-      )
-      .subscribe()
-    return () => {
-      void sb.removeChannel(channel)
-    }
-  }, [activeRoomKey, currentUser, isSupabaseMode, open])
+    if (!isFirebaseChatEnabled || !currentUser || !activeRoomKey) return
+    const unsubscribe = subscribeInternalChatMessages(
+      activeRoomKey,
+      (rows) => {
+        setMessages(rows)
+        const last = rows[rows.length - 1]
+        if (last && open) {
+          void markInternalChatRoomRead({ userId: currentUser.id, roomKey: activeRoomKey, readAt: last.created_at })
+          setUnreadCount(0)
+        }
+      },
+      (message) => setError(message),
+    )
+    return () => unsubscribe()
+  }, [activeRoomKey, currentUser, isFirebaseChatEnabled, open])
 
   const handleSend = async () => {
     const body = message.trim()
@@ -153,7 +142,7 @@ export default function InternalChatWidget() {
     setMessage('')
   }
 
-  if (!isSupabaseMode || !currentUser) return null
+  if (!isFirebaseChatEnabled || !currentUser) return null
 
   return (
     <>

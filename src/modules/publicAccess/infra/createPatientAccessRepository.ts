@@ -1,9 +1,9 @@
 import { DATA_MODE } from '../../../data/dataMode'
+import { createFirestorePatientAccessRepository } from './firebase/FirestorePatientAccessRepository'
 import { createLocalPatientAccessRepository } from './local/LocalPatientAccessRepository'
-import { createSupabasePatientAccessRepository } from './supabase/SupabasePatientAccessRepository'
 
 export function createPatientAccessRepository() {
-  return DATA_MODE === 'supabase'
-    ? createSupabasePatientAccessRepository()
+  return DATA_MODE === 'firebase'
+    ? createFirestorePatientAccessRepository()
     : createLocalPatientAccessRepository()
 }

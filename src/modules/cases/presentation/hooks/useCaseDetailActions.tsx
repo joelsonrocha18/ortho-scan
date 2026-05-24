@@ -27,7 +27,7 @@ import { parseBrlCurrencyInput } from '../lib/caseDetailPresentation'
 type UseCaseDetailActionsArgs = {
   currentCase: Case | null
   currentUser: { name?: string; email?: string } | null
-  isSupabaseMode: boolean
+  isFirebaseMode: boolean
   canWrite: boolean
   canWriteLocalOnly: boolean
   canManageTray: boolean
@@ -81,7 +81,7 @@ type UseCaseDetailActionsArgs = {
   }
   addToast: (payload: { type: 'success' | 'error' | 'info'; title: string; message?: string }) => void
   navigate: (to: string, options?: { replace?: boolean }) => void
-  refreshSupabase: () => void
+  refreshFirebase: () => void
   setOptimisticTrays: (value: CaseTray[] | null) => void
   setOptimisticActualChangeDates: (value: NonNullable<Case['installation']>['actualChangeDates'] | null) => void
   setSelectedTray: (value: CaseTray | null) => void
@@ -130,7 +130,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         args.addToast({ type: 'error', title: 'Concluir tratamento', message: result.error })
         return
       }
-      if (args.isSupabaseMode) args.refreshSupabase()
+      if (args.isFirebaseMode) args.refreshFirebase()
       args.addToast({ type: 'success', title: 'Tratamento concluido manualmente' })
     })()
   }
@@ -152,13 +152,13 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
           args.addToast({ type: 'error', title: 'Reconfecção', message: reworkResult.error })
           return
         }
-        if (args.isSupabaseMode) args.refreshSupabase()
+        if (args.isFirebaseMode) args.refreshFirebase()
         args.addToast({ type: 'success', title: 'OS de reconfecção geradas', message: 'Reconfecção e confecção adicionadas na esteira.' })
         args.setSelectedTray(null)
         return
       }
 
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         const nextTrays = args.currentCase!.trays.map((item) =>
           item.trayNumber === args.selectedTray!.trayNumber
             ? { ...item, state: args.trayState, notes: args.trayNote.trim() || undefined }
@@ -177,7 +177,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
             note: args.trayNote.trim(),
           }))
         }
-        args.refreshSupabase()
+        args.refreshFirebase()
         args.addToast({ type: 'success', title: 'Placa atualizada' })
         args.setSelectedTray(null)
         return
@@ -250,7 +250,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         args.addToast({ type: 'error', title: 'Planejamento', message: result.error })
         return
       }
-      if (args.isSupabaseMode) args.refreshSupabase()
+      if (args.isFirebaseMode) args.refreshFirebase()
       args.addToast({ type: 'success', title: 'Planejamento concluido' })
     })()
   }
@@ -267,7 +267,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         budget: { value: parsed, notes: args.budgetNotes.trim() || undefined, createdAt: nowIsoDateTime() },
         contract: { ...(args.currentCase!.contract ?? { status: 'pendente' }), status: 'pendente' as const, notes: args.contractNotes.trim() || undefined },
       }
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         const result = await patchCaseDataSupabase(args.currentCase!.id, budgetPatch)
         if (!result.ok) {
           args.addToast({ type: 'error', title: 'Orçamento', message: result.error })
@@ -288,7 +288,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
       }
       if (args.budgetNotes.trim()) await Promise.resolve(args.addCaseNote.execute({ caseId: args.currentCase!.id, scope: 'budget', note: args.budgetNotes.trim() }))
       if (args.contractNotes.trim()) await Promise.resolve(args.addCaseNote.execute({ caseId: args.currentCase!.id, scope: 'contract', note: args.contractNotes.trim() }))
-      if (args.isSupabaseMode) args.refreshSupabase()
+      if (args.isFirebaseMode) args.refreshFirebase()
       args.addToast({ type: 'success', title: 'Orçamento fechado' })
     })()
   }
@@ -298,7 +298,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
     const approvedAt = nowIsoDateTime()
     void (async () => {
       const contractPatch = { contract: { status: 'aprovado' as const, approvedAt, notes: args.contractNotes.trim() || undefined } }
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         const result = await patchCaseDataSupabase(args.currentCase!.id, contractPatch)
         if (!result.ok) {
           args.addToast({ type: 'error', title: 'Contrato', message: result.error })
@@ -318,8 +318,8 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         return
       }
       if (args.contractNotes.trim()) await Promise.resolve(args.addCaseNote.execute({ caseId: args.currentCase!.id, scope: 'contract', note: args.contractNotes.trim() }))
-      if (!args.isSupabaseMode) ensureReplacementBankForCase(args.currentCase!.id)
-      else args.refreshSupabase()
+      if (!args.isFirebaseMode) ensureReplacementBankForCase(args.currentCase!.id)
+      else args.refreshFirebase()
       args.addToast({ type: 'success', title: 'Contrato aprovado', message: `Aprovado em ${formatPtBrDateTime(approvedAt)}` })
     })()
   }
@@ -328,7 +328,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
     if (!args.canDeleteCase || !args.currentCase) return
     const confirmed = window.confirm('Confirma excluir este pedido? Esta ação remove itens LAB vinculados e registra no histórico do paciente.')
     if (!confirmed) return
-    if (args.isSupabaseMode) {
+    if (args.isFirebaseMode) {
       void (async () => {
         const result = await deleteCaseSupabase(args.currentCase!.id)
         if (!result.ok) {
@@ -351,14 +351,14 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
 
   const createLabOrder = () => {
     if (!args.canWrite || !args.currentCase) return
-    if (args.isSupabaseMode) {
+    if (args.isFirebaseMode) {
       void (async () => {
         const result = await generateCaseLabOrderSupabase(args.currentCase!.id)
         if (!result.ok) {
           args.addToast({ type: 'error', title: 'Gerar OS', message: result.error })
           return
         }
-        args.refreshSupabase()
+        args.refreshFirebase()
         args.addToast({ type: 'success', title: 'OS do laboratório', message: result.alreadyExists ? 'A OS já existia para este pedido.' : 'OS gerada com sucesso.' })
         printLabOrder(true)
       })()
@@ -462,7 +462,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         args.addToast({ type: 'error', title: 'Instalação', message: 'Na primeira instalação, informe ao menos 1 alinhador entregue ao paciente.' })
         return
       }
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         if (!args.hasProductionOrder) {
           args.addToast({ type: 'error', title: 'Instalação', message: 'A ordem de serviço do LAB ainda não foi gerada para este pedido.' })
           return
@@ -529,7 +529,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
             args.addToast({ type: 'error', title: 'Instalação', message: result.error })
             return
           }
-          args.refreshSupabase()
+          args.refreshFirebase()
           args.addToast({ type: 'success', title: 'Instalação registrada' })
         })()
         return
@@ -583,7 +583,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
       })
       args.setOptimisticTrays(nextTrays)
       args.setOptimisticActualChangeDates(nextActualDates)
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, {
             installation: { ...args.currentCase!.installation, actualChangeDates: nextActualDates },
@@ -595,7 +595,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
             args.addToast({ type: 'error', title: 'Troca real', message: result.error })
             return
           }
-          args.refreshSupabase()
+          args.refreshFirebase()
           args.addToast({ type: 'success', title: 'Troca real atualizada' })
         })()
         return
@@ -626,7 +626,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         overrideDueDates: new Map([[trayNumber, normalizedDueDate]]),
       })
       args.setOptimisticTrays(nextTrays)
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, { trays: nextTrays })
           if (!result.ok) {
@@ -634,7 +634,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
             args.addToast({ type: 'error', title: 'Troca prevista', message: result.error })
             return
           }
-          args.refreshSupabase()
+          args.refreshFirebase()
           args.addToast({ type: 'success', title: 'Troca prevista atualizada' })
         })()
         return
@@ -652,7 +652,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         (entry) => !(entry.trayNumber === trayNumber && (!entry.arch || entry.arch === arch || entry.arch === 'ambos')),
       )
       nextCompletion.push({ trayNumber, completed, arch })
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, {
             installation: { ...args.currentCase!.installation, manualChangeCompletion: nextCompletion },
@@ -661,7 +661,7 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
             args.addToast({ type: 'error', title: 'Troca concluída', message: result.error })
             return
           }
-          args.refreshSupabase()
+          args.refreshFirebase()
         })()
         return
       }
@@ -681,14 +681,14 @@ export function useCaseDetailActions(args: UseCaseDetailActionsArgs) {
         args.addToast({ type: 'info', title: 'Troca', message: 'Sem alterações para salvar.' })
         return
       }
-      if (args.isSupabaseMode) {
+      if (args.isFirebaseMode) {
         void (async () => {
           const result = await patchCaseDataSupabase(args.currentCase!.id, { changeEveryDays: parsed })
           if (!result.ok) {
             args.addToast({ type: 'error', title: 'Troca', message: result.error })
             return
           }
-          args.refreshSupabase()
+          args.refreshFirebase()
           args.addToast({ type: 'success', title: 'Troca', message: 'Dias de troca atualizados.' })
         })()
         return

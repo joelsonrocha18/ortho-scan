@@ -6,7 +6,6 @@ import { loadExcelJS } from '../../../../lib/loadExcelJS'
 import { getCurrentUser } from '../../../../lib/auth'
 import { loadSystemSettings } from '../../../../lib/systemSettings'
 import { useDb } from '../../../../lib/useDb'
-import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
 import { DATA_MODE } from '../../../../data/dataMode'
 import type { Case } from '../../../../types/Case'
 import type { ProductType } from '../../../../types/Product'
@@ -96,11 +95,10 @@ export function useLabPageController() {
   const setAiAlerts = (_updater: string[] | ((current: string[]) => string[])) => {}
   const runAiRequest = async (_endpoint: string, _payload: unknown) => ({ ok: false as const, error: 'IA desativada no modo enxuto.', output: '' })
   const [exportingPatientReport, setExportingPatientReport] = useState(false)
-  const supabaseSyncTick = useSupabaseSyncTick()
-  const isRemoteMode = DATA_MODE === 'supabase' || DATA_MODE === 'firebase'
+  const isRemoteMode = DATA_MODE === 'firebase'
   const guideAutomationLeadDays = Math.max(0, Math.trunc(loadSystemSettings().guideAutomation?.leadDays ?? 10))
   const labSyncSignature = isRemoteMode
-    ? `${supabaseSyncTick}::${currentUser?.id ?? ''}::${currentUser?.role ?? ''}::${currentUser?.linkedClinicId ?? ''}::${currentUser?.linkedDentistId ?? ''}`
+    ? `${currentUser?.id ?? ''}::${currentUser?.role ?? ''}::${currentUser?.linkedClinicId ?? ''}::${currentUser?.linkedDentistId ?? ''}`
     : `${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}`
 
   const refreshOverview = useCallback(async () => {

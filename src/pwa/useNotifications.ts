@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DATA_MODE } from '../data/dataMode'
 import { logger } from '../lib/logger'
-import { supabase } from '../lib/supabaseClient'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth } from '../lib/firebaseClient'
 import { clearCurrentPushSubscription, getCurrentBrowserPushSubscription, upsertCurrentUserPushSubscription } from './pushSubscriptionRepo'
 import { getBrowserPushPermission, isWebPushSupported, urlBase64ToUint8Array } from './pushUtils'
 import { ensureServiceWorkerRegistered } from './registerServiceWorker'
@@ -127,15 +128,15 @@ export function useNotifications() {
 
     const vapidPublicKey = WEB_PUSH_PUBLIC_KEY as string
 
-    if (DATA_MODE !== 'supabase' || !supabase) {
-      const message = 'As notificações push exigem Supabase ativo neste ambiente.'
+    if (DATA_MODE !== 'firebase' || !auth) {
+      const message = 'As notificações push exigem modo Firebase e usuário autenticado.'
       setError(message)
       return { ok: false, error: message }
     }
 
-    const { data: authData, error: authError } = await supabase.auth.getUser()
-    if (authError || !authData.user) {
-      const message = authError?.message ?? 'Usuário autenticado não encontrado para vincular a subscription.'
+    const user = auth.currentUser
+    if (!user) {
+      const message = 'Usuário autenticado não encontrado para vincular a subscription.'
       setError(message)
       return { ok: false, error: message }
     }
@@ -251,13 +252,13 @@ export function useNotifications() {
   }, [enabled, permission, playForegroundSound, subscribeUser])
 
   useEffect(() => {
-    if (DATA_MODE !== 'supabase' || !supabase || !enabled) return
+    if (DATA_MODE !== 'firebase' || !auth || !enabled) return
 
     void refreshSubscriptionState()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setPermission(getBrowserPushPermission())
-      if (!session) {
+      if (!user) {
         void getCurrentBrowserPushSubscription().then((subscription) => {
           setIsSubscribed(Boolean(subscription))
         })
@@ -269,7 +270,7 @@ export function useNotifications() {
     })
 
     return () => {
-      authListener.subscription.unsubscribe()
+      unsubscribe()
     }
   }, [enabled, refreshSubscriptionState, subscribeUser])
 

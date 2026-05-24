@@ -26,8 +26,6 @@ import { getCurrentUser } from '../lib/auth'
 import { buildDentistPortalWhatsappHref, buildDentistPortalWhatsappMessage } from '../lib/accessLinks'
 import { can } from '../auth/permissions'
 import { DATA_MODE } from '../data/dataMode'
-import { supabase } from '../lib/supabaseClient'
-import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { dentistCode } from '../lib/entityCode'
 import { loadSystemSettings } from '../lib/systemSettings'
 import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../lib/whatsappService'
@@ -119,48 +117,26 @@ export default function DentistDetailPage() {
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'dentists.write')
   const canDelete = can(currentUser, 'dentists.delete')
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
-  const supabaseSyncTick = useSupabaseSyncTick()
   const isNew = params.id === 'new'
   const localExisting = useMemo(
     () => (!isNew && params.id ? getDentist(params.id) : null),
     [isNew, params.id],
   )
-  const [supabaseExisting, setSupabaseExisting] = useState<DentistClinic | null>(null)
   const [firebaseExisting, setFirebaseExisting] = useState<DentistClinic | null>(null)
   const [loadingExisting, setLoadingExisting] = useState(false)
-  const existing = isSupabaseMode ? supabaseExisting : isFirebaseMode ? firebaseExisting : localExisting
+  const existing = isFirebaseMode ? firebaseExisting : localExisting
 
   const [form, setForm] = useState<DentistForm>(emptyForm)
   const [error, setError] = useState('')
   const [cepStatus, setCepStatus] = useState('')
   const [cepError, setCepError] = useState('')
 
-  const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const clinics = useMemo(
-    () => (isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
-    [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, supabaseClinics],
+    () => (isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
+    [db.clinics, firebaseClinics, isFirebaseMode],
   )
-
-  useEffect(() => {
-    if (!isSupabaseMode || !supabase) return
-    let active = true
-    void (async () => {
-      const { data } = await supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null)
-      if (!active) return
-      setSupabaseClinics(
-        ((data ?? []) as Array<{ id: string; trade_name?: string }>).map((row) => ({
-          id: row.id,
-          tradeName: row.trade_name ?? '-',
-        })),
-      )
-    })()
-    return () => {
-      active = false
-    }
-  }, [isSupabaseMode, supabaseSyncTick])
 
   useEffect(() => {
     if (!isFirebaseMode) {
@@ -179,58 +155,9 @@ export default function DentistDetailPage() {
   }, [isFirebaseMode])
 
   useEffect(() => {
-    if (!isSupabaseMode || !supabase || isNew || !params.id) {
-      setSupabaseExisting(null)
-      setLoadingExisting(false)
-      return
-    }
-    let active = true
-    setLoadingExisting(true)
-    void (async () => {
-      const { data, error } = await supabase
-        .from('dentists')
-        .select('id, short_id, name, first_name, last_name, cpf, birth_date, address, cro, gender, clinic_id, phone, whatsapp, email, notes, is_active, deleted_at, created_at, updated_at')
-        .eq('id', params.id)
-        .maybeSingle()
-      if (!active) return
-      if (error || !data) {
-        setSupabaseExisting(null)
-        setLoadingExisting(false)
-        return
-      }
-      setSupabaseExisting({
-        id: String(data.id),
-        shortId: (data.short_id as string | null) ?? undefined,
-        type: 'dentista',
-        name: String(data.name ?? ''),
-        firstName: (data.first_name as string | null) ?? undefined,
-        lastName: (data.last_name as string | null) ?? undefined,
-        cpf: (data.cpf as string | null) ?? undefined,
-        birthDate: (data.birth_date as string | null) ?? undefined,
-        cro: (data.cro as string | null) ?? undefined,
-        gender: data.gender === 'feminino' ? 'feminino' : 'masculino',
-        clinicId: (data.clinic_id as string | null) ?? undefined,
-        phone: (data.phone as string | null) ?? undefined,
-        whatsapp: (data.whatsapp as string | null) ?? undefined,
-        email: (data.email as string | null) ?? undefined,
-        address: (data.address as DentistClinic['address'] | null) ?? undefined,
-        notes: (data.notes as string | null) ?? undefined,
-        isActive: (data.is_active as boolean | null) ?? true,
-        createdAt: (data.created_at as string | undefined) ?? new Date().toISOString(),
-        updatedAt: (data.updated_at as string | undefined) ?? new Date().toISOString(),
-        deletedAt: (data.deleted_at as string | null) ?? undefined,
-      })
-      setLoadingExisting(false)
-    })()
-    return () => {
-      active = false
-    }
-  }, [isNew, isSupabaseMode, params.id, supabaseSyncTick])
-
-  useEffect(() => {
     if (!isFirebaseMode || isNew || !params.id) {
       setFirebaseExisting(null)
-      if (!isSupabaseMode) setLoadingExisting(false)
+      if (!isFirebaseMode) setLoadingExisting(false)
       return
     }
     let active = true
@@ -244,7 +171,7 @@ export default function DentistDetailPage() {
     return () => {
       active = false
     }
-  }, [isFirebaseMode, isNew, isSupabaseMode, params.id])
+  }, [isFirebaseMode, isNew, params.id])
 
   useEffect(() => {
     if (!existing) {
@@ -402,49 +329,6 @@ export default function DentistDetailPage() {
       isActive: form.isActive,
     }
 
-    if (isSupabaseMode && supabase) {
-      const supabasePayload = {
-        name: payload.name,
-        first_name: payload.firstName ?? null,
-        last_name: payload.lastName ?? null,
-        cpf: payload.cpf ?? null,
-        birth_date: payload.birthDate ?? null,
-        address: payload.address ?? null,
-        cro: payload.cro ?? null,
-        gender: payload.gender,
-        clinic_id: payload.clinicId ?? null,
-        phone: payload.phone ?? null,
-        whatsapp: payload.whatsapp ?? null,
-        email: payload.email ?? null,
-        notes: payload.notes ?? null,
-        is_active: payload.isActive,
-      }
-      if (isNew) {
-        const { data, error: createError } = await supabase
-          .from('dentists')
-          .insert(supabasePayload)
-          .select('id')
-          .single()
-        if (createError || !data?.id) {
-          setError(createError?.message ?? 'Falha ao criar dentista.')
-          return
-        }
-        navigate(`/app/dentists/${data.id as string}`, { replace: true })
-        return
-      }
-      if (!existing) return
-      const { error: updateError } = await supabase
-        .from('dentists')
-        .update({ ...supabasePayload, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (updateError) {
-        setError(updateError.message)
-        return
-      }
-      setError('')
-      return
-    }
-
     if (isFirebaseMode) {
       if (isNew) {
         const result = await createDentistFirebase({
@@ -496,16 +380,7 @@ export default function DentistDetailPage() {
     if (!canDelete) return
     const confirmed = window.confirm('Tem certeza que deseja excluir?')
     if (!confirmed) return
-    if (isSupabaseMode && supabase) {
-      const { error: deleteError } = await supabase
-        .from('dentists')
-        .update({ deleted_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (deleteError) {
-        setError(deleteError.message)
-        return
-      }
-    } else if (isFirebaseMode) {
+    if (isFirebaseMode) {
       const result = await softDeleteDentistFirebase(existing.id)
       if (!result.ok) {
         setError(result.error)
@@ -525,19 +400,7 @@ export default function DentistDetailPage() {
   const handleRestore = async () => {
     if (!existing) return
     if (!canDelete) return
-    if (isSupabaseMode && supabase) {
-      const { error: restoreError } = await supabase
-        .from('dentists')
-        .update({ deleted_at: null, is_active: true, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (restoreError) {
-        setError(restoreError.message)
-        return
-      }
-      setSupabaseExisting((current) =>
-        current ? { ...current, deletedAt: undefined, isActive: true } : current,
-      )
-    } else if (isFirebaseMode) {
+    if (isFirebaseMode) {
       const result = await restoreDentistFirebase(existing.id)
       if (!result.ok) {
         setError(result.error)

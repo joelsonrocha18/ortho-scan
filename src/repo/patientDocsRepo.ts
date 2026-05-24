@@ -3,7 +3,8 @@ import { DATA_MODE } from '../data/dataMode'
 import { loadDb, saveDb } from '../data/db'
 import { getSessionProfile } from '../lib/auth'
 import { logger } from '../lib/logger'
-import { supabase } from '../lib/supabaseClient'
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, orderBy } from 'firebase/firestore'
+import { db as firestoreDb } from '../lib/firebaseClient'
 import { nowIsoDateTime, toIsoDateTime } from '../shared/utils/date'
 import { createEntityId } from '../shared/utils/id'
 import { validatePatientDocumentInput } from '../shared/validators'
@@ -21,12 +22,17 @@ function nowIso() {
   return nowIsoDateTime()
 }
 
-function mapSupabaseDoc(row: Record<string, unknown>): PatientDocument {
+function getFirestoreDb() {
+  if (!firestoreDb) throw new Error('Firebase não configurado.')
+  return firestoreDb
+}
+
+function mapRemoteDoc(id: string, row: Record<string, unknown>): PatientDocument {
   const note = typeof row.note === 'string' ? row.note : undefined
   const errorNote = typeof row.error_note === 'string' ? row.error_note : undefined
   const data = row.data && typeof row.data === 'object' ? (row.data as Record<string, unknown>) : {}
   return {
-    id: String(row.id ?? ''),
+    id,
     patientId: String(row.patient_id ?? ''),
     caseId: typeof row.case_id === 'string' ? row.case_id : undefined,
     title: String(row.title ?? 'Documento'),
@@ -60,44 +66,39 @@ function localListPatientDocs(patientId: string) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-async function supabaseListPatientDocs(patientId: string) {
-  if (!supabase) return []
-  const { data, error } = await supabase
-    .from('documents')
-    .select('id, patient_id, case_id, category, title, file_path, file_name, mime_type, status, note, error_note, created_at, data')
-    .eq('patient_id', patientId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-  if (error) return []
-  return (data ?? []).map((row) => mapSupabaseDoc(row as Record<string, unknown>))
+async function firebaseListPatientDocs(patientId: string) {
+  const snapshot = await getDocs(
+    query(collection(getFirestoreDb(), 'documents'), where('patient_id', '==', patientId)),
+  )
+  return snapshot.docs
+    .filter((item) => !item.data().deleted_at && !item.data().deletedAt)
+    .map((item) => mapRemoteDoc(item.id, item.data()))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export async function listPatientDocs(patientId: string) {
-  if (DATA_MODE === 'supabase') return supabaseListPatientDocs(patientId)
+  if (DATA_MODE === 'firebase') {
+    try {
+      return await firebaseListPatientDocs(patientId)
+    } catch {
+      return []
+    }
+  }
   return localListPatientDocs(patientId)
 }
 
 export async function getPatientDoc(id: string) {
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return null
-    const { data, error } = await supabase
-      .from('documents')
-      .select('id, patient_id, case_id, category, title, file_path, file_name, mime_type, status, note, error_note, created_at, data')
-      .eq('id', id)
-      .maybeSingle()
-    if (error || !data) return null
-    return mapSupabaseDoc(data as Record<string, unknown>)
+  if (DATA_MODE === 'firebase') {
+    const snapshot = await getDoc(doc(getFirestoreDb(), 'documents', id))
+    if (!snapshot.exists()) return null
+    const data = snapshot.data()
+    if (data.deleted_at || data.deletedAt) return null
+    return mapRemoteDoc(snapshot.id, data)
   }
-  return loadDb().patientDocuments.find((doc) => doc.id === id) ?? null
+  return loadDb().patientDocuments.find((item) => item.id === id) ?? null
 }
 
 export async function resolvePatientDocUrl(doc: PatientDocument) {
-  if (doc.filePath && doc.metadata?.source === 'patient_portal' && supabase) {
-    const { data, error } = await supabase.storage.from('orthoscan').createSignedUrl(doc.filePath, 60 * 60 * 12)
-    if (!error && data?.signedUrl) {
-      return { ok: true as const, url: data.signedUrl }
-    }
-  }
   if (doc.filePath) return createSignedUrl(doc.filePath, 300)
   if (doc.url) return { ok: true as const, url: doc.url }
   return { ok: false as const, error: 'Documento sem caminho de arquivo.' }
@@ -119,8 +120,7 @@ export async function addPatientDoc(payload: {
     if (!fileValidation.ok) return fileValidation
   }
 
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
+  if (DATA_MODE === 'firebase') {
     const profile = getSessionProfile()
     if (!profile?.id) return { ok: false as const, error: 'Sessão inválida. Faça login novamente.' }
     const clinicId = profile.clinicId ?? validated.clinicId
@@ -138,34 +138,41 @@ export async function addPatientDoc(payload: {
     }
 
     const createdAt = validated.createdAt ? toIsoDateTime(validated.createdAt) : nowIso()
-    const { data, error } = await supabase
-      .from('documents')
-      .insert({
-        clinic_id: clinicId,
-        patient_id: validated.patientId,
-        case_id: payload.caseId ?? null,
-        category: validated.category,
-        title: validated.title,
-        file_path: filePath ?? null,
-        file_name: validated.file?.name ?? validated.title,
-        mime_type: validated.file?.type ?? null,
-        status: 'ok',
-        note: validated.note ?? null,
-        data: null,
-        created_by: profile.id,
-        created_at: createdAt,
-      })
-      .select('id, patient_id, case_id, category, title, file_path, file_name, mime_type, status, note, error_note, created_at, data')
-      .single()
-    if (error || !data) return { ok: false as const, error: error?.message ?? 'Falha ao criar documento.' }
-    const doc = mapSupabaseDoc(data as Record<string, unknown>)
-    logger.info('Documento do paciente criado no Supabase.', {
+    const documentId = createEntityId('doc')
+    const record = {
+      clinic_id: clinicId,
+      clinicId,
+      patient_id: validated.patientId,
+      patientId: validated.patientId,
+      case_id: payload.caseId ?? null,
+      caseId: payload.caseId ?? null,
+      category: validated.category,
+      title: validated.title,
+      file_path: filePath ?? null,
+      filePath: filePath ?? null,
+      file_name: validated.file?.name ?? validated.title,
+      fileName: validated.file?.name ?? validated.title,
+      mime_type: validated.file?.type ?? null,
+      mimeType: validated.file?.type ?? null,
+      status: 'ok',
+      note: validated.note ?? null,
+      data: {},
+      created_by: profile.id,
+      createdBy: profile.id,
+      created_at: createdAt,
+      createdAt,
+      deleted_at: null,
+      deletedAt: null,
+    }
+    await setDoc(doc(getFirestoreDb(), 'documents', documentId), record)
+    const createdDoc = mapRemoteDoc(documentId, record)
+    logger.info('Documento do paciente criado no Firestore.', {
       flow: 'documents.create',
       patientId: validated.patientId,
-      documentId: doc.id,
+      documentId: createdDoc.id,
       actorId: profile.id,
     })
-    return { ok: true as const, doc }
+    return { ok: true as const, doc: createdDoc }
   }
 
   const db = loadDb()
@@ -216,21 +223,17 @@ export async function addPatientDoc(payload: {
 }
 
 export async function updatePatientDoc(id: string, patch: Partial<Pick<PatientDocument, 'title' | 'category' | 'note' | 'createdAt'>>) {
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { data, error } = await supabase
-      .from('documents')
-      .update({
-        title: patch.title?.trim() || undefined,
-        category: patch.category,
-        note: patch.note?.trim() || undefined,
-        created_at: patch.createdAt ? toIsoDateTime(patch.createdAt) : undefined,
-      })
-      .eq('id', id)
-      .select('id, patient_id, case_id, category, title, file_path, file_name, mime_type, status, note, error_note, created_at, data')
-      .single()
-    if (error || !data) return { ok: false as const, error: error?.message ?? 'Documento não encontrado.' }
-    return { ok: true as const, doc: mapSupabaseDoc(data as Record<string, unknown>) }
+  if (DATA_MODE === 'firebase') {
+    const current = await getPatientDoc(id)
+    if (!current) return { ok: false as const, error: 'Documento não encontrado.' }
+    const createdAt = patch.createdAt ? toIsoDateTime(patch.createdAt) : current.createdAt
+    await updateDoc(doc(getFirestoreDb(), 'documents', id), {
+      ...(patch.title !== undefined ? { title: patch.title.trim() || current.title } : {}),
+      ...(patch.category !== undefined ? { category: patch.category } : {}),
+      ...(patch.note !== undefined ? { note: patch.note.trim() || null } : {}),
+      ...(patch.createdAt !== undefined ? { created_at: createdAt, createdAt } : {}),
+    })
+    return { ok: true as const, doc: { ...current, ...patch, createdAt } }
   }
 
   const db = loadDb()
@@ -258,19 +261,15 @@ export async function updatePatientDoc(id: string, patch: Partial<Pick<PatientDo
 }
 
 export async function deletePatientDoc(id: string) {
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
+  if (DATA_MODE === 'firebase') {
     const existing = await getPatientDoc(id)
     if (!existing) return { ok: false as const, error: 'Documento não encontrado.' }
-    const { error } = await supabase
-      .from('documents')
-      .update({ deleted_at: nowIso() })
-      .eq('id', id)
-    if (error) return { ok: false as const, error: error.message }
+    const deletedAt = nowIso()
+    await updateDoc(doc(getFirestoreDb(), 'documents', id), { deleted_at: deletedAt, deletedAt })
     if (existing.filePath) {
       await deleteFromStorage(existing.filePath)
     }
-    logger.info('Documento do paciente removido no Supabase.', {
+    logger.info('Documento do paciente removido no Firestore.', {
       flow: 'documents.delete',
       documentId: id,
       patientId: existing.patientId,
@@ -297,13 +296,8 @@ export async function markPatientDocAsError(id: string, errorNote: string) {
   const trimmed = errorNote.trim()
   if (!trimmed) return { ok: false as const, error: 'Informe o motivo da falha do documento.' }
 
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { error } = await supabase
-      .from('documents')
-      .update({ status: 'erro', error_note: trimmed })
-      .eq('id', id)
-    if (error) return { ok: false as const, error: error.message }
+  if (DATA_MODE === 'firebase') {
+    await updateDoc(doc(getFirestoreDb(), 'documents', id), { status: 'erro', error_note: trimmed, errorNote: trimmed })
     return { ok: true as const }
   }
 
@@ -325,13 +319,8 @@ export async function markPatientDocAsError(id: string, errorNote: string) {
 }
 
 export async function restoreDocStatus(id: string) {
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { error } = await supabase
-      .from('documents')
-      .update({ status: 'ok', error_note: null })
-      .eq('id', id)
-    if (error) return { ok: false as const, error: error.message }
+  if (DATA_MODE === 'firebase') {
+    await updateDoc(doc(getFirestoreDb(), 'documents', id), { status: 'ok', error_note: null, errorNote: null })
     return { ok: true as const }
   }
 

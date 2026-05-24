@@ -5,8 +5,7 @@ import InternalRouteUrlMask, { InternalAppEntryRedirect } from './app/InternalRo
 import ProtectedRoute from './app/ProtectedRoute'
 import { ToastProvider } from './app/ToastProvider'
 import { getAuthProvider } from './auth/authProvider'
-import { DATA_MODE } from './data/dataMode'
-import { applyStoredTheme, saveSystemSettings } from './lib/systemSettings'
+import { applyStoredTheme } from './lib/systemSettings'
 
 const PUSH_NOTIFICATIONS_ENABLED = ((import.meta.env.VITE_WEB_PUSH_ENABLED as string | undefined)?.trim().toLowerCase() ?? '') === 'true'
 
@@ -85,14 +84,6 @@ export default function App() {
 
   useEffect(() => {
     applyStoredTheme()
-    if (DATA_MODE !== 'supabase') return
-    void (async () => {
-      const { loadSystemSettingsSupabase } = await import('./repo/systemSettingsRepo')
-      const remote = await loadSystemSettingsSupabase()
-      if (!remote) return
-      saveSystemSettings(remote)
-      applyStoredTheme()
-    })()
   }, [])
 
   useEffect(() => {

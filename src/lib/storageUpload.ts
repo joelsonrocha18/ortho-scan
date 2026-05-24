@@ -1,7 +1,8 @@
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { DATA_MODE } from '../data/dataMode'
+import { storage } from './firebaseClient'
 import { createTimestampedToken, sanitizeTokenSegment } from '../shared/utils/id'
 import { logger } from './logger'
-import { supabase } from './supabaseClient'
 
 type UploadScope = 'scans' | 'patient-docs'
 
@@ -28,7 +29,7 @@ export async function uploadFileToStorage(
   file: File,
   params: { scope: UploadScope; clinicId?: string; ownerId: string },
 ): Promise<UploadResult | null> {
-  if (DATA_MODE !== 'supabase' || !supabase) {
+  if (DATA_MODE !== 'firebase' || !storage) {
     return null
   }
   if (!params.clinicId) {
@@ -36,16 +37,18 @@ export async function uploadFileToStorage(
   }
 
   const path = uniquePath(params.scope, params.clinicId, params.ownerId, file.name)
-  const storage = supabase.storage.from('orthoscan')
+  const storageRef = ref(storage, path)
 
-  const upload = await storage.upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: file.type || 'application/octet-stream',
-  })
-  if (upload.error) {
+  try {
+    await uploadBytes(storageRef, file, {
+      contentType: file.type || 'application/octet-stream',
+      cacheControl: 'public,max-age=3600',
+    })
+    const url = await getDownloadURL(storageRef)
+    return { path, url }
+  } catch (error) {
     logger.error(
-      'Falha ao enviar arquivo para storage.',
+      'Falha ao enviar arquivo para Firebase Storage.',
       {
         scope: params.scope,
         clinicId: params.clinicId,
@@ -54,26 +57,8 @@ export async function uploadFileToStorage(
         fileType: file.type,
         path,
       },
-      upload.error,
+      error,
     )
     return null
   }
-
-  const signed = await storage.createSignedUrl(path, 60 * 60 * 24 * 30)
-  if (signed.error || !signed.data?.signedUrl) {
-    logger.error(
-      'Falha ao gerar URL assinada para arquivo no storage.',
-      {
-        scope: params.scope,
-        clinicId: params.clinicId,
-        ownerId: params.ownerId,
-        fileName: file.name,
-        path,
-      },
-      signed.error,
-    )
-    return null
-  }
-
-  return { path, url: signed.data.signedUrl }
 }

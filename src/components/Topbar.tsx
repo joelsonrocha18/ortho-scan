@@ -3,7 +3,7 @@ import { Menu } from 'lucide-react'
 import { DATA_MODE } from '../data/dataMode'
 import { formatUserDisplayName } from '../lib/displayName'
 import { getCurrentUser } from '../lib/auth'
-import { supabase } from '../lib/supabaseClient'
+import { getProfileByUserId } from '../repo/profileRepo'
 import { useDb } from '../lib/useDb'
 import Breadcrumb from './Breadcrumb'
 import Button from './Button'
@@ -20,14 +20,14 @@ export default function Topbar({ breadcrumb, onMenuToggle }: TopbarProps) {
 
   useEffect(() => {
     let active = true
-    if (DATA_MODE !== 'supabase' || !supabase || !currentUser?.id) {
+    if (DATA_MODE !== 'firebase' || !currentUser?.id) {
       setProfileDisplayName('')
       return
     }
     void (async () => {
-      const { data } = await supabase.from('profiles').select('full_name').eq('user_id', currentUser.id).maybeSingle()
+      const profile = await getProfileByUserId(currentUser.id)
       if (!active) return
-      setProfileDisplayName(((data as { full_name?: string } | null)?.full_name ?? '').trim())
+      setProfileDisplayName((profile?.full_name ?? '').trim())
     })()
     return () => {
       active = false

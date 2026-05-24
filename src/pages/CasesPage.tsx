@@ -13,8 +13,6 @@ import { DATA_MODE } from '../data/dataMode'
 import { useDb } from '../lib/useDb'
 import { getCurrentUser } from '../lib/auth'
 import { listCasesForUser, listLabItemsForUser } from '../auth/scope'
-import { supabase } from '../lib/supabaseClient'
-import { normalizeTreatmentIdsSupabase } from '../repo/profileRepo'
 import { buildActualChangeDateMap, buildArchScheduleDates, resolveAlignerArchTotals } from '../lib/alignerChange'
 import { downloadAlignerTreatmentReport, type AlignerTreatmentReportRow } from '../lib/alignerTreatmentReport'
 import { listCasesFirebase } from '../data/caseRepo'
@@ -202,137 +200,20 @@ function caseStatusBadge(item: CaseListItem, liveLabStatus: LiveLabStatus, hasLa
 export default function CasesPage() {
   const { db } = useDb()
   const { addToast } = useToast()
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
-  const isRemoteMode = isSupabaseMode || isFirebaseMode
+  const isRemoteMode = isFirebaseMode
   const currentUser = getCurrentUser(db)
-  const [supabaseCases, setSupabaseCases] = useState<CaseListItem[]>([])
-  const [supabasePatientsById, setSupabasePatientsById] = useState<Map<string, PatientLookup>>(new Map())
-  const [supabaseClinicsById, setSupabaseClinicsById] = useState<Map<string, ClinicLookup>>(new Map())
-  const [supabaseDentistsById, setSupabaseDentistsById] = useState<Map<string, { name: string; shortId?: string; gender?: string }>>(new Map())
-  const [supabaseLabStatusByCase, setSupabaseLabStatusByCase] = useState<Map<string, LiveLabStatus>>(new Map())
-  const [supabaseHasLabOrderByCase, setSupabaseHasLabOrderByCase] = useState<Set<string>>(new Set())
+  const [remoteCases, setRemoteCases] = useState<CaseListItem[]>([])
+  const [remotePatientsById, setRemotePatientsById] = useState<Map<string, PatientLookup>>(new Map())
+  const [remoteClinicsById, setRemoteClinicsById] = useState<Map<string, ClinicLookup>>(new Map())
+  const [remoteDentistsById, setRemoteDentistsById] = useState<Map<string, { name: string; shortId?: string; gender?: string }>>(new Map())
+  const [remoteLabStatusByCase, setRemoteLabStatusByCase] = useState<Map<string, LiveLabStatus>>(new Map())
+  const [remoteHasLabOrderByCase, setRemoteHasLabOrderByCase] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [originFilter, setOriginFilter] = useState<'todos' | 'interno' | 'externo'>('todos')
   const [showInTreatment, setShowInTreatment] = useState(true)
   const [showConcluded, setShowConcluded] = useState(false)
   const [isExportingExcel, setIsExportingExcel] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    if (!isSupabaseMode || !supabase) return
-    ;(async () => {
-      const migrationKey = 'orth_treatment_id_migration_v1_done'
-      const hasMigrated = typeof window !== 'undefined' && localStorage.getItem(migrationKey) === 'done'
-      if (!hasMigrated) {
-        const migrated = await normalizeTreatmentIdsSupabase()
-        if (migrated.ok && typeof window !== 'undefined') {
-          localStorage.setItem(migrationKey, 'done')
-        }
-      }
-      const [casesRes, patientsRes, dentistsRes, clinicsRes, labRes] = await Promise.all([
-        supabase
-          .from('cases')
-          .select('id, clinic_id, patient_id, dentist_id, status, data, created_at, deleted_at')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false }),
-        supabase.from('patients').select('id, name, clinic_id, deleted_at').is('deleted_at', null),
-        supabase.from('dentists').select('id, name, gender, deleted_at').is('deleted_at', null),
-        supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
-        supabase.from('lab_items').select('case_id, status, deleted_at').is('deleted_at', null),
-      ])
-      if (!active) return
-
-      const patientsMap = new Map<string, PatientLookup>()
-      for (const row of (patientsRes.data ?? []) as Array<{ id: string; name: string; clinic_id?: string | null }>) {
-        patientsMap.set(row.id, { name: row.name ?? '', shortId: undefined, clinicId: row.clinic_id ?? undefined })
-      }
-      setSupabasePatientsById(patientsMap)
-
-      const dentistsMap = new Map<string, { name: string; shortId?: string; gender?: string }>()
-      for (const row of (dentistsRes.data ?? []) as Array<{ id: string; name: string; gender?: string }>) {
-        dentistsMap.set(row.id, { name: row.name ?? '', shortId: undefined, gender: row.gender })
-      }
-      setSupabaseDentistsById(dentistsMap)
-
-      const clinicsMap = new Map<string, ClinicLookup>()
-      for (const row of (clinicsRes.data ?? []) as Array<{ id: string; trade_name?: string }>) {
-        clinicsMap.set(row.id, { tradeName: row.trade_name ?? '' })
-      }
-      setSupabaseClinicsById(clinicsMap)
-
-      setSupabaseLabStatusByCase(
-        buildLabStatusByCase(
-          ((labRes.data ?? []) as Array<{ case_id?: string; status?: string }>).map((row) => ({
-            caseId: row.case_id,
-            status: row.status,
-          })),
-        ),
-      )
-      setSupabaseHasLabOrderByCase(
-        new Set(
-          ((labRes.data ?? []) as Array<{ case_id?: string }>)
-            .map((row) => row.case_id)
-            .filter((value): value is string => Boolean(value)),
-        ),
-      )
-
-      const mapped = ((casesRes.data ?? []) as Array<{ id: string; clinic_id?: string; patient_id?: string; dentist_id?: string; status?: string; created_at?: string; data?: Record<string, unknown> }>).map((row) => {
-        const data = row.data ?? {}
-        const status = (data.status as string | undefined) ?? row.status ?? 'planejamento'
-        const phaseRaw = (data.phase as string | undefined) ?? ''
-        const resolvedClinicId = (data.clinicId as string | undefined) ?? row.clinic_id ?? undefined
-        const phase = (
-          phaseRaw
-          || (
-            status === 'finalizado'
-              ? 'finalizado'
-              : status === 'em_producao'
-                || status === 'em_entrega'
-                || status === 'em_tratamento'
-                || status === 'aguardando_reposicao'
-                ? 'em_producao'
-                : 'planejamento'
-          )
-        ) as CasePhase
-        const patientName = (data.patientName as string | undefined)
-          ?? (row.patient_id ? patientsMap.get(row.patient_id)?.name : undefined)
-          ?? '-'
-        const caseDate = (data.scanDate as string | undefined) ?? (row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
-        return {
-          id: row.id,
-          shortId: (data.shortId as string | undefined) ?? undefined,
-          productType: normalizeProductType(data.productId ?? data.productType),
-          treatmentOrigin: inferTreatmentOrigin(
-            {
-              treatmentOrigin: (data.treatmentOrigin as 'interno' | 'externo' | undefined) ?? undefined,
-              clinicId: resolvedClinicId,
-            },
-            clinicsMap,
-          ),
-          clinicId: resolvedClinicId,
-          patientId: row.patient_id,
-          patientName,
-          dentistId: row.dentist_id,
-          phase,
-          status,
-          treatmentCode: data.treatmentCode as string | undefined,
-          totalTrays: data.totalTrays as number | undefined,
-          totalTraysUpper: data.totalTraysUpper as number | undefined,
-          totalTraysLower: data.totalTraysLower as number | undefined,
-          changeEveryDays: data.changeEveryDays as number | undefined,
-          deliveryLots: (data.deliveryLots as Case['deliveryLots'] | undefined) ?? [],
-          installation: (data.installation as Case['installation'] | undefined) ?? undefined,
-          arch: (data.arch as 'superior' | 'inferior' | 'ambos' | undefined) ?? 'ambos',
-          caseDate,
-        } as CaseListItem
-      })
-      setSupabaseCases(mapped)
-    })()
-    return () => {
-      active = false
-    }
-  }, [isSupabaseMode])
 
   useEffect(() => {
     let active = true
@@ -350,22 +231,22 @@ export default function CasesPage() {
       patients.forEach((patient) => {
         patientsMap.set(patient.id, { name: patient.name, shortId: patient.shortId, clinicId: patient.clinicId })
       })
-      setSupabasePatientsById(patientsMap)
+      setRemotePatientsById(patientsMap)
 
       const dentistsMap = new Map<string, { name: string; shortId?: string; gender?: string }>()
       dentists.forEach((dentist) => {
         dentistsMap.set(dentist.id, { name: dentist.name, shortId: dentist.shortId, gender: dentist.gender })
       })
-      setSupabaseDentistsById(dentistsMap)
+      setRemoteDentistsById(dentistsMap)
 
       const clinicsMap = new Map<string, ClinicLookup>()
       clinics.forEach((clinic) => {
         clinicsMap.set(clinic.id, { tradeName: clinic.tradeName })
       })
-      setSupabaseClinicsById(clinicsMap)
-      setSupabaseLabStatusByCase(new Map())
-      setSupabaseHasLabOrderByCase(new Set())
-      setSupabaseCases(caseItems.map((item) => ({
+      setRemoteClinicsById(clinicsMap)
+      setRemoteLabStatusByCase(new Map())
+      setRemoteHasLabOrderByCase(new Set())
+      setRemoteCases(caseItems.map((item) => ({
         id: item.id,
         shortId: item.shortId,
         productType: normalizeProductType(item.productId ?? item.productType),
@@ -443,12 +324,12 @@ export default function CasesPage() {
     [currentUser, db, localClinicsById],
   )
 
-  const cases: CaseListItem[] = isRemoteMode ? supabaseCases : localCases
-  const patientsById = isRemoteMode ? supabasePatientsById : localPatientsById
-  const clinicsById = isRemoteMode ? supabaseClinicsById : localClinicsById
-  const dentistsById = isRemoteMode ? supabaseDentistsById : localDentistsById
-  const liveLabStatusByCase = isRemoteMode ? supabaseLabStatusByCase : localLabStatusByCase
-  const hasLabOrderByCase = isRemoteMode ? supabaseHasLabOrderByCase : localHasLabOrderByCase
+  const cases: CaseListItem[] = isRemoteMode ? remoteCases : localCases
+  const patientsById = isRemoteMode ? remotePatientsById : localPatientsById
+  const clinicsById = isRemoteMode ? remoteClinicsById : localClinicsById
+  const dentistsById = isRemoteMode ? remoteDentistsById : localDentistsById
+  const liveLabStatusByCase = isRemoteMode ? remoteLabStatusByCase : localLabStatusByCase
+  const hasLabOrderByCase = isRemoteMode ? remoteHasLabOrderByCase : localHasLabOrderByCase
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLowerCase()

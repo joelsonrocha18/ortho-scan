@@ -10,66 +10,22 @@ import { useDb } from '../lib/useDb'
 import { can } from '../auth/permissions'
 import { getCurrentUser } from '../lib/auth'
 import { DATA_MODE } from '../data/dataMode'
-import { supabase } from '../lib/supabaseClient'
-import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import type { Clinic } from '../types/Clinic'
 import { listActiveInvitesByEntityFirebase } from '../repo/inviteRepo'
 import { useToast } from '../app/ToastProvider'
 import { clinicCode } from '../lib/entityCode'
 import { listClinicsFirebase } from '../repo/clinicRepo'
 
-function mapSupabaseClinic(row: Record<string, unknown>): Clinic {
-  return {
-    id: String(row.id ?? ''),
-    shortId: (row.short_id as string | null) ?? undefined,
-    tradeName: String(row.trade_name ?? ''),
-    legalName: (row.legal_name as string | null) ?? undefined,
-    cnpj: (row.cnpj as string | null) ?? undefined,
-    phone: (row.phone as string | null) ?? undefined,
-    whatsapp: (row.whatsapp as string | null) ?? undefined,
-    email: (row.email as string | null) ?? undefined,
-    address: (row.address as Clinic['address'] | null) ?? undefined,
-    notes: (row.notes as string | null) ?? undefined,
-    isActive: Boolean(row.is_active ?? true),
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    updatedAt: String(row.updated_at ?? new Date().toISOString()),
-    deletedAt: (row.deleted_at as string | null) ?? undefined,
-  }
-}
-
 export default function ClinicsPage() {
   const { db } = useDb()
   const { addToast } = useToast()
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
   const canWrite = can(currentUser, 'clinics.write')
   const [query, setQuery] = useState('')
   const [showDeleted, setShowDeleted] = useState(false)
-  const supabaseSyncTick = useSupabaseSyncTick()
-  const [supabaseClinics, setSupabaseClinics] = useState<Clinic[]>([])
   const [firebaseClinics, setFirebaseClinics] = useState<Clinic[]>([])
   const [firebaseClinicInviteCodes, setFirebaseClinicInviteCodes] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    let active = true
-    if (!isSupabaseMode || !supabase) {
-      setSupabaseClinics([])
-      return
-    }
-
-    ;(async () => {
-      const { data } = await supabase
-        .from('clinics')
-        .select('id, short_id, trade_name, legal_name, cnpj, phone, whatsapp, email, address, notes, is_active, created_at, updated_at, deleted_at')
-      if (!active) return
-      setSupabaseClinics((data ?? []).map((row) => mapSupabaseClinic(row as Record<string, unknown>)))
-    })()
-
-    return () => {
-      active = false
-    }
-  }, [isSupabaseMode, supabaseSyncTick])
 
   useEffect(() => {
     let active = true
@@ -99,7 +55,7 @@ export default function ClinicsPage() {
 
   const clinics = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const source = isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics
+    const source = isFirebaseMode ? firebaseClinics : db.clinics
     return [...source]
       .filter((clinic) => (showDeleted ? true : !clinic.deletedAt))
       .filter((clinic) => {
@@ -114,7 +70,7 @@ export default function ClinicsPage() {
         )
       })
       .sort((a, b) => a.tradeName.localeCompare(b.tradeName))
-  }, [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, query, showDeleted, supabaseClinics])
+  }, [db.clinics, firebaseClinics, isFirebaseMode, query, showDeleted])
 
   const handleCopyInvite = async (code: string) => {
     try {

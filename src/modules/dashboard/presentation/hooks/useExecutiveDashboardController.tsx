@@ -3,7 +3,6 @@ import { useToast } from '../../../../app/ToastProvider'
 import { DATA_MODE } from '../../../../data/dataMode'
 import { getCurrentUser } from '../../../../lib/auth'
 import { useDb } from '../../../../lib/useDb'
-import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
 import { nowIsoDate } from '../../../../shared/utils'
 import { LoadExecutiveDashboardUseCase } from '../../application/useCases/LoadExecutiveDashboard'
 import { createDashboardRepository } from '../../infra'
@@ -87,9 +86,8 @@ function buildPeriodOptions(today = new Date()): DashboardPeriodOption[] {
 export function useExecutiveDashboardController() {
   const { db } = useDb()
   const { addToast } = useToast()
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
-  const isRemoteMode = isSupabaseMode || isFirebaseMode
+  const isRemoteMode = isFirebaseMode
   const currentUser = useMemo(() => getCurrentUser(db), [db])
   const currentUserKey = `${currentUser?.id ?? ''}::${currentUser?.role ?? ''}::${currentUser?.linkedClinicId ?? ''}::${currentUser?.linkedDentistId ?? ''}`
   const repository = useMemo(() => createDashboardRepository(currentUser), [currentUser])
@@ -112,9 +110,8 @@ export function useExecutiveDashboardController() {
       }
     : periodOptions.find((option) => option.key === periodKey) ?? periodOptions.find((option) => option.key === 'this_month') ?? periodOptions[0]
   const periodSignature = `${selectedPeriod.range.startDate}::${selectedPeriod.range.endDate}`
-  const supabaseSyncTick = useSupabaseSyncTick()
   const refreshSignature = isRemoteMode
-    ? `${todayKey}::${periodKey}::${periodSignature}::${supabaseSyncTick}::${currentUserKey}`
+    ? `${todayKey}::${periodKey}::${periodSignature}::${currentUserKey}`
     : `${todayKey}::${periodKey}::${periodSignature}::${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}::${db.scans.map((item) => item.updatedAt).join('|')}::${db.patients.map((item) => item.updatedAt).join('|')}::${currentUserKey}`
 
   useEffect(() => {

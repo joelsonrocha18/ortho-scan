@@ -44,7 +44,7 @@ export default function PushNotificationsBridge() {
   }
 
   const shouldRenderPrompt =
-    DATA_MODE === 'supabase' &&
+    DATA_MODE === 'firebase' &&
     notifications.enabled &&
     notifications.permission === 'default' &&
     !notifications.isSubscribed &&

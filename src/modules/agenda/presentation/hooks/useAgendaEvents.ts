@@ -3,13 +3,10 @@ import { listCasesForUser, listPatientsForUser } from '../../../../auth/scope'
 import { DATA_MODE } from '../../../../data/dataMode'
 import { buildActualChangeDateMap, buildAlignerWhatsappHref, buildChangeSchedule, resolveAlignerArchTotals, resolveDeliveredToPatient } from '../../../../lib/alignerChange'
 import { getCurrentUser } from '../../../../lib/auth'
-import { supabase } from '../../../../lib/supabaseClient'
 import { useDb } from '../../../../lib/useDb'
-import { useSupabaseSyncTick } from '../../../../lib/useSupabaseSyncTick'
 import { createAgendaManualEventFirebase, listAgendaManualEventsFirebase } from '../../../../data/agendaRepo'
 import { isAlignerProductType } from '../../../../types/Product'
 import type { Case } from '../../../../types/Case'
-import { mapSupabaseCaseRow } from '../../../cases/infra/supabase/supabaseCaseMappers'
 import { listPatientsFirebase } from '../../../../repo/patientRepo'
 import { listDentistsFirebase } from '../../../../data/dentistRepo'
 import { listCasesFirebase } from '../../../../data/caseRepo'
@@ -291,26 +288,10 @@ function buildAlignerReminderEvents(
   })
 }
 
-function toCaseFromSupabaseRow(row: SupabaseCaseRow): Case {
-  return mapSupabaseCaseRow({
-    id: row.id,
-    product_type: row.product_type ?? undefined,
-    product_id: row.product_id ?? undefined,
-    scan_id: row.scan_id ?? undefined,
-    clinic_id: row.clinic_id ?? undefined,
-    patient_id: row.patient_id ?? undefined,
-    dentist_id: row.dentist_id ?? undefined,
-    requested_by_dentist_id: row.requested_by_dentist_id ?? undefined,
-    data: row.data,
-  })
-}
-
 export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
   const { db } = useDb()
   const currentUser = useMemo(() => getCurrentUser(db), [db])
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
-  const supabaseSyncTick = useSupabaseSyncTick(30000)
   const [refreshKey, setRefreshKey] = useState(0)
   const [events, setEvents] = useState<AgendaCalendarEvent[]>([])
   const [patientOptions, setPatientOptions] = useState<AgendaPersonOption[]>([])
@@ -333,60 +314,6 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
     setError(null)
 
     const load = async () => {
-      if (isSupabaseMode && supabase) {
-        const [manualRes, patientsRes, dentistsRes, casesRes] = await Promise.all([
-          supabase
-            .from('agenda_eventos')
-            .select('id, clinic_id, titulo, tipo, inicio, fim, id_profissional, id_paciente, observacoes, created_at, updated_at, deleted_at')
-            .is('deleted_at', null)
-            .lte('inicio', rangeEndIso)
-            .gte('fim', rangeStartIso)
-            .order('inicio', { ascending: true }),
-          supabase
-            .from('patients')
-            .select('id, name, whatsapp, clinic_id, deleted_at')
-            .is('deleted_at', null)
-            .order('name', { ascending: true }),
-          supabase
-            .from('dentists')
-            .select('id, name, clinic_id, deleted_at')
-            .is('deleted_at', null)
-            .order('name', { ascending: true }),
-          supabase
-            .from('cases')
-            .select('id, product_type, product_id, scan_id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, data, deleted_at')
-            .is('deleted_at', null),
-        ])
-
-        if (!active) return
-        const blockingError = patientsRes.error ?? dentistsRes.error ?? casesRes.error
-        if (blockingError) throw new Error(blockingError.message)
-
-        const patients = ((patientsRes.data ?? []) as SupabasePatientRow[]).map((row) => ({
-          id: row.id,
-          name: row.name ?? '-',
-          clinicId: row.clinic_id ?? undefined,
-          whatsapp: row.whatsapp ?? undefined,
-        }))
-        const professionals = ((dentistsRes.data ?? []) as SupabaseDentistRow[]).map((row) => ({
-          id: row.id,
-          name: row.name ?? '-',
-          clinicId: row.clinic_id ?? undefined,
-        }))
-        const patientsById = new Map(patients.map((item) => [item.id, item]))
-        const professionalsById = new Map(professionals.map((item) => [item.id, item]))
-        const manualRows = manualRes.error ? [] : ((manualRes.data ?? []) as AgendaManualEventRow[])
-        const manualEvents = manualRows.map((row) => toManualCalendarEvent(row, patientsById, professionalsById))
-        const caseItems = ((casesRes.data ?? []) as SupabaseCaseRow[]).map(toCaseFromSupabaseRow)
-        const reminders = buildAlignerReminderEvents(caseItems, patientsById, professionalsById, rangeStartKey, rangeEndKey)
-
-        setPatientOptions(patients)
-        setProfessionalOptions(professionals)
-        setEvents([...manualEvents, ...reminders].sort(sortEvents))
-        setError(manualRes.error ? `Eventos manuais indisponiveis: ${manualRes.error.message}` : null)
-        return
-      }
-
       if (isFirebaseMode) {
         const [manualRows, patientRows, dentistRows, caseItems] = await Promise.all([
           listAgendaManualEventsFirebase(rangeStartIso, rangeEndIso),
@@ -470,7 +397,7 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
     return () => {
       active = false
     }
-  }, [currentUser, db, isFirebaseMode, isSupabaseMode, rangeEndIso, rangeEndKey, rangeStartIso, rangeStartKey, refreshKey, supabaseSyncTick])
+  }, [currentUser, db, isFirebaseMode, rangeEndIso, rangeEndKey, rangeStartIso, rangeStartKey, refreshKey])
 
   const createManualEvent = useCallback(
     async (input: CreateAgendaManualEventInput): Promise<{ ok: true } | { ok: false; error: string }> => {
@@ -487,23 +414,6 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
       const patientClinicId = input.patientId ? patientOptions.find((item) => item.id === input.patientId)?.clinicId : undefined
       const professionalClinicId = input.professionalId ? professionalOptions.find((item) => item.id === input.professionalId)?.clinicId : undefined
       const clinicId = patientClinicId ?? professionalClinicId ?? currentUser?.linkedClinicId
-
-      if (isSupabaseMode) {
-        if (!supabase) return { ok: false, error: 'Supabase nao configurado.' }
-        const { error: insertError } = await supabase.from('agenda_eventos').insert({
-          titulo: title,
-          tipo: input.type,
-          inicio: start.toISOString(),
-          fim: end.toISOString(),
-          id_profissional: input.professionalId || null,
-          id_paciente: input.patientId || null,
-          observacoes: notes ?? null,
-          clinic_id: clinicId ?? null,
-        })
-        if (insertError) return { ok: false, error: insertError.message }
-        refresh()
-        return { ok: true }
-      }
 
       if (isFirebaseMode) {
         const now = new Date().toISOString()
@@ -543,7 +453,7 @@ export function useAgendaEvents(rangeStart: Date, rangeEnd: Date) {
       refresh()
       return { ok: true }
     },
-    [currentUser?.linkedClinicId, isFirebaseMode, isSupabaseMode, patientOptions, professionalOptions, refresh],
+    [currentUser?.linkedClinicId, isFirebaseMode, patientOptions, professionalOptions, refresh],
   )
 
   return {

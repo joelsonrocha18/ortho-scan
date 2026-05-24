@@ -1,25 +1,30 @@
+import { collection, deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
 import { DATA_MODE } from '../data/dataMode'
+import { auth, db as firestoreDb } from '../lib/firebaseClient'
 import { logger } from '../lib/logger'
-import { supabase } from '../lib/supabaseClient'
 import { serializePushSubscription } from './pushUtils'
 import type { SubscribeUserResult, UserPushSubscriptionRecord } from './types'
 
-const USER_PUSH_SUBSCRIPTIONS_TABLE = 'user_push_subscriptions'
+const USER_PUSH_SUBSCRIPTIONS_COLLECTION = 'user_push_subscriptions'
 
-async function getAuthenticatedUserId() {
-  if (DATA_MODE !== 'supabase' || !supabase) return null
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user?.id) return null
-  return data.user.id
+function getAuthenticatedUserId(): Promise<string | null> {
+  if (DATA_MODE !== 'firebase' || !auth) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe()
+      resolve(user?.uid ?? null)
+    })
+  })
 }
 
 export async function upsertCurrentUserPushSubscription(subscription: PushSubscription): Promise<SubscribeUserResult> {
   const userId = await getAuthenticatedUserId()
   if (!userId) {
-    return { ok: false, error: 'Sessão Supabase não encontrada para registrar notificações.' }
+    return { ok: false, error: 'Sessão Firebase não encontrada para registrar notificações.' }
   }
-  if (!supabase) {
-    return { ok: false, error: 'Supabase não configurado para notificações push.' }
+  if (!firestoreDb) {
+    return { ok: false, error: 'Firebase não configurado para notificações push.' }
   }
 
   const serialized = serializePushSubscription(subscription)
@@ -34,13 +39,16 @@ export async function upsertCurrentUserPushSubscription(subscription: PushSubscr
     disabled_at: null,
   }
 
-  const { error } = await supabase
-    .from(USER_PUSH_SUBSCRIPTIONS_TABLE)
-    .upsert(payload, { onConflict: 'endpoint' })
-
-  if (error) {
+  try {
+    await setDoc(
+      doc(firestoreDb, USER_PUSH_SUBSCRIPTIONS_COLLECTION, serialized.endpoint),
+      payload,
+      { merge: true },
+    )
+  } catch (error) {
     logger.error('Falha ao persistir subscription de push.', { flow: 'pwa.push.upsert', userId }, error)
-    return { ok: false, error: error.message }
+    const message = error instanceof Error ? error.message : 'Falha ao salvar inscrição push.'
+    return { ok: false, error: message }
   }
 
   logger.info('Inscrição de push vinculada ao usuário autenticado.', {
@@ -53,24 +61,21 @@ export async function upsertCurrentUserPushSubscription(subscription: PushSubscr
 
 export async function removeCurrentUserPushSubscription(subscription: PushSubscription | null | undefined): Promise<SubscribeUserResult> {
   if (!subscription) return { ok: true }
-  if (!supabase || DATA_MODE !== 'supabase') return { ok: true }
+  if (!firestoreDb || DATA_MODE !== 'firebase') return { ok: true }
 
   const userId = await getAuthenticatedUserId()
   if (!userId) return { ok: true }
 
-  const { error } = await supabase
-    .from(USER_PUSH_SUBSCRIPTIONS_TABLE)
-    .delete()
-    .eq('user_id', userId)
-    .eq('endpoint', subscription.endpoint)
-
-  if (error) {
+  try {
+    await deleteDoc(doc(firestoreDb, USER_PUSH_SUBSCRIPTIONS_COLLECTION, subscription.endpoint))
+  } catch (error) {
     logger.error('Falha ao remover subscription de push do usuário.', {
       flow: 'pwa.push.delete',
       userId,
       endpoint: subscription.endpoint,
     }, error)
-    return { ok: false, error: error.message }
+    const message = error instanceof Error ? error.message : 'Falha ao remover inscrição push.'
+    return { ok: false, error: message }
   }
 
   logger.info('Inscrição de push removida do usuário autenticado.', {

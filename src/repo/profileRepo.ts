@@ -1,16 +1,17 @@
-﻿import { supabase } from '../lib/supabaseClient'
-import type { CaseTray } from '../types/Case'
-import type { LabItem } from '../types/Lab'
-import type { ProductType } from '../types/Product'
-import { isAlignerProductType, normalizeProductType } from '../types/Product'
-import type { Scan, ScanAttachment } from '../types/Scan'
-import { nextOrthTreatmentCode, normalizeOrthTreatmentCode } from '../lib/treatmentCode'
-import { logger } from '../lib/logger'
-import { BUSINESS_EVENTS } from '../shared/observability'
+﻿import { DATA_MODE } from '../data/dataMode'
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, deleteUser, updateProfile as updateFirebaseAuthProfile } from 'firebase/auth'
+import { auth, db as firestoreDb } from '../lib/firebaseClient'
 import { nowIsoDateTime } from '../shared/utils/date'
-import { createExamCode } from '../shared/utils/id'
-import { validateCreateCaseFromScanInput, validateCreateScanInput, parseObject, parseTrimmedString } from '../shared/validators'
+import type { Role } from '../types/User'
+import { createCaseFromScanFirebase } from '../data/scanRepo'
+import { approveScanFirebase, createScanFirebase, deleteScanFirebase, rejectScanFirebase } from '../data/scanRepo'
+import { deleteCaseFirebase, getCaseFirebase, updateCaseFirebase } from '../data/caseRepo'
+import { listLabOrdersFirebase } from '../modules/lab/infra/firebase/FirestoreLabRepository'
 import { getCanonicalLabOrders } from '../modules/lab/domain/services/ProductionQueueService'
+import { generateCaseLabOrderFirebase } from './caseLabFirebase'
+import type { Scan } from '../types/Scan'
+import type { LabItem } from '../types/Lab'
 
 export type ProfileRecord = {
   user_id: string
@@ -28,57 +29,87 @@ export type ProfileRecord = {
   updated_at?: string
 }
 
+function getFirestoreDb() {
+  if (!firestoreDb) {
+    throw new Error('Firebase não configurado. Verifique as variáveis VITE_FIREBASE_*.')
+  }
+  return firestoreDb
+}
+
+function mapProfileDoc(userId: string, data: Record<string, unknown>): ProfileRecord {
+  return {
+    user_id: userId,
+    login_email: (data.loginEmail as string | undefined) ?? (data.login_email as string | undefined) ?? null,
+    role: String(data.role ?? 'dentist_client'),
+    clinic_id: (data.clinicId as string | undefined) ?? (data.clinic_id as string | undefined) ?? null,
+    dentist_id: (data.dentistId as string | undefined) ?? (data.dentist_id as string | undefined) ?? null,
+    full_name: (data.fullName as string | undefined) ?? (data.full_name as string | undefined) ?? null,
+    cpf: (data.cpf as string | null | undefined) ?? null,
+    phone: (data.phone as string | null | undefined) ?? null,
+    onboarding_completed_at:
+      (data.onboardingCompletedAt as string | undefined) ?? (data.onboarding_completed_at as string | undefined) ?? null,
+    is_active: Boolean(data.isActive ?? data.is_active ?? true),
+    deleted_at: (data.deletedAt as string | undefined) ?? (data.deleted_at as string | undefined) ?? null,
+    created_at: (data.createdAt as string | undefined) ?? (data.created_at as string | undefined),
+    updated_at: (data.updatedAt as string | undefined) ?? (data.updated_at as string | undefined),
+  }
+}
+
 export async function getProfileByUserId(userId: string) {
-  if (!supabase) return null
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('user_id, login_email, role, clinic_id, dentist_id, full_name, cpf, phone, onboarding_completed_at, is_active, deleted_at, created_at, updated_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error) return null
-  return data as ProfileRecord | null
+  if (DATA_MODE !== 'firebase') return null
+  try {
+    const snapshot = await getDoc(doc(getFirestoreDb(), 'profiles', userId))
+    if (!snapshot.exists()) return null
+    return mapProfileDoc(snapshot.id, snapshot.data())
+  } catch {
+    return null
+  }
 }
 
 export async function listProfiles(options?: { includeDeleted?: boolean }) {
-  if (!supabase) return []
-  let query = supabase
-    .from('profiles')
-    .select('user_id, login_email, role, clinic_id, dentist_id, full_name, cpf, phone, onboarding_completed_at, is_active, deleted_at, created_at, updated_at')
-  if (!options?.includeDeleted) {
-    query = query.is('deleted_at', null)
-  }
-  const { data, error } = await query
-  if (error) return []
-  return (data ?? []) as ProfileRecord[]
+  if (DATA_MODE !== 'firebase') return []
+  const snapshot = await getDocs(collection(getFirestoreDb(), 'profiles'))
+  return snapshot.docs
+    .map((item) => mapProfileDoc(item.id, item.data()))
+    .filter((profile) => (options?.includeDeleted ? true : !profile.deleted_at))
 }
 
 export async function setProfileActive(userId: string, isActive: boolean) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { error } = await supabase
-    .from('profiles')
-    .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
-  if (error) return { ok: false as const, error: error.message }
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
+  await updateDoc(doc(getFirestoreDb(), 'profiles', userId), {
+    isActive,
+    is_active: isActive,
+    updatedAt: nowIsoDateTime(),
+    updated_at: nowIsoDateTime(),
+  })
   return { ok: true as const }
 }
 
 export async function softDeleteProfile(userId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { error } = await supabase
-    .from('profiles')
-    .update({ deleted_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
-  if (error) return { ok: false as const, error: error.message }
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
+  const now = nowIsoDateTime()
+  await updateDoc(doc(getFirestoreDb(), 'profiles', userId), {
+    deletedAt: now,
+    deleted_at: now,
+    isActive: false,
+    is_active: false,
+    updatedAt: now,
+    updated_at: now,
+  })
   return { ok: true as const }
 }
 
 export async function restoreProfile(userId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { error } = await supabase
-    .from('profiles')
-    .update({ deleted_at: null, is_active: true, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
-  if (error) return { ok: false as const, error: error.message }
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
+  const now = nowIsoDateTime()
+  await updateDoc(doc(getFirestoreDb(), 'profiles', userId), {
+    deletedAt: null,
+    deleted_at: null,
+    isActive: true,
+    is_active: true,
+    updatedAt: now,
+    updated_at: now,
+  })
   return { ok: true as const }
 }
 
@@ -86,202 +117,103 @@ export async function updateProfile(
   userId: string,
   patch: Partial<Pick<ProfileRecord, 'full_name' | 'cpf' | 'phone' | 'role' | 'clinic_id' | 'dentist_id' | 'is_active'>>,
 ) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
-    .select('user_id')
-  if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) {
-    return { ok: false as const, error: 'Perfil não atualizado. Verifique permissoes para editar este usuário.' }
-  }
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
+  const now = nowIsoDateTime()
+  await updateDoc(doc(getFirestoreDb(), 'profiles', userId), {
+    ...(patch.full_name !== undefined ? { fullName: patch.full_name, full_name: patch.full_name } : {}),
+    ...(patch.cpf !== undefined ? { cpf: patch.cpf } : {}),
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    ...(patch.clinic_id !== undefined ? { clinicId: patch.clinic_id, clinic_id: patch.clinic_id } : {}),
+    ...(patch.dentist_id !== undefined ? { dentistId: patch.dentist_id, dentist_id: patch.dentist_id } : {}),
+    ...(patch.is_active !== undefined ? { isActive: patch.is_active, is_active: patch.is_active } : {}),
+    updatedAt: now,
+    updated_at: now,
+  })
   return { ok: true as const }
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-}
-
-function asText(value: unknown, fallback = '') {
-  return typeof value === 'string' ? value : fallback
-}
-
-function asNumber(value: unknown, fallback = 0) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function asProductType(value: unknown, fallback: ProductType = 'alinhador_12m'): ProductType {
-  return normalizeProductType(value, fallback)
-}
-
-function appendHistoryLine(base: string | null | undefined, line: string) {
-  const now = new Date()
-  const stamp = now.toLocaleString('pt-BR')
-  const entry = `[${stamp}] ${line}`
-  const previous = (base ?? '').trim()
-  const merged = previous ? `${previous}\n${entry}` : entry
-  return merged.slice(-8000)
-}
-
-async function appendPatientHistorySupabase(patientId: string | null | undefined, line: string) {
-  if (!supabase || !patientId) return
-  const { data, error } = await supabase
-    .from('patients')
-    .select('id, notes')
-    .eq('id', patientId)
-    .maybeSingle()
-  if (error || !data) return
-  const currentNotes = (data as Record<string, unknown>).notes as string | null | undefined
-  const nextNotes = appendHistoryLine(currentNotes, line)
-  await supabase
-    .from('patients')
-    .update({ notes: nextNotes, updated_at: new Date().toISOString() })
-    .eq('id', patientId)
-}
-
-function normalizeScanAttachments(attachments: ScanAttachment[]) {
-  const now = nowIsoDateTime()
-  return attachments.map((attachment) => ({
-    ...attachment,
-    status: attachment.status ?? 'ok',
-    attachedAt: attachment.attachedAt ?? attachment.createdAt ?? now,
-    createdAt: attachment.createdAt ?? now,
-  }))
-}
-
-function buildPendingTrays(totalTrays: number, scanDate: string, changeEveryDays: number): CaseTray[] {
-  const trays: CaseTray[] = []
-  const base = new Date(`${scanDate}T00:00:00`)
-  for (let tray = 1; tray <= totalTrays; tray += 1) {
-    const due = new Date(base)
-    due.setDate(due.getDate() + changeEveryDays * tray)
-    trays.push({ trayNumber: tray, state: 'pendente', dueDate: due.toISOString().slice(0, 10) })
+export async function inviteUser(payload: {
+  email: string
+  role: string
+  clinicId: string
+  dentistId?: string
+  fullName?: string
+  password?: string
+  cpf?: string
+  phone?: string
+  accessToken?: string
+}) {
+  if (DATA_MODE !== 'firebase') {
+    return { ok: false as const, error: 'Convite de usuário remoto disponível apenas no modo Firebase.' }
   }
-  return trays
-}
+  if (!auth) return { ok: false as const, error: 'Firebase Auth não configurado.' }
+  const email = payload.email.trim()
+  const password = payload.password?.trim()
+  if (!email) return { ok: false as const, error: 'E-mail é obrigatório.' }
+  if (!password || password.length < 8) {
+    return { ok: false as const, error: 'Senha deve ter no mínimo 8 caracteres.' }
+  }
 
-function nextExamCode() {
-  return createExamCode()
-}
+  let userCredential
+  try {
+    userCredential = await createUserWithEmailAndPassword(auth, email, password)
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error) {
+      const code = String((error as { code: unknown }).code)
+      if (code === 'auth/email-already-in-use') return { ok: false as const, error: 'E-mail já cadastrado.', code: 'invite_failed' }
+      if (code === 'auth/invalid-email') return { ok: false as const, error: 'E-mail inválido.', code: 'invite_failed' }
+      if (code === 'auth/weak-password') return { ok: false as const, error: 'Senha muito fraca.', code: 'invite_failed' }
+    }
+    return { ok: false as const, error: 'Falha ao criar usuário.', code: 'invite_failed' }
+  }
 
-async function nextTreatmentCodeSupabase() {
-  if (!supabase) return ''
-  const [casesRes, scansRes] = await Promise.all([
-    supabase.from('cases').select('data').is('deleted_at', null),
-    supabase.from('scans').select('data').is('deleted_at', null),
-  ])
-  const collected: string[] = []
-  ;(casesRes.data ?? []).forEach((row) => {
-    const data = asObject((row as Record<string, unknown>).data)
-    const code = normalizeOrthTreatmentCode(asText(data.treatmentCode))
-    if (code) collected.push(code)
-  })
-  ;(scansRes.data ?? []).forEach((row) => {
-    const data = asObject((row as Record<string, unknown>).data)
-    const code = normalizeOrthTreatmentCode(asText(data.serviceOrderCode))
-    if (code) collected.push(code)
-  })
-  return nextOrthTreatmentCode(collected)
-}
-
-async function inferTreatmentOriginSupabase(clinicId?: string | null): Promise<'interno' | 'externo'> {
-  if (!clinicId) return 'externo'
-  const normalizedId = clinicId.trim().toLowerCase()
-  if (normalizedId === 'clinic_arrimo') return 'interno'
-  if (!supabase) return 'externo'
-  const { data } = await supabase
-    .from('clinics')
-    .select('id, short_id, trade_name')
-    .eq('id', clinicId)
-    .maybeSingle()
-  const shortId = asText((data as Record<string, unknown> | null)?.short_id).trim().toUpperCase()
-  const tradeName = asText((data as Record<string, unknown> | null)?.trade_name).trim().toUpperCase()
-  if (shortId === 'CLI-0001' || tradeName === 'ARRIMO') return 'interno'
-  return 'externo'
+  const user = userCredential.user
+  const now = nowIsoDateTime()
+  try {
+    if (payload.fullName?.trim()) {
+      await updateFirebaseAuthProfile(user, { displayName: payload.fullName.trim() })
+    }
+    await setDoc(doc(getFirestoreDb(), 'profiles', user.uid), {
+      role: payload.role as Role,
+      clinicId: payload.clinicId,
+      clinic_id: payload.clinicId,
+      dentistId: payload.dentistId ?? null,
+      dentist_id: payload.dentistId ?? null,
+      loginEmail: email,
+      login_email: email,
+      email,
+      fullName: payload.fullName?.trim() ?? null,
+      full_name: payload.fullName?.trim() ?? null,
+      cpf: payload.cpf?.trim() ?? null,
+      phone: payload.phone?.trim() ?? null,
+      isActive: true,
+      is_active: true,
+      createdAt: now,
+      created_at: now,
+      updatedAt: now,
+      updated_at: now,
+    })
+    return { ok: true as const, data: { userId: user.uid } }
+  } catch (error) {
+    try {
+      await deleteUser(user)
+    } catch {
+      // ignore cleanup failure
+    }
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Falha ao salvar perfil do usuário.',
+      code: 'invite_failed',
+    }
+  }
 }
 
 export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
   try {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const validatedScan = validateCreateScanInput(scan)
-    const now = nowIsoDateTime()
-    const attachments = normalizeScanAttachments(validatedScan.attachments)
-    let resolvedClinicId = validatedScan.clinicId ?? null
-
-    if (!resolvedClinicId && validatedScan.patientId) {
-      const { data: patientRow } = await supabase
-        .from('patients')
-        .select('clinic_id')
-        .eq('id', validatedScan.patientId)
-        .maybeSingle()
-      resolvedClinicId = (patientRow as { clinic_id?: string | null } | null)?.clinic_id ?? null
-    }
-
-    if (!resolvedClinicId && validatedScan.dentistId) {
-      const { data: dentistRow } = await supabase
-        .from('dentists')
-        .select('clinic_id')
-        .eq('id', validatedScan.dentistId)
-        .maybeSingle()
-      resolvedClinicId = (dentistRow as { clinic_id?: string | null } | null)?.clinic_id ?? null
-    }
-
-    if (!resolvedClinicId) {
-      return { ok: false as const, error: 'Selecione uma clínica válida antes de salvar o exame.' }
-    }
-    const shortId = validatedScan.shortId ?? nextExamCode()
-    const serviceOrderCode = normalizeOrthTreatmentCode(validatedScan.serviceOrderCode) || (await nextTreatmentCodeSupabase())
-
-    const { data, error } = await supabase
-      .from('scans')
-      .insert({
-        clinic_id: resolvedClinicId,
-        patient_id: validatedScan.patientId ?? null,
-        dentist_id: validatedScan.dentistId ?? null,
-        requested_by_dentist_id: validatedScan.requestedByDentistId ?? null,
-        arch: validatedScan.arch,
-        complaint: validatedScan.complaint ?? null,
-        dentist_guidance: validatedScan.dentistGuidance ?? null,
-        data: {
-          patientName: validatedScan.patientName,
-          shortId,
-          serviceOrderCode,
-          purposeProductId: validatedScan.purposeProductId,
-          purposeProductType: validatedScan.purposeProductType,
-          purposeLabel: validatedScan.purposeLabel,
-          scanDate: validatedScan.scanDate,
-          arch: validatedScan.arch,
-          complaint: validatedScan.complaint,
-          dentistGuidance: validatedScan.dentistGuidance,
-          notes: validatedScan.notes,
-          planningDetectedUpperTrays: validatedScan.planningDetectedUpperTrays,
-          planningDetectedLowerTrays: validatedScan.planningDetectedLowerTrays,
-          planningDetectedAt: validatedScan.planningDetectedAt,
-          planningDetectedSource: validatedScan.planningDetectedSource,
-          attachments,
-          status: validatedScan.status ?? 'pendente',
-          linkedCaseId: validatedScan.linkedCaseId,
-          createdAt: now,
-          updatedAt: now,
-        },
-        updated_at: now,
-      })
-      .select('id')
-      .maybeSingle()
-
-    if (error) return { ok: false as const, error: error.message }
-    if (!data?.id) return { ok: false as const, error: 'Exame não criado. Verifique permissões.' }
-    logger.info('Exame criado no repositório Supabase.', {
-      flow: 'scan.create',
-      scanId: data.id,
-      patientId: validatedScan.patientId,
-      clinicId: resolvedClinicId,
-      attachments: attachments.length,
-    })
-    return { ok: true as const, id: data.id as string }
+    const created = await createScanFirebase(scan)
+    return { ok: true as const, id: created.id }
   } catch (error) {
-    logger.error('Falha ao criar exame no Supabase.', { flow: 'scan.create' }, error)
     return { ok: false as const, error: error instanceof Error ? error.message : 'Falha ao criar exame.' }
   }
 }
@@ -296,119 +228,7 @@ export async function createCaseFromScanSupabase(
     planningNote?: string
   },
 ) {
-  try {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const validatedPayload = validateCreateCaseFromScanInput({ scanId: scan.id, ...payload })
-    if (scan.status !== 'aprovado') return { ok: false as const, error: 'Apenas exames aprovados podem gerar caso.' }
-    if (scan.linkedCaseId) return { ok: false as const, error: 'Este exame já foi convertido em caso.' }
-    const selectedProductType = asProductType(scan.purposeProductType ?? scan.purposeProductId)
-    const isAlignerFlow = isAlignerProductType(selectedProductType)
-    const upper = validatedPayload.totalTraysUpper ?? 0
-    const lower = validatedPayload.totalTraysLower ?? 0
-    const normalizedUpper = isAlignerFlow ? (scan.arch === 'inferior' ? 0 : upper) : 0
-    const normalizedLower = isAlignerFlow ? (scan.arch === 'superior' ? 0 : lower) : 0
-    const totalTrays = Math.max(normalizedUpper, normalizedLower)
-    if (isAlignerFlow && totalTrays <= 0) return { ok: false as const, error: 'Informe total de placas superior e/ou inferior.' }
-
-    const now = nowIsoDateTime()
-    const treatmentCode = normalizeOrthTreatmentCode(scan.serviceOrderCode) || (await nextTreatmentCodeSupabase())
-    const treatmentOrigin = await inferTreatmentOriginSupabase(scan.clinicId ?? null)
-    const status = 'planejamento'
-    const phase = 'planejamento'
-    const nextData = {
-      productType: selectedProductType as ProductType,
-      productId: selectedProductType as ProductType,
-      requestedProductId: scan.purposeProductId,
-      requestedProductLabel: scan.purposeLabel,
-      treatmentCode,
-      treatmentOrigin,
-      patientName: scan.patientName,
-      scanDate: scan.scanDate,
-      totalTrays: isAlignerFlow ? totalTrays : 0,
-      totalTraysUpper: normalizedUpper || undefined,
-      totalTraysLower: normalizedLower || undefined,
-      changeEveryDays: isAlignerFlow ? validatedPayload.changeEveryDays : 0,
-      attachmentBondingTray: isAlignerFlow ? validatedPayload.attachmentBondingTray : false,
-      planningNote: validatedPayload.planningNote,
-      status,
-      phase,
-      budget: undefined,
-      contract: { status: 'pendente' as const },
-      deliveryLots: [],
-      installation: undefined,
-      trays: isAlignerFlow ? buildPendingTrays(totalTrays, scan.scanDate, validatedPayload.changeEveryDays) : [],
-      attachments: [],
-      sourceScanId: scan.id,
-      sourceExamCode: scan.shortId,
-      arch: scan.arch,
-      complaint: scan.complaint,
-      dentistGuidance: scan.dentistGuidance,
-      scanFiles: normalizeScanAttachments(scan.attachments),
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    const { data: created, error: createError } = await supabase
-      .from('cases')
-      .insert({
-        clinic_id: scan.clinicId ?? null,
-        patient_id: scan.patientId ?? null,
-        dentist_id: scan.dentistId ?? null,
-        requested_by_dentist_id: scan.requestedByDentistId ?? null,
-        scan_id: scan.id,
-        status,
-        change_every_days: isAlignerFlow ? validatedPayload.changeEveryDays : 0,
-        total_trays_upper: isAlignerFlow ? (normalizedUpper || null) : null,
-        total_trays_lower: isAlignerFlow ? (normalizedLower || null) : null,
-        attachments_tray: isAlignerFlow ? validatedPayload.attachmentBondingTray : false,
-        product_type: selectedProductType,
-        product_id: selectedProductType,
-        data: nextData,
-        updated_at: now,
-      })
-      .select('id')
-      .maybeSingle()
-    if (createError) return { ok: false as const, error: createError.message }
-    if (!created?.id) return { ok: false as const, error: 'Caso não criado. Verifique permissoes.' }
-
-    const scanDataNext = {
-      patientName: scan.patientName,
-      serviceOrderCode: treatmentCode,
-      purposeProductId: scan.purposeProductId,
-      purposeProductType: scan.purposeProductType,
-      purposeLabel: scan.purposeLabel,
-      scanDate: scan.scanDate,
-      arch: scan.arch,
-      complaint: scan.complaint,
-      dentistGuidance: scan.dentistGuidance,
-      notes: scan.notes,
-      planningDetectedUpperTrays: scan.planningDetectedUpperTrays,
-      planningDetectedLowerTrays: scan.planningDetectedLowerTrays,
-      planningDetectedAt: scan.planningDetectedAt,
-      planningDetectedSource: scan.planningDetectedSource,
-      attachments: normalizeScanAttachments(scan.attachments),
-      status: 'convertido',
-      linkedCaseId: created.id,
-      createdAt: scan.createdAt,
-      updatedAt: now,
-    }
-    const { error: scanUpdateError } = await supabase
-      .from('scans')
-      .update({ data: scanDataNext, updated_at: now })
-      .eq('id', scan.id)
-    if (scanUpdateError) return { ok: false as const, error: scanUpdateError.message }
-
-    logger.info('Caso criado a partir do exame no Supabase.', {
-      flow: 'cases.create_from_scan',
-      scanId: scan.id,
-      caseId: created.id,
-      treatmentCode,
-    })
-    return { ok: true as const, caseId: created.id as string }
-  } catch (error) {
-    logger.error('Falha ao criar caso a partir do exame no Supabase.', { flow: 'cases.create_from_scan', scanId: scan.id }, error)
-    return { ok: false as const, error: error instanceof Error ? error.message : 'Falha ao criar caso.' }
-  }
+  return createCaseFromScanFirebase(scan.id, payload)
 }
 
 export async function patchCaseDataSupabase(
@@ -416,578 +236,58 @@ export async function patchCaseDataSupabase(
   patch: Record<string, unknown>,
   options?: { status?: string; phase?: string },
 ) {
-  try {
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const normalizedCaseId = parseTrimmedString(caseId, 'Caso')
-    const normalizedPatch = parseObject(patch, 'Patch do caso inválido.')
-    const rpc = await supabase.rpc('patch_case_data', {
-      p_case_id: normalizedCaseId,
-      p_patch: normalizedPatch,
-      p_status: options?.status ?? null,
-      p_phase: options?.phase ?? null,
-    })
-
-    if (!rpc.error) {
-      logger.info('Dados do caso atualizados no Supabase via RPC.', { flow: 'cases.patch', caseId: normalizedCaseId })
-      return { ok: true as const }
-    }
-
-    const rpcMessage = rpc.error.message.toLowerCase()
-    const shouldFallback =
-      rpcMessage.includes('could not find the function public.patch_case_data')
-      || rpcMessage.includes('function public.patch_case_data')
-      || rpcMessage.includes('patch_case_data(')
-
-    if (!shouldFallback) {
-      return { ok: false as const, error: rpc.error.message }
-    }
-
-    const now = nowIsoDateTime()
-    const { data: current, error: readError } = await supabase
-      .from('cases')
-      .select('id, status, data')
-      .eq('id', normalizedCaseId)
-      .maybeSingle()
-    if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
-
-    const currentData = asObject(current.data)
-    const nextStatus = options?.status ?? asText(currentData.status, asText(current.status, 'planejamento'))
-    const nextPhase = options?.phase ?? asText(currentData.phase, 'planejamento')
-    const nextData = {
-      ...currentData,
-      ...normalizedPatch,
-      status: nextStatus,
-      phase: nextPhase,
-      updatedAt: now,
-    }
-
-    const { error } = await supabase
-      .from('cases')
-      .update({
-        data: nextData,
-        status: nextStatus,
-        updated_at: now,
-      })
-      .eq('id', normalizedCaseId)
-    if (error) return { ok: false as const, error: error.message }
-    logger.info('Dados do caso atualizados no Supabase via fallback.', { flow: 'cases.patch', caseId: normalizedCaseId })
-    return { ok: true as const }
-  } catch (error) {
-    logger.error('Falha ao atualizar dados do caso no Supabase.', { flow: 'cases.patch', caseId }, error)
-    return { ok: false as const, error: error instanceof Error ? error.message : 'Falha ao atualizar caso.' }
-  }
+  const current = await getCaseFirebase(caseId)
+  if (!current) return { ok: false as const, error: 'Caso não encontrado.' }
+  const updated = await updateCaseFirebase(caseId, {
+    ...current,
+    ...(patch as Partial<typeof current>),
+    status: (options?.status as typeof current.status | undefined) ?? current.status,
+    phase: (options?.phase as typeof current.phase | undefined) ?? current.phase,
+  })
+  if (!updated) return { ok: false as const, error: 'Falha ao atualizar caso.' }
+  return { ok: true as const }
 }
 
 export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[]> {
-  if (!supabase) return []
-  const { data, error } = await supabase
-    .from('lab_items')
-    .select('id, case_id, tray_number, status, priority, notes, product_type, product_id, created_at, updated_at, deleted_at, data')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-  if (error) return []
-
-  const items = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
-    const meta = asObject(row.data)
-    const createdAt = asText(row.created_at, new Date().toISOString())
-    const updatedAt = asText(row.updated_at, createdAt)
-    return {
-      id: asText(row.id),
-      requestCode: asText(meta.requestCode) || undefined,
-      productType: asProductType(row.product_type ?? row.product_id ?? meta.productType ?? meta.productId),
-      productId: asProductType(row.product_id ?? row.product_type ?? meta.productId ?? meta.productType),
-      requestedProductId: asText(meta.requestedProductId) || undefined,
-      requestedProductLabel: asText(meta.requestedProductLabel) || undefined,
-      requestKind: asText(meta.requestKind, 'producao') as LabItem['requestKind'],
-      expectedReplacementDate: asText(meta.expectedReplacementDate) || undefined,
-      caseId: asText(row.case_id) || undefined,
-      arch: asText(meta.arch, 'ambos') as LabItem['arch'],
-      plannedUpperQty: asNumber(meta.plannedUpperQty, 0),
-      plannedLowerQty: asNumber(meta.plannedLowerQty, 0),
-      planningDefinedAt: asText(meta.planningDefinedAt) || undefined,
-      trayNumber: asNumber(row.tray_number, asNumber(meta.trayNumber, 1)),
-      patientName: asText(meta.patientName, '-'),
-      plannedDate: asText(meta.plannedDate, createdAt.slice(0, 10)),
-      dueDate: asText(meta.dueDate, createdAt.slice(0, 10)),
-      status: asText(row.status, 'aguardando_iniciar') as LabItem['status'],
-      priority: asText(row.priority, 'Medio') as LabItem['priority'],
-      notes: asText(row.notes, asText(meta.notes)) || undefined,
-      createdAt,
-      updatedAt,
-    } satisfies LabItem
-  })
-  return getCanonicalLabOrders(items)
+  const orders = await listLabOrdersFirebase()
+  return getCanonicalLabOrders(orders.filter((item) => item.caseId === caseId))
 }
 
 export async function generateCaseLabOrderSupabase(caseId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data: current, error: readError } = await supabase
-    .from('cases')
-    .select('id, clinic_id, patient_id, status, data')
-    .eq('id', caseId)
-    .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
-
-  const currentData = asObject(current.data)
-  const contract = asObject(currentData.contract)
-  if (asText(contract.status, 'pendente') !== 'aprovado') {
-    return { ok: false as const, error: 'Contrato não aprovado. Não é possível gerar OS para o laboratório.' }
-  }
-
-  const existingItems = await listCaseLabItemsSupabase(caseId)
-  const existing = existingItems.find((item) => (item.requestKind ?? 'producao') === 'producao')
-  if (existing) return { ok: true as const, alreadyExists: true as const }
-
-  const now = new Date().toISOString()
-  const today = now.slice(0, 10)
-  const due = new Date(`${today}T00:00:00`)
-  due.setDate(due.getDate() + 7)
-  const dueDate = due.toISOString().slice(0, 10)
-
-  const requestCode = asText(currentData.treatmentCode, asText(current.id))
-  const productType = asProductType(currentData.productType ?? currentData.productId)
-  const { error: createError } = await supabase
-    .from('lab_items')
-    .insert({
-      case_id: caseId,
-      clinic_id: current.clinic_id ?? null,
-      tray_number: 1,
-      status: 'aguardando_iniciar',
-      priority: 'Medio',
-      notes: 'OS gerada a partir do fluxo comercial do caso. Defina quantidade por arcada antes de produzir.',
-      product_type: productType,
-      product_id: productType,
-      data: {
-        requestCode,
-        productType,
-        productId: productType,
-        requestedProductId: asText(currentData.requestedProductId) || undefined,
-        requestedProductLabel: asText(currentData.requestedProductLabel) || undefined,
-        requestKind: 'producao',
-        expectedReplacementDate: dueDate,
-        arch: asText(currentData.arch, 'ambos'),
-        patientName: asText(currentData.patientName, '-'),
-        trayNumber: 1,
-        plannedDate: today,
-        dueDate,
-        plannedUpperQty: 0,
-        plannedLowerQty: 0,
-      },
-      updated_at: now,
-    })
-  if (createError) {
-    if (createError.code === '23505') return { ok: true as const, alreadyExists: true as const }
-    return { ok: false as const, error: createError.message }
-  }
-  logger.business(BUSINESS_EVENTS.LAB_SENT, 'Caso enviado para o LAB.', {
-    caseId,
-    requestCode,
-    trayNumber: 1,
-    productType,
-    dueDate,
-    source: 'profileRepo.generateCaseLabOrderSupabase',
-  })
-  return { ok: true as const, alreadyExists: false as const }
+  return generateCaseLabOrderFirebase(caseId)
 }
 
 export async function updateScanStatusSupabase(scanId: string, status: 'aprovado' | 'reprovado') {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data: current, error: readError } = await supabase
-    .from('scans')
-    .select('id, data')
-    .eq('id', scanId)
-    .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Exame não encontrado.' }
-  const nextData = { ...asObject(current.data), status }
-  const { data, error } = await supabase
-    .from('scans')
-    .update({ data: nextData, updated_at: new Date().toISOString() })
-    .eq('id', scanId)
-    .select('id')
-  if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) return { ok: false as const, error: 'Exame não atualizado. Verifique permissões.' }
-  return { ok: true as const }
+  if (status === 'aprovado') {
+    const result = await approveScanFirebase(scanId)
+    return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao aprovar exame.' }
+  }
+  const result = await rejectScanFirebase(scanId)
+  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao reprovar exame.' }
 }
 
 export async function deleteScanSupabase(scanId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data: current } = await supabase
-    .from('scans')
-    .select('id, patient_id, data')
-    .eq('id', scanId)
-    .maybeSingle()
-  const currentData = asObject((current as Record<string, unknown> | null)?.data)
-  const patientId = asText((current as Record<string, unknown> | null)?.patient_id, asText(currentData.patientId)) || undefined
-  const patientName = asText(currentData.patientName, '-')
-  const scanDate = asText(currentData.scanDate)
-  const linkedCaseIdFromScan = asText(currentData.linkedCaseId)
-  const now = new Date().toISOString()
-
-  const caseIds = new Set<string>()
-  if (linkedCaseIdFromScan) caseIds.add(linkedCaseIdFromScan)
-  const { data: casesByScan } = await supabase
-    .from('cases')
-    .select('id')
-    .eq('scan_id', scanId)
-    .is('deleted_at', null)
-  ;(casesByScan ?? []).forEach((row) => {
-    const id = asText((row as Record<string, unknown>).id)
-    if (id) caseIds.add(id)
-  })
-
-  if (caseIds.size > 0) {
-    const ids = Array.from(caseIds)
-    await supabase
-      .from('lab_items')
-      .update({ deleted_at: now, updated_at: now })
-      .in('case_id', ids)
-      .is('deleted_at', null)
-
-    await supabase
-      .from('cases')
-      .update({ deleted_at: now, updated_at: now })
-      .in('id', ids)
-      .is('deleted_at', null)
-
-    // Tabela opcional no banco; se não existir, a exclusão principal continua válida.
-    await supabase
-      .from('replacement_bank')
-      .delete()
-      .in('case_id', ids)
-  }
-
-  const { data, error } = await supabase
-    .from('scans')
-    .update({ deleted_at: now, updated_at: now })
-    .eq('id', scanId)
-    .select('id')
-  if (error) return { ok: false as const, error: error.message }
-  if (!data || data.length === 0) return { ok: false as const, error: 'Exame não excluído. Verifique permissões.' }
-  await appendPatientHistorySupabase(
-    patientId,
-    caseIds.size > 0
-      ? `Exame excluido pelo administrador com cascata (${caseIds.size} pedido(s), OS e reposicoes). Paciente: ${patientName}. Data do exame: ${scanDate || '-'}.`
-      : `Exame excluido pelo administrador. Paciente: ${patientName}. Data do exame: ${scanDate || '-'}.`,
-  )
-  return { ok: true as const }
+  const result = await deleteScanFirebase(scanId)
+  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao excluir exame.' }
 }
 
 export async function deleteCaseSupabase(caseId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data: current, error: readError } = await supabase
-    .from('cases')
-    .select('id, patient_id, data')
-    .eq('id', caseId)
-    .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'Caso não encontrado.' }
-
-  const currentData = asObject((current as Record<string, unknown>).data)
-  const patientId = asText((current as Record<string, unknown>).patient_id, asText(currentData.patientId)) || undefined
-  const treatmentCode = asText(currentData.treatmentCode, caseId)
-  const patientName = asText(currentData.patientName, '-')
-  const now = new Date().toISOString()
-
-  const { data: updated, error } = await supabase
-    .from('cases')
-    .update({ deleted_at: now, updated_at: now })
-    .eq('id', caseId)
-    .select('id')
-  if (error) return { ok: false as const, error: error.message }
-  if (!updated || updated.length === 0) return { ok: false as const, error: 'Caso não excluido. Verifique permissoes.' }
-
-  await supabase
-    .from('lab_items')
-    .update({ deleted_at: now, updated_at: now })
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-  const linkedScans = await supabase
-    .from('scans')
-    .select('id, data')
-    .eq('data->>linkedCaseId', caseId)
-    .is('deleted_at', null)
-  if (!linkedScans.error) {
-    for (const row of linkedScans.data ?? []) {
-      const scanData = asObject((row as Record<string, unknown>).data)
-      const nextScanData = {
-        ...scanData,
-        linkedCaseId: undefined,
-        status: scanData.status === 'convertido' ? 'aprovado' : scanData.status,
-        updatedAt: now,
-      }
-      await supabase
-        .from('scans')
-        .update({ data: nextScanData, updated_at: now })
-        .eq('id', asText((row as Record<string, unknown>).id))
-    }
-  }
-
-  // Tabela opcional no banco; se não existir, a exclusão principal continua válida.
-  await supabase
-    .from('replacement_bank')
-    .delete()
-    .eq('case_id', caseId)
-
-  await appendPatientHistorySupabase(
-    patientId,
-    `Pedido ${treatmentCode} excluido pelo administrador, incluindo OS vinculadas. Paciente: ${patientName}.`,
-  )
-  return { ok: true as const }
+  const result = await deleteCaseFirebase(caseId)
+  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao excluir caso.' }
 }
 
 export async function deleteLabItemSupabase(labItemId: string) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const { data: current, error: readError } = await supabase
-    .from('lab_items')
-    .select('id, case_id, tray_number, data')
-    .eq('id', labItemId)
-    .maybeSingle()
-  if (readError || !current) return { ok: false as const, error: readError?.message ?? 'OS não encontrada.' }
-
-  const meta = asObject((current as Record<string, unknown>).data)
-  const caseId = asText((current as Record<string, unknown>).case_id) || undefined
-  const trayNumber = asNumber((current as Record<string, unknown>).tray_number, asNumber(meta.trayNumber, 1))
-  let patientId: string | undefined
-  let patientName = asText(meta.patientName, '-')
-  if (caseId) {
-    const { data: linkedCase } = await supabase
-      .from('cases')
-      .select('id, patient_id, data')
-      .eq('id', caseId)
-      .maybeSingle()
-    if (linkedCase) {
-      const caseData = asObject((linkedCase as Record<string, unknown>).data)
-      patientId = asText((linkedCase as Record<string, unknown>).patient_id, asText(caseData.patientId)) || undefined
-      patientName = asText(caseData.patientName, patientName)
-    }
-  }
-
-  const now = new Date().toISOString()
-  const { data: updated, error } = await supabase
-    .from('lab_items')
-    .update({ deleted_at: now, updated_at: now })
-    .eq('id', labItemId)
-    .select('id')
-  if (error) return { ok: false as const, error: error.message }
-  if (!updated || updated.length === 0) return { ok: false as const, error: 'OS não excluida. Verifique permissoes.' }
-
-  await appendPatientHistorySupabase(
-    patientId,
-    `OS de laboratório excluída pelo administrador (placa #${trayNumber}) para ${patientName}.`,
-  )
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
+  const now = nowIsoDateTime()
+  await updateDoc(doc(getFirestoreDb(), 'lab_items', labItemId), {
+    deletedAt: now,
+    deleted_at: now,
+    updatedAt: now,
+    updated_at: now,
+  })
   return { ok: true as const }
 }
 
-export async function inviteUser(payload: {
-  email: string
-  role: string
-  clinicId: string
-  dentistId?: string
-  fullName?: string
-  password?: string
-  cpf?: string
-  phone?: string
-  accessToken: string
-}) {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-  const accessToken = payload.accessToken?.trim()
-  if (!accessToken) return { ok: false as const, error: 'Sessão expirada. Saia e entre novamente.' }
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  if (!anonKey) return { ok: false as const, error: 'Supabase anon key ausente no build.' }
-  if (!supabaseUrl) return { ok: false as const, error: 'Supabase URL ausente no build.' }
-
-  const requestBodyBase = {
-    email: payload.email,
-    role: payload.role,
-    clinicId: payload.clinicId,
-    dentistId: payload.dentistId,
-    fullName: payload.fullName,
-    password: payload.password,
-    cpf: payload.cpf,
-    phone: payload.phone,
-  }
-  const callInvite = async (token: string) => {
-    try {
-      const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/invite-user`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${anonKey}`,
-          'x-user-jwt': token,
-          'Content-Type': 'application/json',
-          apikey: anonKey,
-        },
-        body: JSON.stringify({ ...requestBodyBase, userJwt: token }),
-      })
-      const raw = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string; message?: string } | null
-      return { response, raw, networkError: '' }
-    } catch (error) {
-      return {
-        response: null,
-        raw: null,
-        networkError: error instanceof Error ? error.message : String(error),
-      }
-    }
-  }
-
-  let first = await callInvite(accessToken)
-  if (!first.response) {
-    return {
-      ok: false as const,
-      error: `Falha de rede/CORS ao chamar invite-user. Verifique ALLOWED_ORIGIN e tente novamente. Detalhe: ${first.networkError}`,
-      code: 'network_error',
-    }
-  }
-  const firstMessage = (first.raw?.error ?? first.raw?.message ?? '').toLowerCase()
-  const shouldRetry =
-    first.response.status === 401 ||
-    first.response.status === 403 ||
-    firstMessage.includes('invalid jwt')
-
-  if (shouldRetry) {
-    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
-    const refreshedToken = refreshed.session?.access_token ?? ''
-    if (!refreshError && refreshedToken) {
-      first = await callInvite(refreshedToken)
-    }
-  }
-  if (!first.response) {
-    return {
-      ok: false as const,
-      error: `Falha de rede/CORS ao chamar invite-user. Verifique ALLOWED_ORIGIN e tente novamente. Detalhe: ${first.networkError}`,
-      code: 'network_error',
-    }
-  }
-
-  if (!first.response.ok || (first.raw && first.raw.ok === false)) {
-    const normalizedMessage = (first.raw?.error ?? first.raw?.message ?? '').toLowerCase()
-    const code = first.raw?.code
-      ?? (normalizedMessage.includes('invalid jwt') ? 'unauthorized' : undefined)
-      ?? (first.response.status === 401 ? 'unauthorized' : first.response.status === 403 ? 'forbidden' : 'invite_failed')
-    const detailed = first.raw?.error ?? first.raw?.message ?? `Falha ao criar usuário (HTTP ${first.response.status}).`
-    return { ok: false as const, error: detailed, code }
-  }
-  return { ok: true as const, data: first.raw }
-}
-
 export async function normalizeTreatmentIdsSupabase() {
-  if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-
-  const [scansRes, casesRes] = await Promise.all([
-    supabase
-      .from('scans')
-      .select('id, created_at, data')
-      .is('deleted_at', null),
-    supabase
-      .from('cases')
-      .select('id, scan_id, created_at, data')
-      .is('deleted_at', null),
-  ])
-
-  if (scansRes.error) return { ok: false as const, error: scansRes.error.message }
-  if (casesRes.error) return { ok: false as const, error: casesRes.error.message }
-
-  const scans = (scansRes.data ?? []) as Array<Record<string, unknown>>
-  const cases = (casesRes.data ?? []) as Array<Record<string, unknown>>
-
-  const linkedCaseByScanId = new Map<string, string>()
-  const scanCreatedAt = new Map<string, string>()
-  scans.forEach((row) => {
-    const scanId = asText(row.id)
-    const data = asObject(row.data)
-    const linkedCaseId = asText(data.linkedCaseId)
-    if (scanId) {
-      scanCreatedAt.set(scanId, asText(row.created_at, new Date().toISOString()))
-    }
-    if (scanId && linkedCaseId) {
-      linkedCaseByScanId.set(scanId, linkedCaseId)
-    }
-  })
-  cases.forEach((row) => {
-    const caseId = asText(row.id)
-    const scanId = asText(row.scan_id)
-    if (scanId && caseId) linkedCaseByScanId.set(scanId, caseId)
-  })
-
-  const sortedScanIds = [...scanCreatedAt.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([id]) => id)
-
-  const nextCodes: string[] = []
-  const codeByScanId = new Map<string, string>()
-  const codeByCaseId = new Map<string, string>()
-
-  sortedScanIds.forEach((scanId) => {
-    const code = nextOrthTreatmentCode(nextCodes)
-    nextCodes.push(code)
-    codeByScanId.set(scanId, code)
-    const linkedCaseId = linkedCaseByScanId.get(scanId)
-    if (linkedCaseId) codeByCaseId.set(linkedCaseId, code)
-  })
-
-  const caseRowsById = new Map<string, Record<string, unknown>>()
-  cases.forEach((row) => caseRowsById.set(asText(row.id), row))
-
-  const missingCases = cases
-    .map((row) => asText(row.id))
-    .filter((id) => id && !codeByCaseId.has(id))
-    .map((id) => ({
-      id,
-      createdAt: asText(caseRowsById.get(id)?.created_at, new Date().toISOString()),
-    }))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-
-  missingCases.forEach((row) => {
-    const code = nextOrthTreatmentCode(nextCodes)
-    nextCodes.push(code)
-    codeByCaseId.set(row.id, code)
-  })
-
-  let updatedScans = 0
-  for (const row of scans) {
-    const scanId = asText(row.id)
-    if (!scanId) continue
-    const currentData = asObject(row.data)
-    const targetCode = codeByScanId.get(scanId) ?? normalizeOrthTreatmentCode(asText(currentData.serviceOrderCode))
-    if (!targetCode) continue
-    const currentCode = normalizeOrthTreatmentCode(asText(currentData.serviceOrderCode))
-    if (currentCode === targetCode) continue
-    const nextData = {
-      ...currentData,
-      serviceOrderCode: targetCode,
-      updatedAt: new Date().toISOString(),
-    }
-    const { error } = await supabase
-      .from('scans')
-      .update({ data: nextData, updated_at: new Date().toISOString() })
-      .eq('id', scanId)
-    if (!error) updatedScans += 1
-  }
-
-  let updatedCases = 0
-  for (const row of cases) {
-    const caseId = asText(row.id)
-    if (!caseId) continue
-    const currentData = asObject(row.data)
-    const targetCode = codeByCaseId.get(caseId)
-    if (!targetCode) continue
-    const currentCode = normalizeOrthTreatmentCode(asText(currentData.treatmentCode))
-    if (currentCode === targetCode) continue
-    const nextData = {
-      ...currentData,
-      treatmentCode: targetCode,
-      updatedAt: new Date().toISOString(),
-    }
-    const { error } = await supabase
-      .from('cases')
-      .update({ data: nextData, updated_at: new Date().toISOString() })
-      .eq('id', caseId)
-    if (!error) updatedCases += 1
-  }
-
-  return {
-    ok: true as const,
-    updatedScans,
-    updatedCases,
-  }
+  return { ok: true as const, message: 'Normalização não necessária no Firebase.' }
 }
-

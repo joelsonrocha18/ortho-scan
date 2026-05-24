@@ -6,10 +6,9 @@ let providerPromise: Promise<AuthProvider> | null = null
 
 async function loadAuthProvider(): Promise<AuthProvider> {
   if (!providerPromise) {
-    providerPromise = DATA_MODE === 'firebase'
-      ? import('./authFirebase').then((module) => module.authFirebase)
-      : DATA_MODE === 'supabase'
-        ? import('./authSupabase').then((module) => module.authSupabase)
+    providerPromise =
+      DATA_MODE === 'firebase'
+        ? import('./authFirebase').then((module) => module.authFirebase)
         : import('./authLocal').then((module) => module.authLocal)
   }
   return providerPromise

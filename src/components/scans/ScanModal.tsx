@@ -275,7 +275,7 @@ export default function ScanModal({
       setError(valid.error)
       return null
     }
-    if (DATA_MODE !== 'supabase') return makeLocalAttachment(file, partial)
+    if (DATA_MODE !== 'firebase') return makeLocalAttachment(file, partial)
     if (!form.clinicId) return makeLocalAttachment(file, partial)
 
     const scanId = mode === 'edit' && initialScan ? initialScan.id : draftId || 'draft_upload'

@@ -1,15 +1,12 @@
-import { getSupabaseAccessToken } from '../lib/auth'
-import { logger } from '../lib/logger'
-import { supabase } from '../lib/supabaseClient'
+import { deleteObject, getBlob, getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { DATA_MODE } from '../data/dataMode'
+import { storage } from '../lib/firebaseClient'
+import { logger } from '../lib/logger'
 import { createValidationError, getErrorMessage } from '../shared/errors'
 import { buildUtcTimestampToken, sanitizeTokenSegment } from '../shared/utils/id'
 
-const BUCKET = 'orthoscan'
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
-const STORAGE_PROVIDER = ((import.meta.env.VITE_STORAGE_PROVIDER as string | undefined) ?? 'supabase').trim().toLowerCase()
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? ''
-const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? ''
+const STORAGE_PROVIDER = ((import.meta.env.VITE_STORAGE_PROVIDER as string | undefined) ?? 'firebase').trim().toLowerCase()
 const localMockStorage = new Map<string, { file: File; createdAt: string }>()
 
 function fileNameWithTimestamp(fileName: string, params: { patientId?: string; origin?: string }) {
@@ -29,6 +26,13 @@ function assertStoragePath(path: string) {
 
 function isLocalMockStorageEnabled() {
   return DATA_MODE === 'local'
+}
+
+function firebaseStorageRef(path: string) {
+  if (!storage) {
+    throw new Error('Firebase Storage não configurado.')
+  }
+  return ref(storage, path)
 }
 
 function createLocalMockSignedUrl(path: string) {
@@ -67,14 +71,13 @@ export async function uploadToStorage(path: string, file: File) {
       return { ok: true as const, path: safePath }
     }
     if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return uploadToMicrosoftDrive(safePath, file)
+      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
     }
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { error } = await supabase.storage.from(BUCKET).upload(safePath, file, {
-      upsert: false,
+    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
+    await uploadBytes(firebaseStorageRef(safePath), file, {
       contentType: file.type || undefined,
+      cacheControl: 'public,max-age=3600',
     })
-    if (error) return { ok: false as const, error: error.message }
     return { ok: true as const, path: safePath }
   } catch (error) {
     logger.error('Falha ao enviar arquivo ao storage.', { flow: 'storage.upload', path, fileName: file.name }, error)
@@ -82,22 +85,21 @@ export async function uploadToStorage(path: string, file: File) {
   }
 }
 
-export async function createSignedUrl(path: string, expiresIn = 300) {
+export async function createSignedUrl(path: string, _expiresIn = 300) {
   try {
     const safePath = assertStoragePath(path)
     if (isLocalMockStorageEnabled()) {
       return createLocalMockSignedUrl(safePath)
     }
     if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return resolveMicrosoftDriveDownloadUrl(safePath)
+      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
     }
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(safePath, expiresIn)
-    if (error || !data?.signedUrl) return { ok: false as const, error: error?.message ?? 'Falha ao gerar URL assinada.' }
-    return { ok: true as const, url: data.signedUrl }
+    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
+    const url = await getDownloadURL(firebaseStorageRef(safePath))
+    return { ok: true as const, url }
   } catch (error) {
-    logger.error('Falha ao gerar URL assinada.', { flow: 'storage.create_signed_url', path }, error)
-    return { ok: false as const, error: getErrorMessage(error, 'Falha ao gerar URL assinada.') }
+    logger.error('Falha ao gerar URL de download.', { flow: 'storage.create_signed_url', path }, error)
+    return { ok: false as const, error: getErrorMessage(error, 'Falha ao gerar URL de download.') }
   }
 }
 
@@ -110,17 +112,11 @@ export async function downloadBlob(path: string) {
       return { ok: true as const, blob: entry.file }
     }
     if (STORAGE_PROVIDER === 'microsoft_drive') {
-      const resolved = await resolveMicrosoftDriveDownloadUrl(safePath)
-      if (!resolved.ok) return resolved
-      const response = await fetch(resolved.url)
-      if (!response.ok) return { ok: false as const, error: 'Falha ao baixar arquivo no Microsoft Drive.' }
-      const blob = await response.blob()
-      return { ok: true as const, blob }
+      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
     }
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { data, error } = await supabase.storage.from(BUCKET).download(safePath)
-    if (error || !data) return { ok: false as const, error: error?.message ?? 'Falha ao baixar arquivo.' }
-    return { ok: true as const, blob: data }
+    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
+    const blob = await getBlob(firebaseStorageRef(safePath))
+    return { ok: true as const, blob }
   } catch (error) {
     logger.error('Falha ao baixar arquivo do storage.', { flow: 'storage.download', path }, error)
     return { ok: false as const, error: getErrorMessage(error, 'Falha ao baixar arquivo.') }
@@ -135,11 +131,10 @@ export async function deleteFromStorage(path: string) {
       return { ok: true as const }
     }
     if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return deleteFromMicrosoftDrive(safePath)
+      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
     }
-    if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
-    const { error } = await supabase.storage.from(BUCKET).remove([safePath])
-    if (error) return { ok: false as const, error: error.message }
+    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
+    await deleteObject(firebaseStorageRef(safePath))
     return { ok: true as const }
   } catch (error) {
     logger.error('Falha ao remover arquivo do storage.', { flow: 'storage.delete', path }, error)
@@ -185,94 +180,4 @@ export function validateScanAttachmentFile(file: File, kind: string) {
     return validateFile(file, ['.pdf', '.jpg', '.jpeg', '.png', '.dcm', '.zip'], ['image/', 'application/pdf', 'application/zip', 'application/octet-stream'])
   }
   return validateFile(file, [], [])
-}
-
-async function readAccessToken() {
-  if (!supabase) return null
-  const { data } = await supabase.auth.getSession()
-  return data.session?.access_token ?? getSupabaseAccessToken() ?? null
-}
-
-function msFunctionUrl() {
-  return `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/ms-drive-storage`
-}
-
-async function callMicrosoftDriveFunction(params: {
-  action: 'create-link' | 'delete' | 'download-url'
-  path: string
-  expiresIn?: number
-}) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return { ok: false as const, error: 'Supabase env ausente para chamar ms-drive-storage.' }
-  }
-  const token = await readAccessToken()
-  if (!token) return { ok: false as const, error: 'Sessão expirada. Saia e entre novamente.' }
-
-  const response = await fetch(msFunctionUrl(), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'x-user-jwt': token,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ ...params, path: assertStoragePath(params.path) }),
-  })
-
-  let payload: { ok?: boolean; error?: string; url?: string } | null = null
-  try {
-    payload = (await response.json()) as { ok?: boolean; error?: string; url?: string }
-  } catch {
-    payload = null
-  }
-  if (!response.ok || !payload?.ok) {
-    return { ok: false as const, error: payload?.error ?? `Falha ms-drive-storage (${response.status}).` }
-  }
-  return { ok: true as const, url: payload.url }
-}
-
-async function uploadToMicrosoftDrive(path: string, file: File) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return { ok: false as const, error: 'Supabase env ausente para chamar ms-drive-storage.' }
-  }
-  const token = await readAccessToken()
-  if (!token) return { ok: false as const, error: 'Sessão expirada. Saia e entre novamente.' }
-
-  const form = new FormData()
-  form.set('action', 'upload')
-  form.set('path', assertStoragePath(path))
-  form.set('file', file, file.name)
-
-  const response = await fetch(msFunctionUrl(), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'x-user-jwt': token,
-    },
-    body: form,
-  })
-
-  let payload: { ok?: boolean; error?: string } | null = null
-  try {
-    payload = (await response.json()) as { ok?: boolean; error?: string }
-  } catch {
-    payload = null
-  }
-  if (!response.ok || !payload?.ok) {
-    return { ok: false as const, error: payload?.error ?? `Falha ms-drive-storage (${response.status}).` }
-  }
-  return { ok: true as const, path: assertStoragePath(path) }
-}
-
-async function resolveMicrosoftDriveDownloadUrl(path: string) {
-  const response = await callMicrosoftDriveFunction({ action: 'download-url', path })
-  if (!response.ok || !response.url) {
-    return { ok: false as const, error: response.error ?? 'Falha ao resolver download no Microsoft Drive.' }
-  }
-  return { ok: true as const, url: response.url }
-}
-
-async function deleteFromMicrosoftDrive(path: string) {
-  const response = await callMicrosoftDriveFunction({ action: 'delete', path })
-  if (!response.ok) return { ok: false as const, error: response.error ?? 'Falha ao remover arquivo no Microsoft Drive.' }
-  return { ok: true as const }
 }

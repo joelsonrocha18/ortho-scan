@@ -46,9 +46,7 @@ import { isWhatsappServiceReady, sendWhatsappServiceMessage } from '../lib/whats
 import DocumentsList from '../components/documents/DocumentsList'
 import { createSignedUrl, validatePatientDocFile } from '../repo/storageRepo'
 import { DATA_MODE } from '../data/dataMode'
-import { supabase } from '../lib/supabaseClient'
 import { patientCode } from '../lib/entityCode'
-import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import { listDentistsFirebase } from '../data/dentistRepo'
 import { listClinicsFirebase } from '../repo/clinicRepo'
 
@@ -201,15 +199,12 @@ export default function PatientDetailPage() {
   const isExternalUser = currentUser?.role === 'dentist_client' || currentUser?.role === 'clinic_client'
   const canDocsWrite = can(currentUser, 'docs.write')
   const canDocsAdmin = currentUser?.role === 'master_admin' || currentUser?.role === 'dentist_admin' || currentUser?.role === 'receptionist'
-  const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
-  const supabaseSyncTick = useSupabaseSyncTick()
   const isNew = params.id === 'new'
   const localExisting = useMemo(() => (!isNew && params.id ? getPatient(params.id) : null), [isNew, params.id])
-  const [supabaseExisting, setSupabaseExisting] = useState<Patient | null>(null)
   const [firebaseExisting, setFirebaseExisting] = useState<Patient | null>(null)
   const [loadingExisting, setLoadingExisting] = useState(false)
-  const existing = isSupabaseMode ? supabaseExisting : isFirebaseMode ? firebaseExisting : localExisting
+  const existing = isFirebaseMode ? firebaseExisting : localExisting
   const scopedPatients = useMemo(() => listPatientsForUser(db, currentUser), [db, currentUser])
 
   const [form, setForm] = useState<PatientForm>(emptyForm)
@@ -224,64 +219,28 @@ export default function PatientDetailPage() {
   const [cepStatus, setCepStatus] = useState('')
   const [cepError, setCepError] = useState('')
 
-  const [supabaseDentists, setSupabaseDentists] = useState<Array<{
+  const [firebaseDentists, setFirebaseDentists] = useState<Array<{
     id: string
     name: string
     gender?: 'masculino' | 'feminino'
     whatsapp?: string
     clinicId?: string
   }>>([])
-  const [supabaseClinics, setSupabaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
-  const [supabasePatientScans, setSupabasePatientScans] = useState<Scan[]>([])
-  const [supabasePatientCases, setSupabasePatientCases] = useState<Case[]>([])
-  const [firebaseDentists, setFirebaseDentists] = useState<typeof supabaseDentists>([])
-  const [firebaseClinics, setFirebaseClinics] = useState<typeof supabaseClinics>([])
+  const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [firebasePatientScans, setFirebasePatientScans] = useState<Scan[]>([])
   const [firebasePatientCases, setFirebasePatientCases] = useState<Case[]>([])
   const dentists = useMemo(
     () =>
-      isSupabaseMode
-        ? supabaseDentists
-        : isFirebaseMode
-          ? firebaseDentists
-          : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt),
-    [db.dentists, firebaseDentists, isFirebaseMode, isSupabaseMode, supabaseDentists],
+      isFirebaseMode
+        ? firebaseDentists
+        : db.dentists.filter((item) => item.type === 'dentista' && !item.deletedAt),
+    [db.dentists, firebaseDentists, isFirebaseMode],
   )
   const clinics = useMemo(
-    () => (isSupabaseMode ? supabaseClinics : isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
-    [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, supabaseClinics],
+    () => (isFirebaseMode ? firebaseClinics : db.clinics.filter((item) => !item.deletedAt)),
+    [db.clinics, firebaseClinics, isFirebaseMode],
   )
   const [docs, setDocs] = useState<PatientDocument[]>([])
-
-  useEffect(() => {
-    if (!isSupabaseMode || !supabase) return
-    let active = true
-    void (async () => {
-      const [clinicsRes, dentistsRes] = await Promise.all([
-        supabase.from('clinics').select('id, trade_name, deleted_at').is('deleted_at', null),
-        supabase.from('dentists').select('id, name, gender, whatsapp, clinic_id, deleted_at').is('deleted_at', null),
-      ])
-      if (!active) return
-      setSupabaseClinics(
-        ((clinicsRes.data ?? []) as Array<{ id: string; trade_name?: string }>).map((row) => ({
-          id: row.id,
-          tradeName: row.trade_name ?? '-',
-        })),
-      )
-      setSupabaseDentists(
-        ((dentistsRes.data ?? []) as Array<{ id: string; name?: string; gender?: string; whatsapp?: string; clinic_id?: string }>).map((row) => ({
-          id: row.id,
-          name: row.name ?? '-',
-          gender: row.gender === 'feminino' ? 'feminino' : 'masculino',
-          whatsapp: row.whatsapp ?? undefined,
-          clinicId: row.clinic_id ?? undefined,
-        })),
-      )
-    })()
-    return () => {
-      active = false
-    }
-  }, [isSupabaseMode])
 
   useEffect(() => {
     if (!isFirebaseMode) return
@@ -321,68 +280,9 @@ export default function PatientDetailPage() {
   }, [isFirebaseMode])
 
   useEffect(() => {
-    if (!isSupabaseMode || !supabase || isNew || !params.id) {
-      setSupabaseExisting(null)
-      if (!isFirebaseMode) setLoadingExisting(false)
-      return
-    }
-    let active = true
-    setLoadingExisting(true)
-    void (async () => {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('id, short_id, name, first_name, last_name, cpf, phone, whatsapp, clinic_id, primary_dentist_id, birth_date, gender, email, address, notes, deleted_at, created_at, updated_at')
-        .eq('id', params.id)
-        .maybeSingle()
-      if (!active) return
-      if (error || !data) {
-        setSupabaseExisting(null)
-        setLoadingExisting(false)
-        return
-      }
-      const address = data.address && typeof data.address === 'object'
-        ? (data.address as Record<string, unknown>)
-        : {}
-      const mapped: Patient = {
-        id: String(data.id),
-        shortId: asTextOrUndefined(data.short_id),
-        name: safeText(data.name),
-        firstName: asTextOrUndefined((data as Record<string, unknown>).first_name),
-        lastName: asTextOrUndefined((data as Record<string, unknown>).last_name),
-        cpf: asTextOrUndefined(data.cpf),
-        phone: asTextOrUndefined(data.phone),
-        whatsapp: asTextOrUndefined(data.whatsapp),
-        email: asTextOrUndefined(data.email),
-        birthDate: asTextOrUndefined(data.birth_date),
-        gender: ((data.gender as string | null) as Patient['gender']) ?? 'outro',
-        clinicId: asTextOrUndefined(data.clinic_id),
-        primaryDentistId: asTextOrUndefined(data.primary_dentist_id),
-        address: {
-          cep: asTextOrUndefined(address.cep),
-          street: asTextOrUndefined(address.street),
-          number: asTextOrUndefined(address.number),
-          complement: asTextOrUndefined(address.complement),
-          district: asTextOrUndefined(address.district),
-          city: asTextOrUndefined(address.city),
-          state: asTextOrUndefined(address.state),
-        },
-        notes: asTextOrUndefined(data.notes),
-        createdAt: asTextOrUndefined(data.created_at) ?? new Date().toISOString(),
-        updatedAt: asTextOrUndefined(data.updated_at) ?? new Date().toISOString(),
-        deletedAt: asTextOrUndefined(data.deleted_at),
-      }
-      setSupabaseExisting(mapped)
-      setLoadingExisting(false)
-    })()
-    return () => {
-      active = false
-    }
-  }, [isFirebaseMode, isNew, isSupabaseMode, params.id, supabaseSyncTick])
-
-  useEffect(() => {
     if (!isFirebaseMode || isNew || !params.id) {
       setFirebaseExisting(null)
-      if (!isSupabaseMode) setLoadingExisting(false)
+      if (!isFirebaseMode) setLoadingExisting(false)
       return
     }
     let active = true
@@ -401,11 +301,10 @@ export default function PatientDetailPage() {
     return () => {
       active = false
     }
-  }, [isFirebaseMode, isNew, isSupabaseMode, params.id])
+  }, [isFirebaseMode, isNew, params.id])
 
   const scans = useMemo(() => {
     if (!existing) return []
-    if (isSupabaseMode) return supabasePatientScans
     if (isFirebaseMode) return firebasePatientScans
     const name = safeText(existing.name).toLowerCase()
     return db.scans.filter(
@@ -413,11 +312,10 @@ export default function PatientDetailPage() {
         (scan.patientId && scan.patientId === existing.id) ||
         (!scan.patientId && scan.patientName.toLowerCase() === name),
     )
-  }, [db.scans, existing, firebasePatientScans, isFirebaseMode, isSupabaseMode, supabasePatientScans])
+  }, [db.scans, existing, firebasePatientScans, isFirebaseMode])
 
   const cases = useMemo(() => {
     if (!existing) return []
-    if (isSupabaseMode) return supabasePatientCases
     if (isFirebaseMode) return firebasePatientCases
     const name = safeText(existing.name).toLowerCase()
     return db.cases.filter(
@@ -425,7 +323,7 @@ export default function PatientDetailPage() {
         (caseItem.patientId && caseItem.patientId === existing.id) ||
         (!caseItem.patientId && caseItem.patientName.toLowerCase() === name),
       )
-  }, [db.cases, existing, firebasePatientCases, isFirebaseMode, isSupabaseMode, supabasePatientCases])
+  }, [db.cases, existing, firebasePatientCases, isFirebaseMode])
   const latestCaseForPortalShare = useMemo(() => {
     const activeCases = cases.filter((item) => item.status !== 'finalizado')
     const source = activeCases.length > 0 ? activeCases : cases
@@ -567,124 +465,6 @@ export default function PatientDetailPage() {
       active = false
     }
   }, [existing, db.patientDocuments, db.clinics, db.scans])
-
-  useEffect(() => {
-    if (!isSupabaseMode || !supabase || !existing) {
-      setSupabasePatientScans([])
-      setSupabasePatientCases([])
-      return
-    }
-    let active = true
-    void (async () => {
-      const [scansByPatientRes, scansByNameRes, casesByPatientRes, casesByNameRes] = await Promise.all([
-        supabase
-          .from('scans')
-          .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, data')
-          .eq('patient_id', existing.id)
-          .is('deleted_at', null),
-        supabase
-          .from('scans')
-          .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, created_at, updated_at, data')
-          .is('patient_id', null)
-          .eq('data->>patientName', existing.name)
-          .is('deleted_at', null),
-        supabase
-          .from('cases')
-          .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, status, created_at, updated_at, data')
-          .eq('patient_id', existing.id)
-          .is('deleted_at', null),
-        supabase
-          .from('cases')
-          .select('id, clinic_id, patient_id, dentist_id, requested_by_dentist_id, status, created_at, updated_at, data')
-          .is('patient_id', null)
-          .eq('data->>patientName', existing.name)
-          .is('deleted_at', null),
-      ])
-      if (!active) return
-
-      const scansRaw = [
-        ...((scansByPatientRes.data ?? []) as Array<Record<string, unknown>>),
-        ...((scansByNameRes.data ?? []) as Array<Record<string, unknown>>),
-      ]
-      const scansMap = new Map<string, Scan>()
-      scansRaw.forEach((row) => {
-        const data = row.data && typeof row.data === 'object' ? (row.data as Record<string, unknown>) : {}
-        scansMap.set(String(row.id), {
-          id: String(row.id),
-          clinicId: (row.clinic_id as string | undefined) ?? undefined,
-          patientId: (row.patient_id as string | undefined) ?? undefined,
-          dentistId: (row.dentist_id as string | undefined) ?? undefined,
-          requestedByDentistId: (row.requested_by_dentist_id as string | undefined) ?? undefined,
-          patientName: String(data.patientName ?? existing.name),
-          purposeProductId: data.purposeProductId as string | undefined,
-          purposeProductType: data.purposeProductType as string | undefined,
-          purposeLabel: data.purposeLabel as string | undefined,
-          serviceOrderCode: data.serviceOrderCode as string | undefined,
-          scanDate: String(data.scanDate ?? String(row.created_at ?? '').slice(0, 10)),
-          arch: (data.arch as Scan['arch'] | undefined) ?? 'ambos',
-          complaint: data.complaint as string | undefined,
-          dentistGuidance: data.dentistGuidance as string | undefined,
-          notes: data.notes as string | undefined,
-          planningDetectedUpperTrays: data.planningDetectedUpperTrays as number | undefined,
-          planningDetectedLowerTrays: data.planningDetectedLowerTrays as number | undefined,
-          planningDetectedAt: data.planningDetectedAt as string | undefined,
-          planningDetectedSource: data.planningDetectedSource as Scan['planningDetectedSource'] | undefined,
-          attachments: (Array.isArray(data.attachments) ? data.attachments : []) as Scan['attachments'],
-          status: (data.status as Scan['status'] | undefined) ?? 'pendente',
-          linkedCaseId: data.linkedCaseId as string | undefined,
-          createdAt: String(data.createdAt ?? row.created_at ?? new Date().toISOString()),
-          updatedAt: String(data.updatedAt ?? row.updated_at ?? new Date().toISOString()),
-        })
-      })
-      setSupabasePatientScans(Array.from(scansMap.values()).sort((a, b) => b.scanDate.localeCompare(a.scanDate)))
-
-      const casesRaw = [
-        ...((casesByPatientRes.data ?? []) as Array<Record<string, unknown>>),
-        ...((casesByNameRes.data ?? []) as Array<Record<string, unknown>>),
-      ]
-      const casesMap = new Map<string, Case>()
-      casesRaw.forEach((row) => {
-        const data = row.data && typeof row.data === 'object' ? (row.data as Record<string, unknown>) : {}
-        casesMap.set(String(row.id), {
-          id: String(row.id),
-          productType: data.productType as Case['productType'],
-          productId: data.productId as Case['productId'],
-          treatmentCode: data.treatmentCode as string | undefined,
-          treatmentOrigin: (data.treatmentOrigin as Case['treatmentOrigin']) ?? 'externo',
-          patientName: String(data.patientName ?? existing.name),
-          patientId: (row.patient_id as string | undefined) ?? undefined,
-          dentistId: (row.dentist_id as string | undefined) ?? undefined,
-          requestedByDentistId: (row.requested_by_dentist_id as string | undefined) ?? undefined,
-          clinicId: (row.clinic_id as string | undefined) ?? undefined,
-          scanDate: String(data.scanDate ?? String(row.created_at ?? '').slice(0, 10)),
-          totalTrays: Number(data.totalTrays ?? 0),
-          changeEveryDays: Number(data.changeEveryDays ?? 0),
-          totalTraysUpper: data.totalTraysUpper as number | undefined,
-          totalTraysLower: data.totalTraysLower as number | undefined,
-          attachmentBondingTray: Boolean(data.attachmentBondingTray),
-          status: (data.status as Case['status']) ?? (row.status as Case['status']) ?? 'planejamento',
-          phase: (data.phase as Case['phase']) ?? 'planejamento',
-          budget: data.budget as Case['budget'],
-          contract: data.contract as Case['contract'],
-          deliveryLots: (data.deliveryLots as Case['deliveryLots']) ?? [],
-          installation: data.installation as Case['installation'],
-          trays: (data.trays as Case['trays']) ?? [],
-          attachments: (data.attachments as Case['attachments']) ?? [],
-          sourceScanId: data.sourceScanId as string | undefined,
-          arch: (data.arch as Case['arch']) ?? 'ambos',
-          complaint: data.complaint as string | undefined,
-          dentistGuidance: data.dentistGuidance as string | undefined,
-          scanFiles: data.scanFiles as Case['scanFiles'],
-          createdAt: String(data.createdAt ?? row.created_at ?? new Date().toISOString()),
-          updatedAt: String(data.updatedAt ?? row.updated_at ?? new Date().toISOString()),
-        })
-      })
-      setSupabasePatientCases(Array.from(casesMap.values()))
-    })()
-    return () => {
-      active = false
-    }
-  }, [existing, isSupabaseMode, supabaseSyncTick])
 
   useEffect(() => {
     if (!isFirebaseMode || !existing) {
@@ -926,50 +706,6 @@ export default function PatientDetailPage() {
       payload.clinicId = currentUser.linkedClinicId
     }
 
-    if (isSupabaseMode && supabase) {
-      const supabasePayload = {
-        name: payload.name,
-        first_name: payload.firstName ?? null,
-        last_name: payload.lastName ?? null,
-        cpf: payload.cpf ?? null,
-        phone: payload.phone ?? null,
-        whatsapp: payload.whatsapp ?? null,
-        clinic_id: payload.clinicId ?? null,
-        primary_dentist_id: payload.primaryDentistId ?? null,
-        birth_date: payload.birthDate,
-        gender: payload.gender ?? null,
-        email: payload.email ?? null,
-        address: payload.address ?? null,
-        notes: payload.notes ?? null,
-      }
-      if (isNew) {
-        const { data, error: createError } = await supabase
-          .from('patients')
-          .insert(supabasePayload)
-          .select('id')
-          .single()
-        if (createError || !data?.id) {
-          setError(createError?.message ?? 'Falha ao criar paciente.')
-          return
-        }
-        setError('')
-        navigate('/app/patients', { replace: true })
-        return
-      }
-      if (!existing) return
-      const { error: updateError } = await supabase
-        .from('patients')
-        .update({ ...supabasePayload, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (updateError) {
-        setError(updateError.message)
-        return
-      }
-      setError('')
-      navigate('/app/patients', { replace: true })
-      return
-    }
-
     if (isFirebaseMode) {
       if (isNew) {
         const result = await createPatientFirebase(payload)
@@ -1021,16 +757,7 @@ export default function PatientDetailPage() {
     }
     const confirmed = window.confirm('Tem certeza que deseja excluir este paciente?')
     if (!confirmed) return
-    if (isSupabaseMode && supabase) {
-      const { error: deleteError } = await supabase
-        .from('patients')
-        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (deleteError) {
-        setError(deleteError.message)
-        return
-      }
-    } else if (isFirebaseMode) {
+    if (isFirebaseMode) {
       const result = await softDeletePatientFirebase(existing.id)
       if (!result.ok) {
         setError(result.error)
@@ -1050,18 +777,6 @@ export default function PatientDetailPage() {
   const handleRestore = async () => {
     if (!existing) return
     if (!canDeletePatient) return
-    if (isSupabaseMode && supabase) {
-      const { error: restoreError } = await supabase
-        .from('patients')
-        .update({ deleted_at: null, updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-      if (restoreError) {
-        setError(restoreError.message)
-        return
-      }
-      setSupabaseExisting((current) => (current ? { ...current, deletedAt: undefined } : current))
-      return
-    }
     if (isFirebaseMode) {
       const result = await restorePatientFirebase(existing.id)
       if (!result.ok) {
@@ -1077,31 +792,6 @@ export default function PatientDetailPage() {
   const handleLinkByName = async () => {
     if (!existing) return
     if (!canWrite) return
-    if (isSupabaseMode && supabase) {
-      const now = new Date().toISOString()
-      const [scanRes, caseRes] = await Promise.all([
-        supabase
-          .from('scans')
-          .update({ patient_id: existing.id, updated_at: now })
-          .is('patient_id', null)
-          .eq('data->>patientName', existing.name)
-          .is('deleted_at', null),
-        supabase
-          .from('cases')
-          .update({ patient_id: existing.id, updated_at: now })
-          .is('patient_id', null)
-          .eq('data->>patientName', existing.name)
-          .is('deleted_at', null),
-      ])
-      if (scanRes.error || caseRes.error) {
-        setError(scanRes.error?.message ?? caseRes.error?.message ?? 'Falha ao vincular registros.')
-        return
-      }
-      setError('')
-      setSupabasePatientScans((current) => current.map((scan) => ({ ...scan, patientId: existing.id })))
-      setSupabasePatientCases((current) => current.map((caseItem) => ({ ...caseItem, patientId: existing.id })))
-      return
-    }
     if (isFirebaseMode) {
       const name = existing.name.toLowerCase()
       const scansToUpdate = firebasePatientScans.filter((scan) => !scan.patientId && scan.patientName.toLowerCase() === name)
