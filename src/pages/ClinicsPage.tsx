@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import type { Clinic } from '../types/Clinic'
 import { listActiveInvitesByEntityFirebase } from '../repo/inviteRepo'
+import { useToast } from '../app/ToastProvider'
 import { clinicCode } from '../lib/entityCode'
 import { listClinicsFirebase } from '../repo/clinicRepo'
 
@@ -38,6 +39,7 @@ function mapSupabaseClinic(row: Record<string, unknown>): Clinic {
 
 export default function ClinicsPage() {
   const { db } = useDb()
+  const { addToast } = useToast()
   const isSupabaseMode = DATA_MODE === 'supabase'
   const isFirebaseMode = DATA_MODE === 'firebase'
   const currentUser = getCurrentUser(db)
@@ -114,6 +116,15 @@ export default function ClinicsPage() {
       .sort((a, b) => a.tradeName.localeCompare(b.tradeName))
   }, [db.clinics, firebaseClinics, isFirebaseMode, isSupabaseMode, query, showDeleted, supabaseClinics])
 
+  const handleCopyInvite = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      addToast({ type: 'success', title: 'Convite copiado' })
+    } catch {
+      addToast({ type: 'error', title: 'Falha ao copiar convite' })
+    }
+  }
+
   return (
     <AppShell breadcrumb={['Início', 'Clínicas']}>
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -167,7 +178,18 @@ export default function ClinicsPage() {
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">{clinic.phone || '-'}</td>
                     <td className="px-5 py-4 text-sm text-slate-700">{clinic.whatsapp ? <WhatsappLink value={clinic.whatsapp} /> : '-'}</td>
-                    <td className="px-5 py-4 text-sm text-slate-700">{firebaseClinicInviteCodes[clinic.id] ?? '-'}</td>
+                    <td className="px-5 py-4 text-sm text-slate-700">
+                      {firebaseClinicInviteCodes[clinic.id] ? (
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">{firebaseClinicInviteCodes[clinic.id]}</span>
+                          <Button variant="secondary" onClick={() => void handleCopyInvite(firebaseClinicInviteCodes[clinic.id])}>
+                            Copiar
+                          </Button>
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td className="px-5 py-4">
                       <Badge tone={clinic.isActive ? 'success' : 'neutral'}>{clinic.isActive ? 'Ativo' : 'Inativo'}</Badge>
                     </td>

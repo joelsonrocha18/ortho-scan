@@ -192,6 +192,15 @@ export default function DentistsPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [dentistsSource, query, showInactive, showDeleted])
 
+  const handleCopyInvite = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      addToast({ type: 'success', title: 'Convite copiado' })
+    } catch {
+      addToast({ type: 'error', title: 'Falha ao copiar convite' })
+    }
+  }
+
   const handleImportFile = async (file?: File | null) => {
     if (!file) return
     try {
@@ -434,7 +443,19 @@ export default function DentistsPage() {
                       <td className="px-5 py-4 text-sm text-slate-700">{item.phone || '-'}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.whatsapp ? <WhatsappLink value={item.whatsapp} /> : '-'}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">
-                        {firebaseDentistInviteCodes[item.id] ?? '-'}
+                        {firebaseDentistInviteCodes[item.id] ? (
+                          <div className="flex items-center gap-2">
+                            <span className="truncate">{firebaseDentistInviteCodes[item.id]}</span>
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handleCopyInvite(firebaseDentistInviteCodes[item.id])}
+                            >
+                              Copiar
+                            </Button>
+                          </div>
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <Badge tone={status.tone}>{status.label}</Badge>
