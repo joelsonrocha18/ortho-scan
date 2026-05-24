@@ -15,10 +15,10 @@ export function ExecutiveDashboardSlaSection(props: {
   return (
     <Card className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">Acompanhamento de Prazos</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Acompanhamento de prazos</h2>
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-full bg-olive-50 px-3 py-1 text-olive-700">No prazo: {props.onTrack}</span>
-          <span className="rounded-full bg-baby-100 px-3 py-1 text-brand-700">Atencao: {props.warning}</span>
+          <span className="rounded-full bg-baby-100 px-3 py-1 text-brand-700">Atenção: {props.warning}</span>
           <span className="rounded-full bg-salmon-100 px-3 py-1 text-salmon-700">Em atraso: {props.overdue}</span>
         </div>
       </div>
@@ -37,7 +37,7 @@ export function ExecutiveDashboardSlaSection(props: {
             >
               <p className="text-sm font-semibold text-salmon-700">{item.patientName}</p>
               <p className="text-xs text-salmon-700/90">Caso {item.treatmentCode}</p>
-              <p className="mt-1 text-sm text-slate-700">{item.alerts[0] ?? 'Atencao imediata necessaria.'}</p>
+              <p className="mt-1 text-sm text-slate-700">{item.alerts[0] ?? 'Atenção imediata necessária.'}</p>
             </Link>
           ))
         )}

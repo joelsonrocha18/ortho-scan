@@ -11,14 +11,14 @@ export function ExecutiveDashboardBacklogSection(props: {
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <Card className="space-y-4">
-        <h2 className="text-sm font-semibold text-slate-900">Producao do Laboratorio</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Produção do laboratório</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-baby-300 bg-baby-100 px-4 py-3">
             <p className="text-xs font-semibold text-brand-700">Fila</p>
             <p className="text-2xl font-semibold text-slate-900">{props.queued}</p>
           </div>
           <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3">
-            <p className="text-xs font-semibold text-brand-700">Em producao</p>
+            <p className="text-xs font-semibold text-brand-700">Em produção</p>
             <p className="text-2xl font-semibold text-slate-900">{props.inProduction}</p>
           </div>
           <div className="rounded-lg border border-olive-300 bg-olive-50 px-4 py-3">

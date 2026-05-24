@@ -20,6 +20,8 @@ function DashboardPageContainer() {
               options={controller.periodOptions}
               selectedKey={controller.periodKey}
               onChange={controller.setPeriodKey}
+              selectedRange={controller.selectedRange}
+              onRangeChange={controller.setPeriodRange}
             />
           </section>
 

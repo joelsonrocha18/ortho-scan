@@ -36,7 +36,7 @@ export function ExecutiveDashboardKpisSection(props: {
         hintClassName="text-slate-600"
       />
       <KpiCard
-        label="Producao LAB"
+        label="Produção LAB"
         value={String(props.labBacklog)}
         className="border-baby-300 bg-[linear-gradient(180deg,rgba(234,244,255,0.96),rgba(255,255,255,0.98))]"
         labelClassName="text-brand-700"

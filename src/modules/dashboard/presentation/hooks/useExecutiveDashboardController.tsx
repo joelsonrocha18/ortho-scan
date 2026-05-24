@@ -29,7 +29,7 @@ function monthName(date: Date) {
 }
 
 function formatRange(range: DashboardDateRange) {
-  return `${range.startDate.split('-').reverse().join('/')} a ${range.endDate.split('-').reverse().join('/')}`
+  return `${range.startDate.split('-').reverse().join('/')} até ${range.endDate.split('-').reverse().join('/')}`
 }
 
 function buildPeriodOptions(today = new Date()): DashboardPeriodOption[] {
@@ -53,19 +53,34 @@ function buildPeriodOptions(today = new Date()): DashboardPeriodOption[] {
   const lastMonthEnd = new Date(current.getFullYear(), current.getMonth(), 0)
   const last12MonthsStart = new Date(current.getFullYear(), current.getMonth() - 11, 1)
 
-  const option = (key: DashboardPeriodKey, label: string, start: Date, end: Date): DashboardPeriodOption => {
+  const option = (key: DashboardPeriodKey, label: string, start: Date, end: Date, group: string): DashboardPeriodOption => {
     const range = { startDate: toIsoDate(start), endDate: toIsoDate(end) }
-    return { key, label, detail: formatRange(range), range }
+    return { key, label, detail: formatRange(range), range, group }
   }
 
+  const monthOptions = Array.from({ length: 13 }, (_, index) => {
+    const monthDate = new Date(current.getFullYear(), current.getMonth() - 12 + index, 1)
+    const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
+    const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0)
+    return option(
+      `month_${monthDate.getFullYear()}_${monthDate.getMonth()}`,
+      `${monthName(monthDate)}/${monthDate.getFullYear()}`,
+      monthStart,
+      monthEnd,
+      String(monthDate.getFullYear()),
+    )
+  })
+
   return [
-    option('today', 'Hoje', current, current),
-    option('yesterday', 'Ontem', yesterday, yesterday),
-    option('this_week', 'Esta semana', thisWeekStart, thisWeekEnd),
-    option('last_week', 'Semana passada', lastWeekStart, lastWeekEnd),
-    option('this_month', `Este mes (${monthName(current)})`, thisMonthStart, thisMonthEnd),
-    option('last_month', `Mes anterior (${monthName(lastMonthStart)})`, lastMonthStart, lastMonthEnd),
-    option('last_12_months', 'Ultimos 12 meses', last12MonthsStart, current),
+    ...monthOptions,
+    option('custom', 'Personalizado', thisMonthStart, thisMonthEnd, 'Atalhos'),
+    option('today', 'Hoje', current, current, 'Atalhos'),
+    option('yesterday', 'Ontem', yesterday, yesterday, 'Atalhos'),
+    option('this_week', 'Esta semana', thisWeekStart, thisWeekEnd, 'Atalhos'),
+    option('last_week', 'Semana passada', lastWeekStart, lastWeekEnd, 'Atalhos'),
+    option('this_month', `Este mês (${monthName(current)})`, thisMonthStart, thisMonthEnd, 'Atalhos'),
+    option('last_month', `Mês anterior (${monthName(lastMonthStart)})`, lastMonthStart, lastMonthEnd, 'Atalhos'),
+    option('last_12_months', 'Últimos 12 meses', last12MonthsStart, current, 'Atalhos'),
   ]
 }
 
@@ -81,13 +96,26 @@ export function useExecutiveDashboardController() {
   const loadExecutiveDashboard = useMemo(() => new LoadExecutiveDashboardUseCase(repository), [repository])
   const [data, setData] = useState<ExecutiveDashboardView | null>(null)
   const [periodKey, setPeriodKey] = useState<DashboardPeriodKey>('this_month')
+  const [customRange, setCustomRange] = useState<DashboardDateRange>(() => {
+    const currentMonth = buildPeriodOptions().find((option) => option.key === 'this_month')
+    return currentMonth?.range ?? { startDate: nowIsoDate(), endDate: nowIsoDate() }
+  })
   const [todayKey, setTodayKey] = useState(() => nowIsoDate())
   const periodOptions = useMemo(() => buildPeriodOptions(new Date(`${todayKey}T00:00:00`)), [todayKey])
-  const selectedPeriod = periodOptions.find((option) => option.key === periodKey) ?? periodOptions[4]
+  const selectedPeriod = periodKey === 'custom'
+    ? {
+        key: 'custom' as const,
+        label: 'Personalizado',
+        detail: formatRange(customRange),
+        range: customRange,
+        group: 'Atalhos',
+      }
+    : periodOptions.find((option) => option.key === periodKey) ?? periodOptions.find((option) => option.key === 'this_month') ?? periodOptions[0]
+  const periodSignature = `${selectedPeriod.range.startDate}::${selectedPeriod.range.endDate}`
   const supabaseSyncTick = useSupabaseSyncTick()
   const refreshSignature = isRemoteMode
-    ? `${todayKey}::${periodKey}::${supabaseSyncTick}::${currentUserKey}`
-    : `${todayKey}::${periodKey}::${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}::${db.scans.map((item) => item.updatedAt).join('|')}::${db.patients.map((item) => item.updatedAt).join('|')}::${currentUserKey}`
+    ? `${todayKey}::${periodKey}::${periodSignature}::${supabaseSyncTick}::${currentUserKey}`
+    : `${todayKey}::${periodKey}::${periodSignature}::${db.cases.map((item) => item.updatedAt).join('|')}::${db.labItems.map((item) => item.updatedAt).join('|')}::${db.scans.map((item) => item.updatedAt).join('|')}::${db.patients.map((item) => item.updatedAt).join('|')}::${currentUserKey}`
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -113,5 +141,10 @@ export function useExecutiveDashboardController() {
     periodKey,
     periodOptions,
     setPeriodKey,
+    selectedRange: selectedPeriod.range,
+    setPeriodRange: (range: DashboardDateRange) => {
+      setCustomRange(range)
+      setPeriodKey('custom')
+    },
   }
 }
