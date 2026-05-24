@@ -4,9 +4,12 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import Input from '../components/Input'
 import { DATA_MODE } from '../data/dataMode'
-import { completeOnboardingInvite, validateOnboardingInvite } from '../repo/onboardingRepo'
+import { completeOnboardingInvite, validateOnboardingInvite, completeOnboardingInviteSocial } from '../repo/onboardingRepo'
+import { auth } from '../lib/firebaseClient'
+import { getAuthProvider } from '../auth/authProvider'
 
 type InviteState =
+  | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'invalid'; message: string }
   | { status: 'ready'; preview: { fullName: string; role: string; roleLabel: string; clinicName: string } }
@@ -16,6 +19,7 @@ export default function OnboardingInvitePage() {
   const navigate = useNavigate()
   const token = useMemo(() => params.get('token')?.trim() ?? '', [params])
   const [inviteState, setInviteState] = useState<InviteState>({ status: 'loading' })
+  const [inviteCode, setInviteCode] = useState(token)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -33,12 +37,12 @@ export default function OnboardingInvitePage() {
 
   useEffect(() => {
     let active = true
-    if (DATA_MODE !== 'supabase') {
-      setInviteState({ status: 'invalid', message: 'Fluxo de convite disponível apenas em modo Supabase.' })
+    if (DATA_MODE !== 'supabase' && DATA_MODE !== 'firebase') {
+      setInviteState({ status: 'invalid', message: 'Fluxo de convite disponível apenas em modo Supabase ou Firebase.' })
       return
     }
     if (!token) {
-      setInviteState({ status: 'invalid', message: 'Link inválido (token ausente).' })
+      setInviteState({ status: 'idle' })
       return
     }
     setInviteState({ status: 'loading' })
@@ -64,10 +68,51 @@ export default function OnboardingInvitePage() {
     }
   }, [token])
 
+  const validateInviteCode = async () => {
+    if (!inviteCode.trim()) {
+      setInviteState({ status: 'invalid', message: 'Informe o código de convite.' })
+      return false
+    }
+    setInviteState({ status: 'loading' })
+    const result = await validateOnboardingInvite(inviteCode.trim())
+    if (!result.ok) {
+      if (result.used) {
+        setInviteState({ status: 'invalid', message: 'Este convite já foi utilizado.' })
+        return false
+      }
+      if (result.expired) {
+        setInviteState({ status: 'invalid', message: 'Este convite expirou. Solicite um novo convite.' })
+        return false
+      }
+      setInviteState({ status: 'invalid', message: result.error })
+      return false
+    }
+    setFullName(result.preview.fullName ?? '')
+    setInviteState({ status: 'ready', preview: result.preview })
+    return true
+  }
+
   const submit = async () => {
     setError('')
     setMessage('')
-    if (inviteState.status !== 'ready') return
+    if (inviteState.status !== 'ready') {
+      const valid = await validateInviteCode()
+      if (!valid) return
+    }
+    // If Firebase social user already authenticated, complete the invite for that social account
+    if (DATA_MODE === 'firebase' && auth?.currentUser) {
+      setLoading(true)
+      const result = await completeOnboardingInviteSocial(inviteCode.trim(), auth.currentUser.displayName ?? undefined)
+      setLoading(false)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      // Refresh session and redirect to app
+      await getAuthProvider().getCurrentUser()
+      navigate('/app/dashboard', { replace: true })
+      return
+    }
     if (!email.trim()) {
       setError('Informe seu e-mail.')
       return
@@ -86,7 +131,7 @@ export default function OnboardingInvitePage() {
     }
     setLoading(true)
     const result = await completeOnboardingInvite({
-      token,
+      token: inviteCode.trim(),
       email: email.trim(),
       password: password.trim(),
       fullName: fullName.trim(),
@@ -123,6 +168,15 @@ export default function OnboardingInvitePage() {
             </p>
           ) : null}
 
+          <div className="mt-4">
+            <label className="mb-1 block text-sm font-medium text-slate-200">Código de convite</label>
+            <Input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
+          </div>
+          {inviteState.status === 'idle' ? (
+            <div className="mt-4">
+              <Button onClick={validateInviteCode}>Validar código</Button>
+            </div>
+          ) : null}
           {inviteState.status === 'loading' ? (
             <p className="mt-4 text-sm text-slate-300">Validando convite...</p>
           ) : null}
@@ -130,9 +184,12 @@ export default function OnboardingInvitePage() {
           {inviteState.status === 'invalid' ? (
             <div className="mt-4 space-y-3">
               <p className="text-sm text-red-400">{inviteState.message}</p>
-              <Link to="/login" className="inline-flex text-sm font-semibold text-brand-700 hover:text-brand-500">
-                Voltar ao login
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={validateInviteCode}>Tentar novamente</Button>
+                <Link to="/login" className="inline-flex text-sm font-semibold text-brand-700 hover:text-brand-500">
+                  Voltar ao login
+                </Link>
+              </div>
             </div>
           ) : null}
 

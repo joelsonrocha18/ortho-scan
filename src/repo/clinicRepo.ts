@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore'
 import { DATA_MODE } from '../data/dataMode'
 import { loadDb, saveDb } from '../data/db'
 import { db as firestoreDb } from '../lib/firebaseClient'
@@ -6,6 +6,7 @@ import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import { normalizeText } from '../shared/validators'
 import { nowIsoDateTime } from '../shared/utils/date'
 import { createEntityId } from '../shared/utils/id'
+import { createInviteFirebase } from './inviteRepo'
 import type { Clinic } from '../types/Clinic'
 
 type ClinicPayload = Omit<Clinic, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>
@@ -194,7 +195,23 @@ export async function createClinicFirebase(payload: ClinicPayload): Promise<Clin
     createdAt: now,
     updatedAt: now,
   }
-  await setDoc(doc(getFirestoreDb(), 'clinics', clinic.id), clinicToFirestoreDocument(clinic))
+
+  const clinicRef = doc(getFirestoreDb(), 'clinics', clinic.id)
+  await setDoc(clinicRef, clinicToFirestoreDocument(clinic))
+  const inviteResult = await createInviteFirebase({
+    role: 'clinic_client',
+    entityType: 'clinic',
+    entityId: clinic.id,
+    fullName: clinic.tradeName,
+    clinicId: clinic.id,
+    expiresInDays: 14,
+  })
+
+  if (!inviteResult.ok) {
+    await deleteDoc(clinicRef)
+    return { ok: false, error: inviteResult.error }
+  }
+
   return { ok: true, clinic }
 }
 

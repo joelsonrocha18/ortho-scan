@@ -1,7 +1,9 @@
 ﻿import { supabase } from '../lib/supabaseClient'
+import { DATA_MODE } from '../data/dataMode'
 import type { Role } from '../types/User'
 import { getSupabaseAccessToken } from '../lib/auth'
 import { getAuthProvider } from '../auth/authProvider'
+import { completeInviteFirebase, validateInviteFirebase } from './inviteRepo'
 
 function normalizeInviteErrorMessage(raw: string) {
   const text = (raw || '').toLowerCase()
@@ -79,6 +81,9 @@ export async function createOnboardingInvite(payload: {
 }
 
 export async function validateOnboardingInvite(token: string) {
+  if (DATA_MODE === 'firebase') {
+    return validateInviteFirebase(token)
+  }
   if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
   if (!anonKey) return { ok: false as const, error: 'Supabase anon key ausente no build.' }
@@ -117,6 +122,14 @@ export async function completeOnboardingInvite(payload: {
     notes?: string
   }
 }) {
+  if (DATA_MODE === 'firebase') {
+    return completeInviteFirebase({
+      code: payload.token,
+      email: payload.email,
+      password: payload.password,
+      fullName: payload.fullName ?? '',
+    })
+  }
   if (!supabase) return { ok: false as const, error: 'Supabase não configurado.' }
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
   if (!anonKey) return { ok: false as const, error: 'Supabase anon key ausente no build.' }
@@ -129,6 +142,12 @@ export async function completeOnboardingInvite(payload: {
     return { ok: false as const, error: (data?.error as string | undefined) ?? 'Falha ao concluir cadastro.' }
   }
   return { ok: true as const }
+}
+
+export async function completeOnboardingInviteSocial(token: string, displayName?: string) {
+  if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Apenas modo Firebase suporta este fluxo.' }
+  const { completeInviteForSocial } = await import('./inviteRepo')
+  return completeInviteForSocial(token, displayName)
 }
 
 

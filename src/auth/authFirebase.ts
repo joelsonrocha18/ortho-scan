@@ -89,7 +89,9 @@ function ensureFirebaseAuthObserver() {
           if (session) {
             setSessionProfile(session)
           } else {
-            clearSession()
+            // Não limpar sessão Firebase aqui quando não houver profile.
+            // Mantemos o usuário autenticado no Firebase para possibilitar
+            // completar o convite via UI (fluxo social-first).
           }
         } catch (error) {
           clearSession()
@@ -235,9 +237,9 @@ export const authFirebase: AuthProvider & {
       const profile = await loadFirebaseProfile(credential.user.uid)
       const session = profile ? buildSession(credential.user.uid, credential.user.email, profile) : null
       if (!session) {
-        await firebaseSignOut(auth)
-        clearSession()
-        throw createUnauthorizedError('Conta social sem perfil autorizado no sistema.')
+        // Conta social sem profile: manter usuário autenticado no Firebase
+        // e retornar para que a UI (Onboarding) permita concluir o convite.
+        return
       }
       setSessionProfile(session)
       logger.info('Autenticacao social Firebase concluida.', {

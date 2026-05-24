@@ -13,6 +13,7 @@ import { DATA_MODE } from '../data/dataMode'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
 import type { Clinic } from '../types/Clinic'
+import { listActiveInvitesByEntityFirebase } from '../repo/inviteRepo'
 import { clinicCode } from '../lib/entityCode'
 import { listClinicsFirebase } from '../repo/clinicRepo'
 
@@ -46,6 +47,7 @@ export default function ClinicsPage() {
   const supabaseSyncTick = useSupabaseSyncTick()
   const [supabaseClinics, setSupabaseClinics] = useState<Clinic[]>([])
   const [firebaseClinics, setFirebaseClinics] = useState<Clinic[]>([])
+  const [firebaseClinicInviteCodes, setFirebaseClinicInviteCodes] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let active = true
@@ -71,12 +73,22 @@ export default function ClinicsPage() {
     let active = true
     if (!isFirebaseMode) {
       setFirebaseClinics([])
+      setFirebaseClinicInviteCodes({})
       return
     }
     ;(async () => {
-      const items = await listClinicsFirebase({ includeDeleted: true })
+      const [items, invites] = await Promise.all([
+        listClinicsFirebase({ includeDeleted: true }),
+        listActiveInvitesByEntityFirebase('clinic'),
+      ])
       if (!active) return
       setFirebaseClinics(items)
+      setFirebaseClinicInviteCodes(
+        invites.reduce<Record<string, string>>((current, invite) => {
+          if (invite.entityId && invite.code) current[invite.entityId] = invite.code
+          return current
+        }, {}),
+      )
     })()
     return () => {
       active = false
@@ -137,6 +149,7 @@ export default function ClinicsPage() {
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Cidade/UF</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone fixo</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">WhatsApp</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Convite</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Ativo</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</th>
                 </tr>
@@ -154,6 +167,7 @@ export default function ClinicsPage() {
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">{clinic.phone || '-'}</td>
                     <td className="px-5 py-4 text-sm text-slate-700">{clinic.whatsapp ? <WhatsappLink value={clinic.whatsapp} /> : '-'}</td>
+                    <td className="px-5 py-4 text-sm text-slate-700">{firebaseClinicInviteCodes[clinic.id] ?? '-'}</td>
                     <td className="px-5 py-4">
                       <Badge tone={clinic.isActive ? 'success' : 'neutral'}>{clinic.isActive ? 'Ativo' : 'Inativo'}</Badge>
                     </td>
@@ -169,7 +183,7 @@ export default function ClinicsPage() {
                 ))}
                 {clinics.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-8 text-sm text-slate-500" colSpan={7}>
+                    <td className="px-5 py-8 text-sm text-slate-500" colSpan={8}>
                       Nenhuma clínica encontrada.
                     </td>
                   </tr>

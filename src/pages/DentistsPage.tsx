@@ -13,6 +13,7 @@ import { useDb } from '../lib/useDb'
 import type { DentistClinic } from '../types/DentistClinic'
 import { getCurrentUser } from '../lib/auth'
 import { can } from '../auth/permissions'
+import { listActiveInvitesByEntityFirebase } from '../repo/inviteRepo'
 import { supabase } from '../lib/supabaseClient'
 import { parseDentistsSpreadsheet, readSpreadsheetFileText } from '../lib/spreadsheetImport'
 import { useSupabaseSyncTick } from '../lib/useSupabaseSyncTick'
@@ -62,6 +63,7 @@ export default function DentistsPage() {
   }>>([])
   const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [firebaseDentists, setFirebaseDentists] = useState<DentistClinic[]>([])
+  const [firebaseDentistInviteCodes, setFirebaseDentistInviteCodes] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let active = true
@@ -110,13 +112,20 @@ export default function DentistsPage() {
       return
     }
     ;(async () => {
-      const [dentists, clinics] = await Promise.all([
+      const [dentists, clinics, invites] = await Promise.all([
         listDentistsFirebase({ includeDeleted: true, includeInactive: true }),
         listClinicsFirebase({ includeDeleted: false }),
+        listActiveInvitesByEntityFirebase('dentist'),
       ])
       if (!active) return
       setFirebaseDentists(dentists)
       setFirebaseClinics(clinics.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName })))
+      setFirebaseDentistInviteCodes(
+        invites.reduce<Record<string, string>>((current, invite) => {
+          if (invite.entityId && invite.code) current[invite.entityId] = invite.code
+          return current
+        }, {}),
+      )
     })()
     return () => {
       active = false
@@ -407,6 +416,7 @@ export default function DentistsPage() {
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">CRO</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Telefone fixo</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">WhatsApp</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Convite</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Ações</th>
                 </tr>
@@ -423,6 +433,9 @@ export default function DentistsPage() {
                       <td className="px-5 py-4 text-sm text-slate-700">{item.cro || '-'}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.phone || '-'}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">{item.whatsapp ? <WhatsappLink value={item.whatsapp} /> : '-'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-700">
+                        {firebaseDentistInviteCodes[item.id] ?? '-'}
+                      </td>
                       <td className="px-5 py-4">
                         <Badge tone={status.tone}>{status.label}</Badge>
                       </td>
@@ -439,7 +452,7 @@ export default function DentistsPage() {
                 })}
                 {dentists.length === 0 ? (
                   <tr>
-                    <td className="px-5 py-8 text-sm text-slate-500" colSpan={6}>
+                    <td className="px-5 py-8 text-sm text-slate-500" colSpan={7}>
                       Nenhum registro encontrado.
                     </td>
                   </tr>

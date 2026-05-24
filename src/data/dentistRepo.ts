@@ -1,9 +1,10 @@
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore'
 import { DATA_MODE } from './dataMode'
 import { loadDb, saveDb } from './db'
 import { db as firestoreDb } from '../lib/firebaseClient'
 import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import type { DentistClinic } from '../types/DentistClinic'
+import { createInviteFirebase } from '../repo/inviteRepo'
 
 type DentistPayload = Omit<DentistClinic, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>
 type DentistDocument = Record<string, unknown>
@@ -265,7 +266,25 @@ export async function createDentistFirebase(payload: DentistPayload): Promise<De
     updatedAt: now,
   }
 
-  await setDoc(doc(getFirestoreDb(), 'dentists', next.id), dentistToFirestoreDocument(next))
+  const dentistRef = doc(getFirestoreDb(), 'dentists', next.id)
+  await setDoc(dentistRef, dentistToFirestoreDocument(next))
+
+  const role = next.type === 'clinica' ? 'clinic_client' : 'dentist_client'
+  const inviteResult = await createInviteFirebase({
+    role,
+    entityType: 'dentist',
+    entityId: next.id,
+    fullName: next.name,
+    clinicId: next.clinicId,
+    dentistId: next.id,
+    expiresInDays: 14,
+  })
+
+  if (!inviteResult.ok) {
+    await deleteDoc(dentistRef)
+    return { ok: false, error: inviteResult.error }
+  }
+
   return { ok: true, dentist: next }
 }
 
