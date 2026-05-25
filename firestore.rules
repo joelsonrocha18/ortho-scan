@@ -143,7 +143,12 @@ service cloud.firestore {
 
       function updatingLabMirrorFields() {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'lab_stage', 'lab_sub_status_id', 'current_lab_item_id'
+          'lab_stage',
+          'lab_sub_status_id',
+          'current_lab_item_id',
+          'tray_costs',
+          'total_production_cost',
+          'cost_updated_at'
         ]);
       }
     }
@@ -297,14 +302,118 @@ service cloud.firestore {
     match /inventory_materials/{id} {
       allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
       allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id);
-      allow update: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow update: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id)
+        && !updatingComputedStock();
       allow delete: if isMaster();
+
+      function updatingComputedStock() {
+        return request.resource.data.current_stock != resource.data.current_stock;
+      }
+    }
+
+    match /purchase_lots/{id} {
+      allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id)
+        && validPurchaseLot();
+      allow update: if false;
+      allow delete: if isMaster();
+
+      function validPurchaseLot() {
+        let d = request.resource.data;
+        return d.keys().hasAll([
+          'material_id',
+          'clinic_id',
+          'quantity',
+          'cost_per_unit',
+          'purchase_date',
+          'remaining_quantity',
+          'created_by_uid',
+          'created_at'
+        ])
+        && d.quantity > 0
+        && d.cost_per_unit > 0
+        && d.remaining_quantity == d.quantity;
+      }
     }
 
     match /inventory_transactions/{id} {
       allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
-      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id);
+      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id)
+        && validTransaction();
       allow update, delete: if isMaster();
+
+      function validTransaction() {
+        let d = request.resource.data;
+        return d.keys().hasAll([
+          'material_id',
+          'clinic_id',
+          'transaction_type',
+          'quantity',
+          'unit_cost',
+          'total_cost',
+          'created_by_uid',
+          'created_at'
+        ])
+        && d.transaction_type in ['consumption', 'purchase', 'adjustment', 'rework_return']
+        && d.quantity != 0
+        && d.unit_cost >= 0
+        && d.total_cost >= 0;
+      }
+    }
+
+    match /chat_rooms/{roomId} {
+      allow read: if isAuthenticated()
+        && uid() in resource.data.participant_uids;
+
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated()
+          && uid() in get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.participant_uids;
+
+        allow create: if isAuthenticated()
+          && uid() in get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.participant_uids
+          && validChatMessage();
+
+        allow update: if isAuthenticated()
+          && uid() in get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.participant_uids
+          && (onlySoftDelete() || onlyAddingReadReceipt());
+
+        allow delete: if false;
+
+        function validChatMessage() {
+          let d = request.resource.data;
+          return d.keys().hasAll([
+            'room_id',
+            'case_id',
+            'clinic_id',
+            'sender_uid',
+            'sender_role',
+            'sender_name',
+            'type',
+            'read_by',
+            'created_at'
+          ])
+          && d.sender_uid == uid()
+          && d.type in ['text', 'image', 'file', 'audio']
+          && (d.type != 'text' || (d.text is string && d.text.size() > 0))
+          && (d.type == 'text' || d.attachment_url is string);
+        }
+
+        function onlySoftDelete() {
+          let i = request.resource.data;
+          let e = resource.data;
+          return e.sender_uid == uid()
+            && i.deleted_at != null
+            && i.diff(e).affectedKeys().hasOnly(['deleted_at']);
+        }
+
+        function onlyAddingReadReceipt() {
+          let i = request.resource.data;
+          let e = resource.data;
+          return i.diff(e).affectedKeys().hasOnly(['read_by']);
+        }
+      }
     }
 
     match /invitations/{id} {

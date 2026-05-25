@@ -50,6 +50,10 @@ service firebase.storage {
         || (resource != null && resource.size <= 10 * 1024 * 1024);
     }
 
+    function isUnder25MB() {
+      return request.resource != null && request.resource.size <= 25 * 1024 * 1024;
+    }
+
     function isUnder5MB() {
       return request.resource != null && request.resource.size <= 5 * 1024 * 1024;
     }
@@ -143,6 +147,28 @@ service firebase.storage {
         isUnder5MB();
 
       allow delete: if isMaster();
+    }
+
+    match /clinics/{clinicId}/chat/{roomId}/{filename} {
+      allow read: if isAuthenticated() &&
+        (isMaster() ||
+         belongsToClinic(clinicId) ||
+         (role() == 'dentist_client' && request.auth.token.clinicId == clinicId));
+
+      allow write: if isAuthenticated() &&
+        (isMaster() || request.auth.token.clinicId == clinicId) &&
+        validChatAttachment();
+
+      allow delete: if isMaster();
+
+      function validChatAttachment() {
+        let validTypes = request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType.matches('application/pdf') ||
+          request.resource.contentType.matches('application/.*') ||
+          request.resource.contentType.matches('text/.*');
+        return validTypes && isUnder25MB();
+      }
     }
 
     match /tmp/{uid}/{filename} {
