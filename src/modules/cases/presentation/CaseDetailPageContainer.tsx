@@ -18,6 +18,10 @@ import { CasePlanningVersionsSection } from './sections/CasePlanningVersionsSect
 import { CaseDangerZoneSection } from './sections/CaseDangerZoneSection'
 import { CaseCostSheet } from './components/CaseCostSheet'
 import { InvoiceTriggerButton } from './components/InvoiceTriggerButton'
+import CaseDeliveryTab from './components/CaseDeliveryTab'
+import CasePlanningTab from './components/CasePlanningTab'
+import CaseProductionTab from './components/CaseProductionTab'
+import CaseTreatmentTab from './components/CaseTreatmentTab'
 
 function CaseDetailPageContainer() {
   const controller = useCaseDetailController()
@@ -199,6 +203,16 @@ function CaseDetailPageContainer() {
         onPublish={controller.publishPlanningVersion}
         onApprove={controller.approvePlanningVersion}
       />
+
+      <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <CasePlanningTab revisionCount={controller.planningVersions.length} />
+        <CaseProductionTab qcPassed={controller.labSummary.prontas > 0} />
+        <CaseDeliveryTab />
+        <CaseTreatmentTab
+          currentTray={Math.max(controller.progressUpper.delivered, controller.progressLower.delivered, 0)}
+          totalTrays={Math.max(controller.totalUpper, controller.totalLower, 0)}
+        />
+      </section>
 
       <CaseFinancialSection
         financial={controller.financial}
