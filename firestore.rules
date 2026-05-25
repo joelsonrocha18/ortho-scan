@@ -416,6 +416,21 @@ service cloud.firestore {
       }
     }
 
+    match /user_fcm_tokens/{tokenOwnerUid}/tokens/{tokenId} {
+      allow read, create, update: if isAuthenticated() && uid() == tokenOwnerUid;
+      allow delete: if isAuthenticated() && (uid() == tokenOwnerUid || isMaster());
+    }
+
+    match /dashboard_snapshots/{snapshotClinicId} {
+      allow read: if isInternalUser() && canAccessClinic(snapshotClinicId);
+      allow write: if false;
+    }
+
+    match /ai_interactions/{interactionId} {
+      allow read: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow write: if false;
+    }
+
     match /invitations/{id} {
       allow read: if isClinicAdmin();
       allow write: if false;

@@ -3,6 +3,7 @@ import { DATA_MODE } from '../data/dataMode'
 import { logger } from '../lib/logger'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../lib/firebaseClient'
+import { registerCurrentUserFcmToken } from './fcmTokenRepo'
 import { clearCurrentPushSubscription, getCurrentBrowserPushSubscription, upsertCurrentUserPushSubscription } from './pushSubscriptionRepo'
 import { getBrowserPushPermission, isWebPushSupported, urlBase64ToUint8Array } from './pushUtils'
 import { ensureServiceWorkerRegistered } from './registerServiceWorker'
@@ -163,6 +164,12 @@ export function useNotifications() {
         setError(result.error)
         setIsSubscribed(false)
         return result
+      }
+
+      const fcmResult = await registerCurrentUserFcmToken(registration)
+      if (!fcmResult.ok) {
+        setError(fcmResult.error)
+        return fcmResult
       }
 
       setIsSubscribed(true)

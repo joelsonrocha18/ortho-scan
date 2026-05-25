@@ -1,8 +1,11 @@
+import { doc, onSnapshot } from 'firebase/firestore'
 import { listCasesFirebase } from '../../../../data/caseRepo'
 import { listScansFirebase } from '../../../../data/scanRepo'
+import { db as firestoreDb } from '../../../../lib/firebaseClient'
 import { listPatientsFirebase } from '../../../../repo/patientRepo'
 import { ok, err, type Result } from '../../../../shared/errors'
 import type { Case } from '../../../../types/Case'
+import type { DashboardSnapshot } from '../../../../types/Dashboard'
 import type { Patient } from '../../../../types/Patient'
 import type { Scan } from '../../../../types/Scan'
 import type { User } from '../../../../types/User'
@@ -125,4 +128,18 @@ export class FirestoreDashboardRepository implements DashboardRepository {
 
 export function createFirestoreDashboardRepository(currentUser: User | null) {
   return new FirestoreDashboardRepository(currentUser)
+}
+
+export function subscribeToDashboard(
+  clinicId: string,
+  onUpdate: (snapshot: DashboardSnapshot | null) => void,
+): () => void {
+  if (!firestoreDb) {
+    onUpdate(null)
+    return () => undefined
+  }
+
+  return onSnapshot(doc(firestoreDb, 'dashboard_snapshots', clinicId), (snapshot) => {
+    onUpdate(snapshot.exists() ? ({ clinic_id: clinicId, ...snapshot.data() } as DashboardSnapshot) : null)
+  })
 }
