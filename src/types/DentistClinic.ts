@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore'
+
 export type DentistClinicAddress = {
   cep?: string
   street?: string
@@ -26,6 +28,9 @@ export type DentistClinic = {
   email?: string
   address?: DentistClinicAddress
   notes?: string
+  portal_access_token?: string
+  portal_token_expires_at?: Timestamp
+  portal_token_created_by?: string
   isActive: boolean
   createdAt: string
   updatedAt: string

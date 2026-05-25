@@ -243,6 +243,30 @@ export function useCaseDetailController() {
       ? { aguardando_iniciar: Math.max(0, maxPlannedTrays - deliveredToProfessionalCount - emProducao - controleQualidade - prontas), em_producao: emProducao, controle_qualidade: controleQualidade, prontas, entregues: Math.min(deliveredToProfessionalCount, maxPlannedTrays), osItens: linkedLabItems.length }
       : { aguardando_iniciar: pipelineLabItems.filter((item) => item.status === 'aguardando_iniciar').length, em_producao: emProducao, controle_qualidade: controleQualidade, prontas, entregues: deliveredLabItemIds.size, osItens: linkedLabItems.length }
   }, [deliveredLabItemIds.size, deliveredToProfessionalCount, isAlignerCase, linkedLabItems.length, maxPlannedTrays, pipelineLabItems, readyLabItems.length])
+  const costSheet = useMemo(() => {
+    const financial = resolvedCase?.financial
+    const materialCost = Math.max(0, financial?.baseCost ?? 0)
+    const revenue = financial?.revenue ?? resolvedCase?.budget?.value ?? 0
+    return {
+      costs: materialCost > 0
+        ? [{
+            material: 'Materiais do caso',
+            quantity: 1,
+            unit: 'caso',
+            unitCost: materialCost,
+            totalCost: materialCost,
+          }]
+        : [],
+      laborHours: 0,
+      laborRate: 0,
+      projectedMargin: Math.max(0, revenue - materialCost),
+      actualMargin: financial?.margin ?? Math.max(0, revenue - materialCost),
+    }
+  }, [resolvedCase?.budget?.value, resolvedCase?.financial])
+  const invoiceLabStage = useMemo(
+    () => (linkedLabItems.some((item) => item.status === 'prontas') ? 'expedicao' as const : 'triagem' as const),
+    [linkedLabItems],
+  )
   const replacementSummary = useMemo(() => ({ totalContratado: Math.max(0, totalUpper + totalLower), entreguePaciente: Math.max(0, Math.trunc(deliveredUpper)) + Math.max(0, Math.trunc(deliveredLower)), saldoRestante: Math.max(0, totalUpper + totalLower - Math.max(0, Math.trunc(deliveredUpper)) - Math.max(0, Math.trunc(deliveredLower))) }), [deliveredLower, deliveredUpper, totalLower, totalUpper])
   const canConcludeTreatmentManually = useMemo(() => (resolvedCase ? CaseLifecycleService.canManuallyConcludeTreatment(resolvedCase, totalUpper, totalLower) : false), [resolvedCase, totalLower, totalUpper])
   const groupedScanFiles = useMemo(() => groupCaseScanFiles(resolvedCase), [resolvedCase])
@@ -649,6 +673,11 @@ export function useCaseDetailController() {
     currentContractApprovedAtLabel: resolvedCase?.contract?.approvedAt ? formatPtBrDateTime(resolvedCase.contract.approvedAt) : undefined,
     planningVersions: resolvedCase?.planningVersions ?? [],
     financial: resolvedCase?.financial,
+    costSheet,
+    invoiceLabStage,
+    triggerInvoice: () => {
+      addToast({ type: 'success', title: 'Faturamento', message: 'Faturamento gerado para conferencia.' })
+    },
     planningVersionNote,
     setPlanningVersionNote,
     canApprovePlanning,

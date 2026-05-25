@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
 import { DATA_MODE } from './dataMode'
 import { loadDb, saveDb } from './db'
 import { db as firestoreDb } from '../lib/firebaseClient'
@@ -270,7 +270,7 @@ export async function createDentistFirebase(payload: DentistPayload): Promise<De
   await setDoc(dentistRef, dentistToFirestoreDocument(next))
 
   const role = next.type === 'clinica' ? 'clinic_client' : 'dentist_client'
-  const inviteResult = await createInviteFirebase({
+  await createInviteFirebase({
     role,
     entityType: 'dentist',
     entityId: next.id,
@@ -279,11 +279,6 @@ export async function createDentistFirebase(payload: DentistPayload): Promise<De
     dentistId: next.id,
     expiresInDays: 14,
   })
-
-  if (!inviteResult.ok) {
-    await deleteDoc(dentistRef)
-    return { ok: false, error: inviteResult.error }
-  }
 
   return { ok: true, dentist: next }
 }

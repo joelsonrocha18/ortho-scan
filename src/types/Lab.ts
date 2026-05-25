@@ -1,4 +1,5 @@
 import type { ProductType } from './Product'
+import type { Timestamp } from 'firebase/firestore'
 import type {
   LabFinancialImpact,
   LabProductionChecklist,
@@ -11,6 +12,18 @@ import type {
 export type LabStatus = 'aguardando_iniciar' | 'em_producao' | 'controle_qualidade' | 'prontas'
 
 export type LabPriority = 'Baixo' | 'Medio' | 'Urgente'
+
+export type LabStage = LabStageValue
+
+export type StageEvent = {
+  from_sub_status_id: string
+  to_sub_status_id: string
+  from_stage: LabStage
+  to_stage: LabStage
+  moved_by_uid: string
+  moved_at: Timestamp
+  note?: string
+}
 
 export type LabItem = {
   id: string
@@ -36,6 +49,12 @@ export type LabItem = {
   dueDate: string
   status: LabStatus
   stage?: LabStageValue
+  batch_type?: 'single' | 'batch'
+  tray_numbers?: number[]
+  sub_status_id?: string
+  stage_history?: StageEvent[]
+  assigned_to?: string
+  sla_due_at?: Timestamp
   stageTimeline?: LabStageTimelineRecord[]
   sla?: LabStageSLASnapshot
   productionChecklist?: LabProductionChecklist

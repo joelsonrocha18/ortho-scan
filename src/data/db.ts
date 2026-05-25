@@ -1611,7 +1611,7 @@ export function ensureSeed() {
   try {
     const normalized = applyHotfixResetJoelsonTreatment(normalizeDb(JSON.parse(raw) as unknown))
     if (mode === 'empty') {
-      // In Supabase mode we keep local cache untouched to avoid wiping
+      // In remote mode we keep local cache untouched to avoid wiping
       // records used by local UI state between route transitions.
       const nextDb: AppDb = {
         ...normalized,

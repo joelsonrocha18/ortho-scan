@@ -16,6 +16,8 @@ import { CaseFinancialSection } from './sections/CaseFinancialSection'
 import { CaseHistoryTimelineSection } from './sections/CaseHistoryTimelineSection'
 import { CasePlanningVersionsSection } from './sections/CasePlanningVersionsSection'
 import { CaseDangerZoneSection } from './sections/CaseDangerZoneSection'
+import { CaseCostSheet } from './components/CaseCostSheet'
+import { InvoiceTriggerButton } from './components/InvoiceTriggerButton'
 
 function CaseDetailPageContainer() {
   const controller = useCaseDetailController()
@@ -201,6 +203,23 @@ function CaseDetailPageContainer() {
       <CaseFinancialSection
         financial={controller.financial}
         reworkSummary={controller.currentCase.reworkSummary}
+      />
+
+      <div className="mt-4 flex justify-end">
+        <InvoiceTriggerButton
+          caseId={controller.currentCase.id}
+          status={controller.invoiceLabStage}
+          onInvoice={controller.triggerInvoice}
+        />
+      </div>
+
+      <CaseCostSheet
+        caseId={controller.currentCase.id}
+        costs={controller.costSheet.costs}
+        laborHours={controller.costSheet.laborHours}
+        laborRate={controller.costSheet.laborRate}
+        projectedMargin={controller.costSheet.projectedMargin}
+        actualMargin={controller.costSheet.actualMargin}
       />
 
       <CaseHistoryTimelineSection entries={controller.timelineEntries} />

@@ -4,6 +4,7 @@ import { DATA_MODE } from '../data/dataMode'
 import type { SessionUser } from '../auth/session'
 import {
   clearLegacyPersistentAuthStorage,
+  SESSION_ACCESS_TOKEN_KEY,
   SESSION_PROFILE_KEY,
   SESSION_USER_KEY,
   readSessionStorageValue,
@@ -24,7 +25,16 @@ export function setSessionUserId(userId: string) {
 export function clearSession() {
   sessionStorage.removeItem(SESSION_USER_KEY)
   sessionStorage.removeItem(SESSION_PROFILE_KEY)
+  sessionStorage.removeItem(SESSION_ACCESS_TOKEN_KEY)
   clearLegacyPersistentAuthStorage()
+}
+
+export function setAccessToken(accessToken: string) {
+  sessionStorage.setItem(SESSION_ACCESS_TOKEN_KEY, accessToken)
+}
+
+export function getAccessToken() {
+  return readSession(SESSION_ACCESS_TOKEN_KEY)
 }
 
 export function setSessionProfile(profile: SessionUser) {

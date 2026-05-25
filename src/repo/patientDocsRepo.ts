@@ -3,7 +3,7 @@ import { DATA_MODE } from '../data/dataMode'
 import { loadDb, saveDb } from '../data/db'
 import { getSessionProfile } from '../lib/auth'
 import { logger } from '../lib/logger'
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, orderBy } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
 import { db as firestoreDb } from '../lib/firebaseClient'
 import { nowIsoDateTime, toIsoDateTime } from '../shared/utils/date'
 import { createEntityId } from '../shared/utils/id'
@@ -191,7 +191,7 @@ export async function addPatientDoc(payload: {
     }
   }
 
-  const doc: PatientDocument = {
+  const localDoc: PatientDocument = {
     id: createEntityId('pat-doc'),
     patientId: validated.patientId,
     caseId: payload.caseId,
@@ -206,20 +206,20 @@ export async function addPatientDoc(payload: {
     status: 'ok',
   }
 
-  db.patientDocuments = [doc, ...db.patientDocuments]
+  db.patientDocuments = [localDoc, ...db.patientDocuments]
   pushAudit(db, {
     entity: 'document',
-    entityId: doc.id,
+    entityId: localDoc.id,
     action: 'document.create',
-    message: `Documento ${doc.title} registrado para o paciente ${doc.patientId}.`,
+    message: `Documento ${localDoc.title} registrado para o paciente ${localDoc.patientId}.`,
   })
   saveDb(db)
   logger.info('Documento do paciente criado no modo local.', {
     flow: 'documents.create',
     patientId: validated.patientId,
-    documentId: doc.id,
+      documentId: localDoc.id,
   })
-  return { ok: true as const, doc }
+  return { ok: true as const, doc: localDoc }
 }
 
 export async function updatePatientDoc(id: string, patch: Partial<Pick<PatientDocument, 'title' | 'category' | 'note' | 'createdAt'>>) {

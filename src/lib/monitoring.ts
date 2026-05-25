@@ -12,14 +12,13 @@ type MonitoringEvent = {
 }
 
 const explicitEndpoint = (import.meta.env.VITE_MONITORING_ENDPOINT as string | undefined)?.trim()
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
 const monitoringEnabled = (import.meta.env.VITE_MONITORING_ENABLED as string | undefined)?.trim() === 'true' || Boolean(explicitEndpoint)
 const release = (import.meta.env.VITE_RELEASE as string | undefined)?.trim()
 
 function resolveMonitoringEndpoint() {
   if (explicitEndpoint) return explicitEndpoint
-  if (!monitoringEnabled || !supabaseUrl) return ''
-  return `${supabaseUrl.replace(/\/$/, '')}/functions/v1/frontend-monitoring`
+  if (!monitoringEnabled) return ''
+  return ''
 }
 
 function sanitizeMonitoringEvent(event: MonitoringEvent) {

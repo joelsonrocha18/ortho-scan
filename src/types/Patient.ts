@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore'
+
 export type Patient = {
   id: string
   shortId?: string
@@ -21,6 +23,11 @@ export type Patient = {
     state?: string
   }
   primaryDentistId?: string
+  portal_uid?: string
+  portal_enabled?: boolean
+  active_invite_id?: string
+  current_tray?: number
+  treatment_start_date?: Timestamp
   notes?: string
   createdAt: string
   updatedAt: string

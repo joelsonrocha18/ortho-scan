@@ -68,36 +68,6 @@ function scanCompleteness(scan: Scan) {
   }
 }
 
-function normalizeScanAttachments(attachments: ScanAttachment[]) {
-  const now = new Date().toISOString()
-  return attachments.map((attachment) => ({
-    ...attachment,
-    status: attachment.status ?? 'ok',
-    attachedAt: attachment.attachedAt ?? attachment.createdAt ?? now,
-    createdAt: attachment.createdAt ?? now,
-  }))
-}
-
-function toCaseScanFiles(attachments: ScanAttachment[]) {
-  return normalizeScanAttachments(attachments).map((att) => ({
-    id: att.id,
-    name: att.name,
-    kind: att.kind,
-    slotId: att.slotId,
-    rxType: att.rxType,
-    arch: att.arch,
-    isLocal: att.isLocal,
-    url: att.url,
-    filePath: att.filePath,
-    status: att.status,
-    attachedAt: att.attachedAt,
-    note: att.note,
-    flaggedAt: att.flaggedAt,
-    flaggedReason: att.flaggedReason,
-    createdAt: att.createdAt,
-  }))
-}
-
 export default function ScansPage() {
   const navigate = useNavigate()
   const { addToast } = useToast()
@@ -481,25 +451,6 @@ export default function ScansPage() {
       isLocal = false
     } else {
       url = URL.createObjectURL(payload.file)
-    }
-
-    const now = new Date().toISOString()
-    const nextAttachment: ScanAttachment = {
-      id: `scan_file_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-      name: payload.file.name,
-      kind: payload.kind,
-      slotId: payload.slotId,
-      rxType: payload.rxType,
-      arch: payload.arch,
-      mime: payload.file.type,
-      size: payload.file.size,
-      url,
-      filePath,
-      isLocal,
-      note: payload.note,
-      status: 'ok',
-      attachedAt: payload.attachedAt,
-      createdAt: now,
     }
 
     let nextScan: Scan

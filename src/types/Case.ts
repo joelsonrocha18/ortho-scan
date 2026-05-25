@@ -11,6 +11,7 @@ import type {
   OrthoDomainEventName,
   SLAStatusValue,
 } from './Domain'
+import type { Timestamp } from 'firebase/firestore'
 
 export type CaseStatus =
   | 'planejamento'
@@ -127,6 +128,18 @@ export type CaseTimelineEntry = {
   }
 }
 
+export type LabStageChangedEvent = {
+  type: 'lab_stage_changed'
+  lab_item_id: string
+  from_sub_status_id: string
+  to_sub_status_id: string
+  from_stage: LabStageValue
+  to_stage: LabStageValue
+  moved_by_uid: string
+  moved_at: Timestamp
+  note?: string
+}
+
 export type Case = {
   id: string
   shortId?: string
@@ -143,7 +156,9 @@ export type Case = {
   clinicId?: string
   scanDate: string
   totalTrays: number
+  total_trays?: number
   changeEveryDays: number
+  tray_change_interval_days?: number
   totalTraysUpper?: number
   totalTraysLower?: number
   attachmentBondingTray?: boolean
@@ -173,9 +188,14 @@ export type Case = {
   stageApprovals?: CaseStageApproval[]
   financial?: CaseFinancialSnapshot
   lifecycleStatus?: CaseLifecycleStatusValue
+  lab_stage?: LabStageValue
+  lab_sub_status_id?: string
+  current_lab_item_id?: string
+  patient_portal_enabled?: boolean
   sla?: CaseSLASnapshot
   reworkSummary?: CaseReworkSummary
   domainEvents?: OrthoDomainEvent[]
+  timeline?: LabStageChangedEvent[]
   timelineEntries?: CaseTimelineEntry[]
   scanFiles?: {
     id: string

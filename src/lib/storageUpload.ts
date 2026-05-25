@@ -1,8 +1,8 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { DATA_MODE } from '../data/dataMode'
 import { storage } from './firebaseClient'
 import { createTimestampedToken, sanitizeTokenSegment } from '../shared/utils/id'
 import { logger } from './logger'
+import { uploadFile } from '../shared/infra/firebaseStorageService'
 
 type UploadScope = 'scans' | 'patient-docs'
 
@@ -37,15 +37,8 @@ export async function uploadFileToStorage(
   }
 
   const path = uniquePath(params.scope, params.clinicId, params.ownerId, file.name)
-  const storageRef = ref(storage, path)
-
   try {
-    await uploadBytes(storageRef, file, {
-      contentType: file.type || 'application/octet-stream',
-      cacheControl: 'public,max-age=3600',
-    })
-    const url = await getDownloadURL(storageRef)
-    return { path, url }
+    return uploadFile(file, path)
   } catch (error) {
     logger.error(
       'Falha ao enviar arquivo para Firebase Storage.',

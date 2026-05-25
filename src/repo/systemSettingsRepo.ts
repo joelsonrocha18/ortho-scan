@@ -38,7 +38,7 @@ function getFirestore() {
   return firestoreDb
 }
 
-export async function loadSystemSettingsSupabase(): Promise<SystemSettings | null> {
+export async function loadSystemSettingsRemote(): Promise<SystemSettings | null> {
   const firestore = getFirestore()
   if (!firestore) return null
   const snapshot = await getDoc(doc(firestore, COLLECTION, SETTINGS_KEY))
@@ -49,7 +49,7 @@ export async function loadSystemSettingsSupabase(): Promise<SystemSettings | nul
   return withDisabledAi(value as SystemSettings)
 }
 
-export async function saveSystemSettingsSupabase(settings: SystemSettings) {
+export async function saveSystemSettingsRemote(settings: SystemSettings) {
   const firestore = getFirestore()
   if (!firestore) return { ok: false as const, error: 'Firebase não configurado.' }
   const now = new Date().toISOString()

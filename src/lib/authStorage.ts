@@ -1,9 +1,8 @@
 export const SESSION_USER_KEY = 'arrimo_session_user_id'
 export const SESSION_PROFILE_KEY = 'arrimo_session_profile'
-export const SESSION_SUPABASE_ACCESS_TOKEN_KEY = 'arrimo_supabase_access_token'
-export const SUPABASE_SESSION_STORAGE_KEY = 'orthoscan.supabase.auth.session'
+export const SESSION_ACCESS_TOKEN_KEY = 'arrimo_firebase_access_token'
 
-const LEGACY_SUPABASE_AUTH_TOKEN_PATTERN = /^sb-[\w-]+-auth-token$/
+const LEGACY_AUTH_TOKEN_PATTERN = /^sb-[\w-]+-auth-token$/
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
@@ -37,15 +36,15 @@ export function clearLegacyPersistentAuthStorage() {
 
   storage.removeItem(SESSION_USER_KEY)
   storage.removeItem(SESSION_PROFILE_KEY)
-  storage.removeItem(SESSION_SUPABASE_ACCESS_TOKEN_KEY)
+  storage.removeItem(SESSION_ACCESS_TOKEN_KEY)
 
-  const legacySupabaseKeys: string[] = []
+  const legacyAuthKeys: string[] = []
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index)
-    if (key && LEGACY_SUPABASE_AUTH_TOKEN_PATTERN.test(key)) {
-      legacySupabaseKeys.push(key)
+    if (key && LEGACY_AUTH_TOKEN_PATTERN.test(key)) {
+      legacyAuthKeys.push(key)
     }
   }
 
-  legacySupabaseKeys.forEach((key) => storage.removeItem(key))
+  legacyAuthKeys.forEach((key) => storage.removeItem(key))
 }

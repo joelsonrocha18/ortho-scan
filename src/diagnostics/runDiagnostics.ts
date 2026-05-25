@@ -13,8 +13,6 @@ import { markPatientDocAsError } from '../repo/patientDocsRepo'
 import { markScanAttachmentError } from '../data/scanRepo'
 import { markCaseScanFileError } from '../data/caseRepo'
 import { APP_ROUTE_PATHS } from '../routes/appRoutes'
-import { supabase } from '../lib/supabaseClient'
-import { getProfileByUserId } from '../repo/profileRepo'
 
 export type DiagnosticStatus = 'pass' | 'fail' | 'warn'
 
@@ -91,8 +89,6 @@ export async function runDiagnostics(): Promise<DiagnosticReport> {
   const appMode = import.meta.env.MODE
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? ''
   const storageOk = safeLocalStorage()
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
   items.push({
     id: 'env_mode',
     title: 'Ambiente',
@@ -106,16 +102,6 @@ export async function runDiagnostics(): Promise<DiagnosticReport> {
     status: 'pass',
     message: `DATA_MODE: ${DATA_MODE}`,
   })
-  if (DATA_MODE === 'supabase') {
-    const missing = [!supabaseUrl ? 'VITE_SUPABASE_URL' : null, !supabaseAnon ? 'VITE_SUPABASE_ANON_KEY' : null].filter(Boolean)
-    items.push({
-      id: 'env_supabase',
-      title: 'Supabase env',
-      status: missing.length === 0 ? 'pass' : 'warn',
-      message: missing.length === 0 ? 'Env vars do Supabase configuradas.' : `Faltando: ${missing.join(', ')}`,
-      fixHint: missing.length === 0 ? undefined : 'Preencha .env com as credenciais do Supabase.',
-    })
-  }
   items.push({
     id: 'env_storage',
     title: 'LocalStorage',
@@ -285,76 +271,6 @@ export async function runDiagnostics(): Promise<DiagnosticReport> {
     message: invalidLab.length === 0 ? 'Status do LAB ok.' : `Status fora do esperado: ${invalidLab.map((item) => item.status).join(', ')}`,
     fixHint: invalidLab.length === 0 ? undefined : 'Revisar migração de status do LAB.',
   })
-
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) {
-      items.push({
-        id: 'supabase_profile',
-        title: 'Supabase profile',
-        status: 'warn',
-        message: 'Supabase não configurado.',
-        fixHint: 'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.',
-      })
-    } else {
-      const { data: authData } = await supabase.auth.getUser()
-      const userId = authData?.user?.id
-      const profile = userId ? await getProfileByUserId(userId) : null
-      items.push({
-        id: 'supabase_profile',
-        title: 'Supabase profile',
-        status: profile ? 'pass' : 'warn',
-        message: profile ? 'Profile carregado com sucesso.' : 'Não foi possível carregar o profile.',
-        fixHint: profile ? undefined : 'Crie profile para o usuário atual.',
-      })
-
-      if (profile?.clinic_id) {
-        const { data: patients } = await supabase
-          .from('patients')
-          .select('id, clinic_id')
-          .limit(5)
-        const mismatch = (patients ?? []).filter((item) => item.clinic_id && item.clinic_id !== profile.clinic_id)
-        items.push({
-          id: 'supabase_rls',
-          title: 'Supabase RLS',
-          status: mismatch.length === 0 ? 'pass' : 'fail',
-          message:
-            mismatch.length === 0
-              ? 'RLS aparente ok (patients).'
-              : `RLS possível vazamento: clinic_id divergente (${mismatch.length}).`,
-          fixHint: mismatch.length === 0 ? undefined : 'Revisar políticas de pacientes/exames/casos.',
-        })
-      } else {
-        items.push({
-          id: 'supabase_rls',
-          title: 'Supabase RLS',
-          status: 'warn',
-          message: 'Profile sem clinic_id para validar RLS.',
-          fixHint: 'Atualize clinic_id no profile.',
-        })
-      }
-    }
-  }
-
-  if (DATA_MODE === 'supabase') {
-    if (!supabase) {
-      items.push({
-        id: 'supabase_migration_tools',
-        title: 'Ferramentas de migração disponíveis',
-        status: 'warn',
-        message: 'Supabase não configurado.',
-        fixHint: 'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.',
-      })
-    } else {
-      const result = await supabase.functions.invoke('export-db', { body: {} })
-      items.push({
-        id: 'supabase_migration_tools',
-        title: 'Ferramentas de migração disponíveis',
-        status: result.error ? 'warn' : 'pass',
-        message: result.error ? 'Sem permissão ou function indisponível.' : 'Export function respondeu.',
-        fixHint: result.error ? 'Verifique deploy das functions e permissão do usuário.' : undefined,
-      })
-    }
-  }
 
   const finishedAt = nowIso()
   const durationMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime()

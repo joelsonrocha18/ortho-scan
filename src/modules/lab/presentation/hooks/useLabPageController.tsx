@@ -119,7 +119,7 @@ export function useLabPageController() {
 
   useEffect(() => {
     void refreshOverview()
-  }, [refreshOverview, supabaseSyncTick, labSyncSignature])
+  }, [refreshOverview, labSyncSignature])
 
   useEffect(() => {
     const tab = searchParams.get('tab')

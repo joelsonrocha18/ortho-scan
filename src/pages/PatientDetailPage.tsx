@@ -171,10 +171,6 @@ function safeText(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 
-function asTextOrUndefined(value: unknown) {
-  return typeof value === 'string' ? value : undefined
-}
-
 function splitFullName(fullName: string, firstName?: string, lastName?: string) {
   const first = (firstName ?? '').trim()
   const last = (lastName ?? '').trim()

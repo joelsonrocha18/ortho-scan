@@ -1,11 +1,9 @@
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
 import { createUserWithEmailAndPassword, deleteUser, updateProfile, signOut as firebaseSignOut } from 'firebase/auth'
 import { auth, db as firestoreDb } from '../lib/firebaseClient'
 import { createEntityId } from '../shared/utils/id'
 import { nowIsoDateTime } from '../shared/utils/date'
 import type { Role } from '../types/User'
-import type { Clinic } from '../types/Clinic'
-import type { DentistClinic } from '../types/DentistClinic'
 
 export type InviteEntityType = 'clinic' | 'dentist'
 export type InviteStatus = 'active' | 'used' | 'expired'

@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
 import { DATA_MODE } from '../data/dataMode'
 import { loadDb, saveDb } from '../data/db'
 import { db as firestoreDb } from '../lib/firebaseClient'
@@ -198,7 +198,7 @@ export async function createClinicFirebase(payload: ClinicPayload): Promise<Clin
 
   const clinicRef = doc(getFirestoreDb(), 'clinics', clinic.id)
   await setDoc(clinicRef, clinicToFirestoreDocument(clinic))
-  const inviteResult = await createInviteFirebase({
+  await createInviteFirebase({
     role: 'clinic_client',
     entityType: 'clinic',
     entityId: clinic.id,
@@ -206,11 +206,6 @@ export async function createClinicFirebase(payload: ClinicPayload): Promise<Clin
     clinicId: clinic.id,
     expiresInDays: 14,
   })
-
-  if (!inviteResult.ok) {
-    await deleteDoc(clinicRef)
-    return { ok: false, error: inviteResult.error }
-  }
 
   return { ok: true, clinic }
 }

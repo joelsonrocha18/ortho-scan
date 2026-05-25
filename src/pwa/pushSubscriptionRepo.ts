@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { DATA_MODE } from '../data/dataMode'
 import { auth, db as firestoreDb } from '../lib/firebaseClient'
@@ -10,8 +10,9 @@ const USER_PUSH_SUBSCRIPTIONS_COLLECTION = 'user_push_subscriptions'
 
 function getAuthenticatedUserId(): Promise<string | null> {
   if (DATA_MODE !== 'firebase' || !auth) return Promise.resolve(null)
+  const firebaseAuth = auth
   return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
       unsubscribe()
       resolve(user?.uid ?? null)
     })

@@ -66,31 +66,6 @@ type AgendaManualEventRow = {
   deleted_at?: string | null
 }
 
-type SupabaseCaseRow = {
-  id: string
-  product_type?: string | null
-  product_id?: string | null
-  scan_id?: string | null
-  clinic_id?: string | null
-  patient_id?: string | null
-  dentist_id?: string | null
-  requested_by_dentist_id?: string | null
-  data?: Record<string, unknown>
-}
-
-type SupabasePatientRow = {
-  id: string
-  name?: string | null
-  whatsapp?: string | null
-  clinic_id?: string | null
-}
-
-type SupabaseDentistRow = {
-  id: string
-  name?: string | null
-  clinic_id?: string | null
-}
-
 const LOCAL_AGENDA_KEY = 'arrimo_orthoscan_agenda_eventos_v1'
 
 export const agendaEventTypeLabels: Record<AgendaEventType, string> = {

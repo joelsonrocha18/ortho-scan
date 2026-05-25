@@ -1,0 +1,315 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function clinicId() {
+      return request.auth.token.clinicId;
+    }
+
+    function dentistId() {
+      return request.auth.token.dentistId;
+    }
+
+    function patientId() {
+      return request.auth.token.patientId;
+    }
+
+    function isMaster() {
+      return isAuthenticated() && role() == 'master_admin';
+    }
+
+    function isClinicAdmin() {
+      return isAuthenticated() && role() in ['master_admin', 'dentist_admin'];
+    }
+
+    function isInternalUser() {
+      return isAuthenticated() && role() in [
+        'master_admin', 'dentist_admin', 'lab_tech', 'receptionist'
+      ];
+    }
+
+    function isLabTechOrAbove() {
+      return isAuthenticated() && role() in [
+        'master_admin', 'dentist_admin', 'lab_tech'
+      ];
+    }
+
+    function isDentistClient() {
+      return isAuthenticated() && role() == 'dentist_client';
+    }
+
+    function isPatient() {
+      return isAuthenticated() && role() == 'patient';
+    }
+
+    function belongsToClinic(docClinicId) {
+      return clinicId() == docClinicId;
+    }
+
+    function isDentistOfRecord(docDentistId) {
+      return dentistId() == docDentistId;
+    }
+
+    function isPatientOfRecord(docPatientId) {
+      return patientId() == docPatientId;
+    }
+
+    function canAccessClinic(docClinicId) {
+      return isMaster() || belongsToClinic(docClinicId);
+    }
+
+    match /profiles/{profileUid} {
+      allow read: if isAuthenticated() &&
+        (uid() == profileUid || isClinicAdmin());
+      allow create: if isMaster() ||
+        (isClinicAdmin() && canAccessClinic(request.resource.data.clinicId));
+      allow update: if isMaster() ||
+        (isClinicAdmin() && canAccessClinic(resource.data.clinicId));
+      allow delete: if isMaster();
+    }
+
+    match /clinics/{cId} {
+      allow read: if isAuthenticated();
+      allow write: if isClinicAdmin() && canAccessClinic(cId);
+    }
+
+    match /dentists/{dentistDocId} {
+      allow read: if isAuthenticated();
+      allow write: if isClinicAdmin();
+    }
+
+    match /patients/{patientDocId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id)) ||
+        (isPatient() && isPatientOfRecord(patientDocId))
+      );
+
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id);
+
+      allow update: if isAuthenticated() && (
+        isMaster() ||
+        (isClinicAdmin() && belongsToClinic(resource.data.clinic_id))
+      ) && !updatingPatientPortalUid();
+
+      allow delete: if isMaster();
+
+      function updatingPatientPortalUid() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(['portal_uid']);
+      }
+    }
+
+    match /scans/{scanId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id))
+      );
+
+      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id);
+      allow update: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+      allow delete: if isMaster();
+    }
+
+    match /cases/{caseId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id)) ||
+        (isPatient() && isPatientOfRecord(resource.data.patient_id) &&
+          resource.data.patient_portal_enabled == true)
+      );
+
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id);
+
+      allow update: if isAuthenticated() && (
+        isMaster() ||
+        (isClinicAdmin() && belongsToClinic(resource.data.clinic_id))
+      ) && !updatingLabMirrorFields();
+
+      allow delete: if isMaster();
+
+      function updatingLabMirrorFields() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'lab_stage', 'lab_sub_status_id', 'current_lab_item_id'
+        ]);
+      }
+    }
+
+    match /lab_items/{labItemId} {
+      allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id)
+        && validLabItemCreate();
+
+      allow update: if isInternalUser() && canAccessClinic(resource.data.clinic_id)
+        && validLabItemUpdate();
+
+      allow delete: if isMaster();
+
+      function validLabItemCreate() {
+        let d = request.resource.data;
+        return d.keys().hasAll([
+          'case_id', 'clinic_id', 'batch_type', 'tray_numbers',
+          'stage', 'sub_status_id', 'stage_history', 'created_at', 'updated_at'
+        ])
+        && d.batch_type in ['single', 'batch']
+        && d.tray_numbers is list
+        && d.tray_numbers.size() > 0
+        && d.stage_history is list
+        && d.stage_history.size() == 1;
+      }
+
+      function validLabItemUpdate() {
+        let i = request.resource.data;
+        let e = resource.data;
+        return i.case_id == e.case_id
+          && i.clinic_id == e.clinic_id
+          && i.created_at == e.created_at
+          && i.stage_history is list
+          && e.stage_history is list
+          && i.stage_history.size() >= e.stage_history.size();
+      }
+    }
+
+    match /lab_workflow_configs/{cId} {
+      allow read: if isInternalUser() && canAccessClinic(cId);
+      allow create, update: if isClinicAdmin() && canAccessClinic(cId) && validWorkflowConfig();
+      allow delete: if isMaster();
+
+      function validWorkflowConfig() {
+        let d = request.resource.data;
+        return d.keys().hasAll(['clinicId', 'stages', 'updated_at', 'updated_by'])
+          && d.clinicId == cId
+          && d.stages is list
+          && d.stages.size() > 0
+          && d.stages.size() <= 20;
+      }
+    }
+
+    match /patient_invites/{inviteId} {
+      allow read: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow write: if false;
+    }
+
+    match /patient_profiles/{profileUid} {
+      allow read: if isAuthenticated() && (
+        uid() == profileUid ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id)) ||
+        (isClinicAdmin() && belongsToClinic(resource.data.clinic_id))
+      );
+      allow write: if false;
+    }
+
+    match /tray_confirmations/{confirmationId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id)) ||
+        (isPatient() && isPatientOfRecord(resource.data.patient_id))
+      );
+
+      allow create: if isPatient()
+        && isPatientOfRecord(request.resource.data.patient_id)
+        && request.resource.data.clinic_id == clinicId()
+        && validTrayConfirmationCreate();
+
+      allow update: if isPatient()
+        && isPatientOfRecord(resource.data.patient_id)
+        && onlyUpdatingSelfie();
+
+      allow delete: if false;
+
+      function validTrayConfirmationCreate() {
+        let d = request.resource.data;
+        return d.keys().hasAll([
+          'case_id', 'patient_id', 'clinic_id', 'dentist_id',
+          'tray_number', 'confirmed_at', 'source'
+        ])
+        && d.tray_number is int
+        && d.tray_number > 0
+        && d.source in ['app', 'portal_web'];
+      }
+
+      function onlyUpdatingSelfie() {
+        let i = request.resource.data;
+        let e = resource.data;
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'selfie_url', 'selfie_uploaded_at'
+        ])
+        && i.case_id == e.case_id
+        && i.patient_id == e.patient_id
+        && i.clinic_id == e.clinic_id
+        && i.dentist_id == e.dentist_id
+        && i.tray_number == e.tray_number
+        && i.confirmed_at == e.confirmed_at
+        && i.source == e.source;
+      }
+    }
+
+    match /agenda_eventos/{eventoId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id))
+      );
+      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id);
+      allow update: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+      allow delete: if isClinicAdmin();
+    }
+
+    match /documents/{docId} {
+      allow read: if isAuthenticated() && (
+        isMaster() ||
+        (isInternalUser() && belongsToClinic(resource.data.clinic_id)) ||
+        (isDentistClient() && isDentistOfRecord(resource.data.dentist_id)) ||
+        (isPatient() && isPatientOfRecord(resource.data.patient_id))
+      );
+      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id);
+      allow update: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow delete: if isMaster();
+    }
+
+    match /contracts/{id} {
+      allow read: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id);
+      allow update: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow delete: if isMaster();
+    }
+
+    match /products_policy/{id} {
+      allow read: if isInternalUser();
+      allow write: if isClinicAdmin();
+    }
+
+    match /inventory_materials/{id} {
+      allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+      allow create: if isClinicAdmin() && canAccessClinic(request.resource.data.clinic_id);
+      allow update: if isClinicAdmin() && canAccessClinic(resource.data.clinic_id);
+      allow delete: if isMaster();
+    }
+
+    match /inventory_transactions/{id} {
+      allow read: if isInternalUser() && canAccessClinic(resource.data.clinic_id);
+      allow create: if isInternalUser() && canAccessClinic(request.resource.data.clinic_id);
+      allow update, delete: if isMaster();
+    }
+
+    match /invitations/{id} {
+      allow read: if isClinicAdmin();
+      allow write: if false;
+    }
+  }
+}

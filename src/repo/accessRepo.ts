@@ -21,7 +21,10 @@ export async function requestPasswordReset(payload: { email: string }) {
     await sendPasswordResetEmail(auth, payload.email.trim())
     return { ok: true as const }
   } catch (error) {
-    logger.warn('Falha ao solicitar redefinição de senha Firebase.', { email: payload.email }, error)
+    logger.warn('Falha ao solicitar redefinição de senha Firebase.', {
+      email: payload.email,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return { ok: true as const, warning: 'Se o e-mail existir, um link de redefinição será enviado.' }
   }
 }

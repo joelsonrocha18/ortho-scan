@@ -209,7 +209,7 @@ export async function inviteUser(payload: {
   }
 }
 
-export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
+export async function createScanFirebaseCompat(scan: Omit<Scan, 'id' | 'createdAt' | 'updatedAt'>) {
   try {
     const created = await createScanFirebase(scan)
     return { ok: true as const, id: created.id }
@@ -218,7 +218,7 @@ export async function createScanSupabase(scan: Omit<Scan, 'id' | 'createdAt' | '
   }
 }
 
-export async function createCaseFromScanSupabase(
+export async function createCaseFromScanFirebaseCompat(
   scan: Scan,
   payload: {
     totalTraysUpper?: number
@@ -231,7 +231,7 @@ export async function createCaseFromScanSupabase(
   return createCaseFromScanFirebase(scan.id, payload)
 }
 
-export async function patchCaseDataSupabase(
+export async function patchCaseDataFirebaseCompat(
   caseId: string,
   patch: Record<string, unknown>,
   options?: { status?: string; phase?: string },
@@ -248,35 +248,33 @@ export async function patchCaseDataSupabase(
   return { ok: true as const }
 }
 
-export async function listCaseLabItemsSupabase(caseId: string): Promise<LabItem[]> {
+export async function listCaseLabItemsFirebaseCompat(caseId: string): Promise<LabItem[]> {
   const orders = await listLabOrdersFirebase()
   return getCanonicalLabOrders(orders.filter((item) => item.caseId === caseId))
 }
 
-export async function generateCaseLabOrderSupabase(caseId: string) {
+export async function generateCaseLabOrderFirebaseCompat(caseId: string) {
   return generateCaseLabOrderFirebase(caseId)
 }
 
-export async function updateScanStatusSupabase(scanId: string, status: 'aprovado' | 'reprovado') {
-  if (status === 'aprovado') {
-    const result = await approveScanFirebase(scanId)
-    return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao aprovar exame.' }
-  }
-  const result = await rejectScanFirebase(scanId)
-  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao reprovar exame.' }
+export async function updateScanStatusFirebaseCompat(scanId: string, status: 'aprovado' | 'reprovado') {
+  const result = status === 'aprovado'
+    ? await approveScanFirebase(scanId)
+    : await rejectScanFirebase(scanId)
+  return result ? { ok: true as const } : { ok: false as const, error: 'Exame não encontrado.' }
 }
 
-export async function deleteScanSupabase(scanId: string) {
-  const result = await deleteScanFirebase(scanId)
-  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao excluir exame.' }
+export async function deleteScanFirebaseCompat(scanId: string) {
+  await deleteScanFirebase(scanId)
+  return { ok: true as const }
 }
 
-export async function deleteCaseSupabase(caseId: string) {
+export async function deleteCaseFirebaseCompat(caseId: string) {
   const result = await deleteCaseFirebase(caseId)
   return result.ok ? { ok: true as const } : { ok: false as const, error: result.error ?? 'Falha ao excluir caso.' }
 }
 
-export async function deleteLabItemSupabase(labItemId: string) {
+export async function deleteLabItemFirebaseCompat(labItemId: string) {
   if (DATA_MODE !== 'firebase') return { ok: false as const, error: 'Disponível apenas no modo Firebase.' }
   const now = nowIsoDateTime()
   await updateDoc(doc(getFirestoreDb(), 'lab_items', labItemId), {
@@ -288,6 +286,6 @@ export async function deleteLabItemSupabase(labItemId: string) {
   return { ok: true as const }
 }
 
-export async function normalizeTreatmentIdsSupabase() {
+export async function normalizeTreatmentIdsFirebaseCompat() {
   return { ok: true as const, message: 'Normalização não necessária no Firebase.' }
 }

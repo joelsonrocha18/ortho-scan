@@ -1,5 +1,6 @@
 import AppShell from '../../../layouts/AppShell'
 import { StrategicNotificationsPanel } from '../../notifications'
+import { InternalChatWidget } from '../../../shared/components/InternalChatWidget'
 import { useDentistPortalController } from './hooks/useDentistPortalController'
 import { DentistPortalApprovalsSection } from './sections/DentistPortalApprovalsSection'
 import { DentistPortalCasesSection } from './sections/DentistPortalCasesSection'
@@ -26,6 +27,11 @@ function DentistPortalPageContainer() {
 
           <DentistPortalCasesSection cases={controller.data.trackedCases} />
           <DentistPortalDocumentsSection documents={controller.data.documents} />
+          <InternalChatWidget
+            currentUserId={controller.currentUser?.id}
+            currentUserRole="dentist_client"
+            recipientRole="lab_tech"
+          />
         </div>
       )}
     </AppShell>

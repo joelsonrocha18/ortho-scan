@@ -17,7 +17,6 @@ import { listActiveInvitesByEntityFirebase } from '../repo/inviteRepo'
 import { parseDentistsSpreadsheet, readSpreadsheetFileText } from '../lib/spreadsheetImport'
 import { dentistCode } from '../lib/entityCode'
 import { useToast } from '../app/ToastProvider'
-import { listClinicsFirebase } from '../repo/clinicRepo'
 
 function nowIso() {
   return new Date().toISOString()
@@ -43,26 +42,22 @@ export default function DentistsPage() {
   const [importMessage, setImportMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [firebaseClinics, setFirebaseClinics] = useState<Array<{ id: string; tradeName: string }>>([])
   const [firebaseDentists, setFirebaseDentists] = useState<DentistClinic[]>([])
   const [firebaseDentistInviteCodes, setFirebaseDentistInviteCodes] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let active = true
     if (!isFirebaseMode) {
-      setFirebaseClinics([])
       setFirebaseDentists([])
       return
     }
     ;(async () => {
-      const [dentists, clinics, invites] = await Promise.all([
+      const [dentists, invites] = await Promise.all([
         listDentistsFirebase({ includeDeleted: true, includeInactive: true }),
-        listClinicsFirebase({ includeDeleted: false }),
         listActiveInvitesByEntityFirebase('dentist'),
       ])
       if (!active) return
       setFirebaseDentists(dentists)
-      setFirebaseClinics(clinics.map((clinic) => ({ id: clinic.id, tradeName: clinic.tradeName })))
       setFirebaseDentistInviteCodes(
         invites.reduce<Record<string, string>>((current, invite) => {
           if (invite.entityId && invite.code) current[invite.entityId] = invite.code

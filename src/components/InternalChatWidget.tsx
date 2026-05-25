@@ -14,6 +14,13 @@ import {
   type InternalChatMessage,
 } from '../repo/internalChatRepo'
 
+type InternalChatWidgetProps = {
+  caseId?: string
+  currentUserId?: string
+  currentUserRole?: string
+  recipientRole?: string
+}
+
 function formatDateTime(value: string) {
   try {
     return new Intl.DateTimeFormat('pt-BR', {
@@ -27,7 +34,7 @@ function formatDateTime(value: string) {
   }
 }
 
-export default function InternalChatWidget() {
+export function InternalChatWidget(_props: InternalChatWidgetProps = {}) {
   const { db } = useDb()
   const currentUser = getCurrentUser(db)
   const [open, setOpen] = useState(false)
@@ -232,4 +239,6 @@ export default function InternalChatWidget() {
     </>
   )
 }
+
+export default InternalChatWidget
 

@@ -1,4 +1,17 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
+import {
+  Timestamp,
+  arrayUnion,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
 import { db as firestoreDb } from '../../../../lib/firebaseClient'
 import { ok, err, type Result } from '../../../../shared/errors'
 import { nowIsoDate, nowIsoDateTime, toIsoDate } from '../../../../shared/utils/date'
@@ -9,6 +22,7 @@ import { listPatientsFirebase } from '../../../../repo/patientRepo'
 import { listClinicsFirebase } from '../../../../repo/clinicRepo'
 import { listScansFirebase } from '../../../../data/scanRepo'
 import type { Case } from '../../../../types/Case'
+import type { LabItem, LabStage, StageEvent } from '../../../../types/Lab'
 import type { Patient } from '../../../../types/Patient'
 import { normalizeProductType } from '../../../../types/Product'
 import type { User } from '../../../../types/User'
@@ -176,6 +190,52 @@ export async function listLabOrdersFirebase() {
     .filter((item) => !asText(item.data().deleted_at) && !asText(asObject(item.data().data).deletedAt))
     .map((item) => mapFirestoreLabRow(item.id, item.data()))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+}
+
+export function subscribeToLabKanban(
+  clinicId: string,
+  onUpdate: (items: LabItem[]) => void,
+): () => void {
+  const q = query(
+    collection(getFirestoreDb(), 'lab_items'),
+    where('clinic_id', '==', clinicId),
+    where('stage', 'in', ['queued', 'in_production', 'qc']),
+  )
+
+  return onSnapshot(q, (snapshot) => {
+    const items = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }) as LabItem)
+    onUpdate(items)
+  })
+}
+
+export async function moveLabItemStage(params: {
+  labItemId: string
+  toSubStatusId: string
+  toStage: LabStage
+  currentSubStatusId: string
+  currentStage: LabStage
+  movedByUid: string
+  note?: string
+}): Promise<void> {
+  const stageEvent: StageEvent = {
+    from_sub_status_id: params.currentSubStatusId,
+    to_sub_status_id: params.toSubStatusId,
+    from_stage: params.currentStage,
+    to_stage: params.toStage,
+    moved_by_uid: params.movedByUid,
+    moved_at: Timestamp.now(),
+    ...(params.note ? { note: params.note } : {}),
+  }
+
+  await updateDoc(doc(getFirestoreDb(), 'lab_items', params.labItemId), {
+    stage: params.toStage,
+    sub_status_id: params.toSubStatusId,
+    stage_history: arrayUnion(stageEvent),
+    updated_at: serverTimestamp(),
+  })
 }
 
 export class FirestoreLabRepository implements LabRepository {

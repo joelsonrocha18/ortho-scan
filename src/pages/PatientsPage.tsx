@@ -26,11 +26,6 @@ function nowIso() {
   return new Date().toISOString()
 }
 
-function toScanDateIso(scanDate?: string) {
-  if (!scanDate) return undefined
-  return `${scanDate}T00:00:00.000Z`
-}
-
 export default function PatientsPage() {
   const { db } = useDb()
   const isFirebaseMode = DATA_MODE === 'firebase'

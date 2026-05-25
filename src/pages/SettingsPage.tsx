@@ -26,7 +26,7 @@ import {
   type LabCompanyProfile,
   type PricingMode,
 } from '../lib/systemSettings'
-import { loadSystemSettingsSupabase, saveSystemSettingsSupabase } from '../repo/systemSettingsRepo'
+import { loadSystemSettingsRemote, saveSystemSettingsRemote } from '../repo/systemSettingsRepo'
 import { createUser, resetUserPassword, setUserActive, softDeleteUser, updateUser } from '../repo/userRepo'
 import { requestPasswordReset, sendAccessEmail } from '../repo/accessRepo'
 import { listClinicsFirebase } from '../repo/clinicRepo'
@@ -373,7 +373,7 @@ export default function SettingsPage() {
   const persistSettings = async (next: SystemSettings) => {
     saveSystemSettings(next)
     if (!isFirebaseMode) return
-    await saveSystemSettingsSupabase(next)
+    await saveSystemSettingsRemote(next)
   }
 
   useEffect(() => {
@@ -406,7 +406,7 @@ export default function SettingsPage() {
     if (!isFirebaseMode) return
     let active = true
     void (async () => {
-      const remote = await loadSystemSettingsSupabase()
+      const remote = await loadSystemSettingsRemote()
       if (!remote || !active) return
       const localDefaults = loadSystemSettings()
       const normalized: SystemSettings = {

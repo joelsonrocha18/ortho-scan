@@ -10,11 +10,11 @@ Contexto delimitado responsável pela criação, ciclo de vida, observações e 
   - `services/CaseLifecycleService.ts`: regras de status, fase, SLA, rework e milestones do caso.
   - `services/CaseTimelineService.ts`: consolidação do histórico auditável do caso.
 - `application`
-  - `ports/CaseRepository.ts`: contrato para local/Supabase.
+  - `ports/CaseRepository.ts`: contrato para local/Firebase.
   - `useCases/*`: `CreateCaseFromScan`, `UpdateCaseStatus`, `AddCaseNote`, `ListCaseTimeline`.
 - `infra`
   - `local/LocalCaseRepository.ts`: persistência local com auditoria e atualização do domínio do caso.
-  - `supabase/SupabaseCaseRepository.ts`: persistência remota com linha do tempo persistida em `data.timelineEntries`.
+  - `firebase/FirestoreCaseRepository.ts`: persistência remota com linha do tempo persistida em `data.timelineEntries`.
 - `presentation`
   - `hooks/*`: ponte da UI para os casos de uso.
   - `sections/*`: seções extraídas da `CaseDetailPage`.

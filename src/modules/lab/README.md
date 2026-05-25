@@ -15,7 +15,7 @@ Contexto delimitado responsável pelo pipeline laboratorial, fila de produção,
   - `useCases/*`: `RegisterLabOrder`, `UpdateLabStage`, `RegisterShipment`, `RegisterRework`.
 - `infra`
   - `local/LocalLabRepository.ts`: persistência local com atualização de ciclo de vida do caso e auditoria.
-  - `supabase/*`: mapeadores e adaptadores remotos.
+  - `firebase/*`: mapeadores e adaptadores remotos.
 - `presentation`
   - `LabPageContainer`, hooks, seções e modais extraídos do monolito original.
 
