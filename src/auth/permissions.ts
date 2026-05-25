@@ -29,6 +29,20 @@ export type Permission =
   | 'docs.write'
   | 'settings.read'
   | 'settings.write'
+  | 'settings.general.read'
+  | 'settings.general.write'
+  | 'settings.users.read'
+  | 'settings.users.write'
+  | 'settings.lab.read'
+  | 'settings.lab.write'
+  | 'settings.notifications.read'
+  | 'settings.notifications.write'
+  | 'settings.integrations.read'
+  | 'settings.integrations.write'
+  | 'settings.billing.read'
+  | 'settings.billing.write'
+  | 'settings.appearance.read'
+  | 'settings.appearance.write'
   | 'ai.clinica'
   | 'ai.lab'
   | 'ai.gestao'
@@ -77,6 +91,20 @@ const allPermissions: Permission[] = [
   'docs.write',
   'settings.read',
   'settings.write',
+  'settings.general.read',
+  'settings.general.write',
+  'settings.users.read',
+  'settings.users.write',
+  'settings.lab.read',
+  'settings.lab.write',
+  'settings.notifications.read',
+  'settings.notifications.write',
+  'settings.integrations.read',
+  'settings.integrations.write',
+  'settings.billing.read',
+  'settings.billing.write',
+  'settings.appearance.read',
+  'settings.appearance.write',
   'ai.clinica',
   'ai.lab',
   'ai.gestao',
@@ -144,6 +172,20 @@ const permissionLabels: Record<Permission, string> = {
   'docs.write': 'Gerenciar documentos',
   'settings.read': 'Visualizar configurações',
   'settings.write': 'Gerenciar configurações',
+  'settings.general.read': 'Visualizar dados da clínica',
+  'settings.general.write': 'Editar dados da clínica',
+  'settings.users.read': 'Visualizar usuários em configurações',
+  'settings.users.write': 'Editar usuários em configurações',
+  'settings.lab.read': 'Visualizar configurações do laboratório',
+  'settings.lab.write': 'Editar configurações do laboratório',
+  'settings.notifications.read': 'Visualizar notificações',
+  'settings.notifications.write': 'Editar notificações',
+  'settings.integrations.read': 'Visualizar integrações',
+  'settings.integrations.write': 'Editar integrações',
+  'settings.billing.read': 'Visualizar faturamento',
+  'settings.billing.write': 'Editar faturamento',
+  'settings.appearance.read': 'Visualizar aparência',
+  'settings.appearance.write': 'Editar aparência',
   'ai.clinica': 'IA clínica',
   'ai.lab': 'IA laboratório',
   'ai.gestao': 'IA gestão',
@@ -179,6 +221,20 @@ const permissionModules: Record<Permission, PermissionModule> = {
   'docs.write': 'Documentos',
   'settings.read': 'Configurações',
   'settings.write': 'Configurações',
+  'settings.general.read': 'Configurações',
+  'settings.general.write': 'Configurações',
+  'settings.users.read': 'Configurações',
+  'settings.users.write': 'Configurações',
+  'settings.lab.read': 'Configurações',
+  'settings.lab.write': 'Configurações',
+  'settings.notifications.read': 'Configurações',
+  'settings.notifications.write': 'Configurações',
+  'settings.integrations.read': 'Configurações',
+  'settings.integrations.write': 'Configurações',
+  'settings.billing.read': 'Configurações',
+  'settings.billing.write': 'Configurações',
+  'settings.appearance.read': 'Configurações',
+  'settings.appearance.write': 'Configurações',
   'ai.clinica': 'IA',
   'ai.lab': 'IA',
   'ai.gestao': 'IA',
