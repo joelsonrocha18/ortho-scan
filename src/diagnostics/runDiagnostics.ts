@@ -1,4 +1,4 @@
-﻿import { DB_KEY, loadDb } from '../data/db'
+import { DB_KEY, loadDb } from '../data/db'
 import { DATA_MODE } from '../data/dataMode'
 import { permissionsForRole, can } from '../auth/permissions'
 import type { Role, User } from '../types/User'
