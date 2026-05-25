@@ -5,6 +5,9 @@ import { usePatientPortalController } from './hooks/usePatientPortalController'
 import { PatientPortalHeroSection } from './sections/PatientPortalHeroSection'
 import { PatientPortalSummarySection } from './sections/PatientPortalSummarySection'
 import { PatientPortalTrayScheduleSection } from './sections/PatientPortalTrayScheduleSection'
+import HelpCenter from './components/HelpCenter'
+import PatientWelcome from './components/PatientWelcome'
+import TreatmentProgress from './components/TreatmentProgress'
 
 function PatientPortalPageContainer() {
   const controller = usePatientPortalController()
@@ -36,6 +39,8 @@ function PatientPortalPageContainer() {
     <PublicAccessShell eyebrow="Pacientes" title="Área do Paciente" accent="olive" layout="stacked">
       <div className="space-y-4">
         <PatientPortalHeroSection summary={controller.snapshot.summary} accessCode={controller.snapshot.accessCode} />
+        <PatientWelcome summary={controller.snapshot.summary} />
+        <TreatmentProgress summary={controller.snapshot.summary} />
         <PatientPortalSummarySection summary={controller.snapshot.summary} />
         <PatientPortalTrayScheduleSection
           photoSlots={controller.snapshot.photoSlots}
@@ -49,6 +54,7 @@ function PatientPortalPageContainer() {
           onBackFromReview={controller.clearSelectedFile}
           onSubmit={controller.submitPhoto}
         />
+        <HelpCenter clinicName={controller.snapshot.summary.clinicName} />
       </div>
     </PublicAccessShell>
   )
