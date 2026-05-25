@@ -43,6 +43,7 @@ function validate() {
 
   const missing = requiredVars.filter((key) => !String(merged[key] ?? '').trim())
   const weakDataMode = String(merged.VITE_DATA_MODE ?? '').trim().toLowerCase() !== 'firebase'
+  const weakFirebaseProject = String(merged.VITE_FIREBASE_PROJECT_ID ?? '').trim() !== 'gostosao-3421e'
   const missingRecommended = recommendedVars.filter((key) => !String(merged[key] ?? '').trim())
 
   console.log('Preflight de producao')
@@ -60,6 +61,13 @@ function validate() {
     process.exitCode = 1
   } else {
     console.log('- OK: VITE_DATA_MODE=firebase.')
+  }
+
+  if (weakFirebaseProject) {
+    console.error('- ERRO: VITE_FIREBASE_PROJECT_ID deve ser "gostosao-3421e" em producao.')
+    process.exitCode = 1
+  } else {
+    console.log('- OK: VITE_FIREBASE_PROJECT_ID=gostosao-3421e.')
   }
 
   if (missingRecommended.length > 0) {

@@ -12,6 +12,7 @@ export const APP_ROUTE_PATHS = [
   '/app/cases',
   '/app/cases/:id',
   '/app/lab',
+  '/app/prices',
   '/app/pricing',
   '/app/inventory',
   '/app/contracts',

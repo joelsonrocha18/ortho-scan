@@ -21,8 +21,8 @@ const DentistsPage = lazy(() => import('./pages/DentistsPage'))
 const ClinicDetailPage = lazy(() => import('./pages/ClinicDetailPage'))
 const ClinicsPage = lazy(() => import('./pages/ClinicsPage'))
 const LabPage = lazy(() => import('./pages/LabPage'))
-const HelpPage = lazy(() => import('./pages/HelpPage'))
 const InventoryPage = lazy(() => import('./pages/InventoryPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const LegalLgpdPage = lazy(() => import('./pages/LegalLgpdPage'))
 const LegalPrivacyPage = lazy(() => import('./pages/LegalPrivacyPage'))
@@ -150,16 +150,21 @@ export default function App() {
           <Route element={<ProtectedRoute permission="lab.read" />}>
             <Route path="/app/lab" element={withSuspense(<LabPage />)} />
           </Route>
+          <Route element={<ProtectedRoute permission="prices.read" />}>
+            <Route path="/app/prices" element={withSuspense(<PricingPolicyPage />)} />
+            <Route path="/app/pricing" element={<Navigate to="/app/prices" replace />} />
+          </Route>
+          <Route element={<ProtectedRoute permission="inventory.read" />}>
+            <Route path="/app/inventory" element={withSuspense(<InventoryPage />)} />
+          </Route>
+          <Route element={<ProtectedRoute permission="contracts.read" />}>
+            <Route path="/app/contracts" element={withSuspense(<BillingContractsPage />)} />
+          </Route>
           <Route element={<ProtectedRoute permission="dashboard.read" />}>
             <Route path="/app/help" element={withSuspense(<HelpPage />)} />
           </Route>
           <Route element={<ProtectedRoute permission="settings.read" />}>
             <Route path="/app/settings" element={withSuspense(<SettingsPage />)} />
-          </Route>
-          <Route element={<ProtectedRoute permission="settings.read" />}>
-            <Route path="/app/pricing" element={withSuspense(<PricingPolicyPage />)} />
-            <Route path="/app/inventory" element={withSuspense(<InventoryPage />)} />
-            <Route path="/app/contracts" element={withSuspense(<BillingContractsPage />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

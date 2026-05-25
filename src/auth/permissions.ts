@@ -23,6 +23,12 @@ export type Permission =
   | 'cases.read'
   | 'cases.write'
   | 'cases.delete'
+  | 'prices.read'
+  | 'prices.write'
+  | 'inventory.read'
+  | 'inventory.write'
+  | 'contracts.read'
+  | 'contracts.write'
   | 'lab.read'
   | 'lab.write'
   | 'docs.read'
@@ -54,6 +60,9 @@ export type PermissionModule =
   | 'Pacientes'
   | 'Exames'
   | 'Alinhadores'
+  | 'Preços'
+  | 'Estoque'
+  | 'Contratos'
   | 'Laboratório'
   | 'Usuários'
   | 'Configurações'
@@ -85,6 +94,12 @@ export const allPermissions: Permission[] = [
   'cases.read',
   'cases.write',
   'cases.delete',
+  'prices.read',
+  'prices.write',
+  'inventory.read',
+  'inventory.write',
+  'contracts.read',
+  'contracts.write',
   'lab.read',
   'lab.write',
   'docs.read',
@@ -166,6 +181,12 @@ const permissionLabels: Record<Permission, string> = {
   'cases.read': 'Visualizar alinhadores',
   'cases.write': 'Criar/editar alinhadores',
   'cases.delete': 'Excluir alinhadores',
+  'prices.read': 'Visualizar preços',
+  'prices.write': 'Cadastrar/editar preços',
+  'inventory.read': 'Visualizar estoque',
+  'inventory.write': 'Gerenciar estoque',
+  'contracts.read': 'Visualizar contratos',
+  'contracts.write': 'Cadastrar/editar contratos',
   'lab.read': 'Visualizar laboratório',
   'lab.write': 'Gerenciar laboratório',
   'docs.read': 'Visualizar documentos',
@@ -215,6 +236,12 @@ const permissionModules: Record<Permission, PermissionModule> = {
   'cases.read': 'Alinhadores',
   'cases.write': 'Alinhadores',
   'cases.delete': 'Alinhadores',
+  'prices.read': 'Preços',
+  'prices.write': 'Preços',
+  'inventory.read': 'Estoque',
+  'inventory.write': 'Estoque',
+  'contracts.read': 'Contratos',
+  'contracts.write': 'Contratos',
   'lab.read': 'Laboratório',
   'lab.write': 'Laboratório',
   'docs.read': 'Documentos',
@@ -253,8 +280,8 @@ export function normalizePermissions(values: unknown): Permission[] | undefined 
 
 export function can(user: User | null | undefined, permission: Permission) {
   if (!user) return false
-  if (Array.isArray(user.permissions)) return user.permissions.includes(permission)
   if (user.role === 'master_admin') return true
+  if (Array.isArray(user.permissions)) return user.permissions.includes(permission)
   return rolePermissions[user.role]?.includes(permission) ?? false
 }
 
