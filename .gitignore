@@ -15,6 +15,7 @@ dist-ssr
 desktop-dist/
 certs/
 .vercel/
+.firebase/
 whatsapp-service/.env
 whatsapp-service/.wwebjs_auth/
 whatsapp-service/.wwebjs_cache/

@@ -62,7 +62,7 @@ export type PermissionModule =
   | 'Clínicas'
   | 'IA'
 
-const allPermissions: Permission[] = [
+export const allPermissions: Permission[] = [
   'dashboard.read',
   'agenda.read',
   'agenda.write',
@@ -241,8 +241,19 @@ const permissionModules: Record<Permission, PermissionModule> = {
   'ai.comercial': 'IA',
 }
 
+export function isPermission(value: string): value is Permission {
+  return (allPermissions as string[]).includes(value)
+}
+
+export function normalizePermissions(values: unknown): Permission[] | undefined {
+  if (!Array.isArray(values)) return undefined
+  const normalized = values.filter((value): value is Permission => typeof value === 'string' && isPermission(value))
+  return [...new Set(normalized)]
+}
+
 export function can(user: User | null | undefined, permission: Permission) {
   if (!user) return false
+  if (Array.isArray(user.permissions)) return user.permissions.includes(permission)
   if (user.role === 'master_admin') return true
   return rolePermissions[user.role]?.includes(permission) ?? false
 }
@@ -269,6 +280,15 @@ export function permissionModule(permission: Permission) {
 
 export function groupedPermissionsForRole(role: Role) {
   return permissionsForRole(role).reduce<Record<PermissionModule, Permission[]>>((acc, permission) => {
+    const module = permissionModule(permission)
+    const current = acc[module] ?? []
+    acc[module] = [...current, permission]
+    return acc
+  }, {} as Record<PermissionModule, Permission[]>)
+}
+
+export function groupedPermissions(permissions: Permission[]) {
+  return permissions.reduce<Record<PermissionModule, Permission[]>>((acc, permission) => {
     const module = permissionModule(permission)
     const current = acc[module] ?? []
     acc[module] = [...current, permission]

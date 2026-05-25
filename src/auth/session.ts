@@ -1,7 +1,10 @@
+import type { Permission } from './permissions'
+
 export type SessionUser = {
   id: string
   email?: string
   role: string
+  permissions?: Permission[]
   clinicId?: string
   dentistId?: string
 }

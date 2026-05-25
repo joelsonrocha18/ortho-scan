@@ -1,3 +1,5 @@
+import type { Permission } from '../auth/permissions'
+
 export type Role =
   | 'master_admin'
   | 'dentist_admin'
@@ -23,6 +25,7 @@ export type User = {
   whatsapp?: string
   addressLine?: string
   role: Role
+  permissions?: Permission[]
   isActive: boolean
   linkedDentistId?: string
   linkedClinicId?: string

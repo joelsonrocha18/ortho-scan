@@ -26,6 +26,7 @@ export function createUser(payload: {
   whatsapp?: string
   addressLine?: string
   role: Role
+  permissions?: User['permissions']
   isActive: boolean
   linkedDentistId?: string
   linkedClinicId?: string
@@ -52,6 +53,7 @@ export function createUser(payload: {
     whatsapp: payload.whatsapp?.trim() || undefined,
     addressLine: payload.addressLine?.trim() || undefined,
     role: payload.role,
+    permissions: payload.permissions,
     isActive: payload.isActive,
     linkedDentistId: payload.linkedDentistId,
     linkedClinicId: payload.linkedClinicId,

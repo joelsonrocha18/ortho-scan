@@ -60,6 +60,7 @@ export function getCurrentUser(dbOverride?: { users: User[] }) {
       name: profile.email ?? '',
       email: profile.email ?? '',
       role: profile.role as Role,
+      permissions: profile.permissions,
       linkedClinicId: profile.clinicId,
       linkedDentistId: profile.dentistId,
       isActive: true,

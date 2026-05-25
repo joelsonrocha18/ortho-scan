@@ -44,6 +44,7 @@
         "desktop:build": "set ELECTRON_BUILD=1&& npm run build && electron-builder --win",
         "deploy:monitoring": "node ./scripts/deployMonitoring.mjs",
         "deploy:prod": "node ./scripts/deployProd.mjs",
+        "deploy:firebase": "node ./scripts/deployFirebase.mjs",
         "deploy:all": "npm run deploy:monitoring && npm run deploy:prod",
         "migrate:lab-kanban": "node ./scripts/migrate-lab-kanban-fields.js",
         "qa:diagnostics": "node ./scripts/runDiagnosticsCli.mjs",

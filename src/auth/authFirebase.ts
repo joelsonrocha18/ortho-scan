@@ -19,6 +19,7 @@ import { logger } from '../lib/logger'
 import { clearCurrentPushSubscription } from '../pwa/pushSubscriptionRepo'
 import { createUnauthorizedError } from '../shared/errors'
 import { validateSignInInput } from '../shared/validators'
+import { normalizePermissions } from './permissions'
 import type { AuthProvider, SessionUser, SocialAuthProvider } from './session'
 
 type FirebaseProfileRecord = {
@@ -34,6 +35,9 @@ type FirebaseProfileRecord = {
   is_active?: boolean
   deletedAt?: string | null
   deleted_at?: string | null
+  permissions?: string[] | null
+  permissionOverrides?: string[] | null
+  permission_overrides?: string[] | null
 }
 
 let authStateReady: Promise<FirebaseAuthUser | null> | null = null
@@ -52,6 +56,7 @@ function buildSession(userId: string, fallbackEmail: string | null | undefined, 
     id: userId,
     email: profile?.loginEmail ?? profile?.login_email ?? profile?.email ?? fallbackEmail ?? undefined,
     role: profile?.role ?? 'dentist_client',
+    permissions: normalizePermissions(profile?.permissions ?? profile?.permissionOverrides ?? profile?.permission_overrides),
     clinicId: profile?.clinicId ?? profile?.clinic_id ?? undefined,
     dentistId: profile?.dentistId ?? profile?.dentist_id ?? undefined,
   }
