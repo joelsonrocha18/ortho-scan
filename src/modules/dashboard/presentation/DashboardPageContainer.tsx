@@ -11,6 +11,23 @@ import DashboardKPIs, { type DashboardKpiSummary } from './components/DashboardK
 import PendingActions, { type PendingAction } from './components/PendingActions'
 import ProductionCharts from './components/ProductionCharts'
 
+const dashboardActivityItems = [
+  {
+    id: 'activity-1',
+    type: 'case_completed' as const,
+    actor: { id: 'system', name: 'Equipe OrthoScan' },
+    target: { type: 'case' as const, id: 'case', name: 'fila de produção' },
+    timestamp: new Date('2026-05-26T12:00:00.000Z'),
+  },
+  {
+    id: 'activity-2',
+    type: 'setup_approved' as const,
+    actor: { id: 'system', name: 'Laboratório' },
+    target: { type: 'setup' as const, id: 'setup', name: 'planejamento digital' },
+    timestamp: new Date('2026-05-26T11:30:00.000Z'),
+  },
+]
+
 function DashboardPageContainer() {
   const controller = useExecutiveDashboardController()
   const summary: DashboardKpiSummary | null = controller.data
@@ -122,12 +139,7 @@ function DashboardPageContainer() {
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
             <PendingActions actions={pendingActions} />
-            <ActivityFeed
-              items={[
-                { id: 'activity-1', type: 'case_completed', actor: { id: 'system', name: 'Equipe OrthoScan' }, target: { type: 'case', id: 'case', name: 'fila de produção' }, timestamp: new Date(Date.now() - 12 * 60000) },
-                { id: 'activity-2', type: 'setup_approved', actor: { id: 'system', name: 'Laboratório' }, target: { type: 'setup', id: 'setup', name: 'planejamento digital' }, timestamp: new Date(Date.now() - 45 * 60000) },
-              ]}
-            />
+            <ActivityFeed items={dashboardActivityItems} />
           </section>
         </div>
       )}

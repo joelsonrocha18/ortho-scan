@@ -1,8 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Button from '../../../../components/Button'
 import Input from '../../../../components/Input'
+import { createEntityId } from '../../../../shared/utils/id'
 import type { AgendaEvent } from './CalendarView'
 
 type EventModalProps = {
@@ -20,18 +21,26 @@ const typeColors: Record<AgendaEvent['type'], string> = {
   other: '#64748b',
 }
 
+function createDraftEvent(): AgendaEvent {
+  const start = new Date()
+  return {
+    id: createEntityId('event'),
+    title: '',
+    type: 'consultation',
+    start,
+    end: new Date(start.getTime() + 60 * 60000),
+    status: 'scheduled',
+    color: typeColors.consultation,
+  }
+}
+
 export default function EventModal({ open, event, onClose, onSave }: EventModalProps) {
-  const [draft, setDraft] = useState<AgendaEvent>(
-    event ?? {
-      id: `event-${Date.now()}`,
-      title: '',
-      type: 'consultation',
-      start: new Date(),
-      end: new Date(Date.now() + 60 * 60000),
-      status: 'scheduled',
-      color: typeColors.consultation,
-    },
-  )
+  const [draft, setDraft] = useState<AgendaEvent>(() => event ?? createDraftEvent())
+
+  useEffect(() => {
+    if (!open) return
+    setDraft(event ?? createDraftEvent())
+  }, [event, open])
 
   return (
     <Dialog.Root open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>

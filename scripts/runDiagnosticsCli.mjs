@@ -14,7 +14,7 @@ const requiredRoutes = [
   '/app/lab',
   '/app/dentists',
   '/app/patients',
-  '/app/settings/diagnostics',
+  '/app/settings',
 ]
 
 const requiredRoles = [
@@ -45,6 +45,12 @@ const requiredPermissionKeys = [
   'scans.approve',
   'cases.read',
   'cases.write',
+  'prices.read',
+  'prices.write',
+  'inventory.read',
+  'inventory.write',
+  'contracts.read',
+  'contracts.write',
   'lab.read',
   'lab.write',
   'docs.read',

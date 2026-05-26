@@ -399,7 +399,7 @@ export function useCaseDetailController() {
   }, [currentCaseAccessCodes, db.patientDocuments.length, resolvedCase?.id, resolvedCase?.patientId, firebaseRefreshKey])
 
   useEffect(() => {
-    if (DATA_MODE === 'firebase') return
+    if (isFirebaseMode) return
     if (!resolvedCase?.installation) return
     if (resolvedCase.status === 'finalizado') return
     const nextStatus = CaseLifecycleService.deriveTreatmentStatus({
@@ -424,7 +424,7 @@ export function useCaseDetailController() {
       }))
       if (result.ok && isFirebaseMode) refreshFirebase()
     })()
-  }, [false, nextReplacementDueDate, patientProgressLower.delivered, patientProgressUpper.delivered, refreshFirebase, resolvedCase, todayIso, totalLower, totalUpper, updateCaseStatus])
+  }, [isFirebaseMode, nextReplacementDueDate, patientProgressLower.delivered, patientProgressUpper.delivered, refreshFirebase, resolvedCase, todayIso, totalLower, totalUpper, updateCaseStatus])
 
   useEffect(() => {
     if (!resolvedCase) {
