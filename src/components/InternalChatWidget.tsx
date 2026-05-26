@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MessageCircle, Send } from 'lucide-react'
 import { useDb } from '../lib/useDb'
 import { getCurrentUser } from '../lib/auth'

@@ -1,4 +1,4 @@
-import { deleteObject, getBlob, getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { DATA_MODE } from '../data/dataMode'
 import { storage } from '../lib/firebaseClient'
 import { logger } from '../lib/logger'
@@ -6,7 +6,6 @@ import { createValidationError, getErrorMessage } from '../shared/errors'
 import { buildUtcTimestampToken, sanitizeTokenSegment } from '../shared/utils/id'
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
-const STORAGE_PROVIDER = ((import.meta.env.VITE_STORAGE_PROVIDER as string | undefined) ?? 'firebase').trim().toLowerCase()
 const localMockStorage = new Map<string, { file: File; createdAt: string }>()
 
 function fileNameWithTimestamp(fileName: string, params: { patientId?: string; origin?: string }) {
@@ -19,7 +18,7 @@ function fileNameWithTimestamp(fileName: string, params: { patientId?: string; o
 function assertStoragePath(path: string) {
   const normalized = path.trim().replace(/\\/g, '/')
   if (!normalized || normalized.startsWith('/') || normalized.includes('..') || normalized.includes('//')) {
-    throw createValidationError('Caminho de armazenamento inválido.')
+    throw createValidationError('Caminho de armazenamento invalido.')
   }
   return normalized
 }
@@ -28,17 +27,17 @@ function isLocalMockStorageEnabled() {
   return DATA_MODE === 'local'
 }
 
-function firebaseStorageRef(path: string) {
+function requireFirebaseStorage() {
   if (!storage) {
-    throw new Error('Firebase Storage não configurado.')
+    throw new Error('Firebase Storage nao configurado. Verifique VITE_FIREBASE_STORAGE_BUCKET.')
   }
-  return ref(storage, path)
+  return storage
 }
 
 function createLocalMockSignedUrl(path: string) {
   const entry = localMockStorage.get(path)
   if (!entry) {
-    return { ok: false as const, error: 'Arquivo local simulado não encontrado. Reenvie o arquivo nesta sessão.' }
+    return { ok: false as const, error: 'Arquivo local simulado nao encontrado. Reenvie o arquivo nesta sessao.' }
   }
   return { ok: true as const, url: URL.createObjectURL(entry.file) }
 }
@@ -70,13 +69,8 @@ export async function uploadToStorage(path: string, file: File) {
       localMockStorage.set(safePath, { file, createdAt: new Date().toISOString() })
       return { ok: true as const, path: safePath }
     }
-    if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
-    }
-    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
-    await uploadBytes(firebaseStorageRef(safePath), file, {
-      contentType: file.type || undefined,
-      cacheControl: 'public,max-age=3600',
+    await uploadBytes(ref(requireFirebaseStorage(), safePath), file, {
+      contentType: file.type || 'application/octet-stream',
     })
     return { ok: true as const, path: safePath }
   } catch (error) {
@@ -85,21 +79,17 @@ export async function uploadToStorage(path: string, file: File) {
   }
 }
 
-export async function createSignedUrl(path: string, _expiresIn = 300) {
+export async function createSignedUrl(path: string, expiresIn = 300) {
   try {
     const safePath = assertStoragePath(path)
     if (isLocalMockStorageEnabled()) {
       return createLocalMockSignedUrl(safePath)
     }
-    if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
-    }
-    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
-    const url = await getDownloadURL(firebaseStorageRef(safePath))
-    return { ok: true as const, url }
+    void expiresIn
+    return { ok: true as const, url: await getDownloadURL(ref(requireFirebaseStorage(), safePath)) }
   } catch (error) {
-    logger.error('Falha ao gerar URL de download.', { flow: 'storage.create_signed_url', path }, error)
-    return { ok: false as const, error: getErrorMessage(error, 'Falha ao gerar URL de download.') }
+    logger.error('Falha ao gerar URL assinada.', { flow: 'storage.create_signed_url', path }, error)
+    return { ok: false as const, error: getErrorMessage(error, 'Falha ao gerar URL assinada.') }
   }
 }
 
@@ -108,15 +98,14 @@ export async function downloadBlob(path: string) {
     const safePath = assertStoragePath(path)
     if (isLocalMockStorageEnabled()) {
       const entry = localMockStorage.get(safePath)
-      if (!entry) return { ok: false as const, error: 'Arquivo local simulado não encontrado. Reenvie o arquivo nesta sessão.' }
+      if (!entry) return { ok: false as const, error: 'Arquivo local simulado nao encontrado. Reenvie o arquivo nesta sessao.' }
       return { ok: true as const, blob: entry.file }
     }
-    if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
-    }
-    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
-    const blob = await getBlob(firebaseStorageRef(safePath))
-    return { ok: true as const, blob }
+    const resolved = await createSignedUrl(safePath)
+    if (!resolved.ok) return resolved
+    const response = await fetch(resolved.url)
+    if (!response.ok) return { ok: false as const, error: 'Falha ao baixar arquivo no Firebase Storage.' }
+    return { ok: true as const, blob: await response.blob() }
   } catch (error) {
     logger.error('Falha ao baixar arquivo do storage.', { flow: 'storage.download', path }, error)
     return { ok: false as const, error: getErrorMessage(error, 'Falha ao baixar arquivo.') }
@@ -130,11 +119,7 @@ export async function deleteFromStorage(path: string) {
       localMockStorage.delete(safePath)
       return { ok: true as const }
     }
-    if (STORAGE_PROVIDER === 'microsoft_drive') {
-      return { ok: false as const, error: 'Microsoft Drive requer Cloud Function dedicada (migração pendente).' }
-    }
-    if (!storage) return { ok: false as const, error: 'Firebase Storage não configurado.' }
-    await deleteObject(firebaseStorageRef(safePath))
+    await deleteObject(ref(requireFirebaseStorage(), safePath))
     return { ok: true as const }
   } catch (error) {
     logger.error('Falha ao remover arquivo do storage.', { flow: 'storage.delete', path }, error)
@@ -156,7 +141,7 @@ function validateFile(file: File, allowedExt: string[], allowedMimePrefixes: str
   const extOk = allowedExt.length === 0 || allowedExt.includes(ext)
   const mimeOk = allowedMimePrefixes.length === 0 || allowedMimePrefixes.some((prefix) => mime.startsWith(prefix))
   if (!extOk && !mimeOk) {
-    return { ok: false as const, error: 'Tipo de arquivo não permitido.' }
+    return { ok: false as const, error: 'Tipo de arquivo nao permitido.' }
   }
   return { ok: true as const }
 }

@@ -63,6 +63,10 @@ if (!/^[a-z0-9-]+$/.test(firebaseProjectId)) {
   process.exit(1)
 }
 
-console.log(`Firebase Hosting deploy: projeto ${firebaseProjectId}`)
+const deployTargets = String(deployEnv.DEPLOY_FIREBASE_STORAGE ?? '').trim() === 'true'
+  ? 'hosting,firestore:rules,storage'
+  : 'hosting,firestore:rules'
+
+console.log(`Firebase deploy: projeto ${firebaseProjectId} (${deployTargets})`)
 run('npm run build', deployEnv)
-run(`firebase deploy --only hosting,firestore:rules --project ${firebaseProjectId}`, deployEnv)
+run(`firebase deploy --only ${deployTargets} --project ${firebaseProjectId}`, deployEnv)

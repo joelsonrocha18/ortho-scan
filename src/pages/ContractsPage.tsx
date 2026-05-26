@@ -14,6 +14,7 @@ import { loadSystemSettings } from '../lib/systemSettings'
 import { useDb } from '../lib/useDb'
 import { listClinicsFirebase } from '../repo/clinicRepo'
 import { listPatientsFirebase } from '../repo/patientRepo'
+import { createEntityId } from '../shared/utils/id'
 
 type Option = {
   id: string
@@ -132,7 +133,7 @@ export default function ContractsPage() {
     const now = new Date().toISOString()
     persist([
       {
-        id: `contract_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+        id: createEntityId('contract'),
         patientId: patient.id,
         patientName: patient.label,
         dentistId: dentist?.id,

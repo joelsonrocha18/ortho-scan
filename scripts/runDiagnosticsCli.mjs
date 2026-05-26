@@ -134,20 +134,6 @@ if (missingPermissionKeysInApp.length === 0) {
   items.push(fail('rbac_permissions_app', 'Permissoes no app', `Permissoes ausentes no app: ${missingPermissionKeysInApp.join(', ')}`))
 }
 
-const permsMigration = read('supabase/migrations/0004_rbac_permissions.sql')
-const missingPermissionKeysInMigration = requiredPermissionKeys.filter((key) => !permsMigration.includes(`'${key}'`))
-if (missingPermissionKeysInMigration.length === 0) {
-  items.push(pass('rbac_permissions_migration', 'Permissoes na migration', 'Migration de permissoes contem todas as chaves esperadas.'))
-} else {
-  items.push(
-    fail(
-      'rbac_permissions_migration',
-      'Permissoes na migration',
-      `Permissoes ausentes na migration 0004: ${missingPermissionKeysInMigration.join(', ')}`,
-    ),
-  )
-}
-
 const scope = read('src/auth/scope.ts')
 if (scope.includes('listPatientsForUser') && scope.includes('listScansForUser') && scope.includes('listCasesForUser')) {
   items.push(pass('scope_fns', 'Escopo', 'Funcoes de escopo principais encontradas.'))

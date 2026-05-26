@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { DATA_MODE } from '../../data/dataMode'
 import { buildPhotoSlotsFromItems, loadDevPhotoSlots, mergePhotoSlots } from '../../lib/photoSlots'

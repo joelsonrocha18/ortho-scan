@@ -1,4 +1,4 @@
-﻿import {
+import {
   collection,
   doc,
   getCountFromServer,

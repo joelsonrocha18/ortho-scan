@@ -3,13 +3,13 @@ import express from 'express'
 import cron from 'node-cron'
 import qrCodeImage from 'qrcode'
 import qrcode from 'qrcode-terminal'
-import { createClient } from '@supabase/supabase-js'
+import admin from 'firebase-admin'
 import whatsappWeb from 'whatsapp-web.js'
 
 const { Client, LocalAuth } = whatsappWeb
 
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'gostosao-3421e'
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || ''
 const CRON_TIME = process.env.CRON_TIME || '0 8 * * *'
 const TZ = process.env.TZ || 'America/Sao_Paulo'
 const RUN_ON_START = process.env.RUN_ON_START === 'true'
@@ -20,22 +20,26 @@ const PORT = Number(process.env.PORT || 3000)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'
 
-if (
-  !SUPABASE_URL ||
-  !SUPABASE_SERVICE_ROLE_KEY ||
-  SUPABASE_URL.includes('seu-projeto') ||
-  SUPABASE_SERVICE_ROLE_KEY.includes('sua-service-role-key')
-) {
-  console.error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY reais no arquivo .env.')
-  process.exit(1)
+function initializeFirebase() {
+  if (admin.apps.length > 0) return admin.firestore()
+
+  try {
+    const credential = FIREBASE_SERVICE_ACCOUNT_JSON
+      ? admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON))
+      : admin.credential.applicationDefault()
+    admin.initializeApp({
+      credential,
+      projectId: FIREBASE_PROJECT_ID,
+    })
+    return admin.firestore()
+  } catch (error) {
+    console.error('Configure FIREBASE_SERVICE_ACCOUNT_JSON ou GOOGLE_APPLICATION_CREDENTIALS para o servico WhatsApp.')
+    console.error(error)
+    process.exit(1)
+  }
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-})
+const firestore = initializeFirebase()
 
 const client = new Client({
   authStrategy: new LocalAuth({
@@ -303,58 +307,61 @@ function buildMessage(patientName, trayNumber) {
 }
 
 async function fetchDueReminders(dateIso) {
-  const { data: cases, error: casesError } = await supabase
-    .from('cases')
-    .select(`
-      id,
-      clinic_id,
-      patient_id,
-      data,
-      patients:patient_id (
-        id,
-        name,
-        phone,
-        whatsapp
-      )
-    `)
-    .is('deleted_at', null)
-    .not('patient_id', 'is', null)
+  const casesSnapshot = await firestore.collection('cases').get()
+  const cases = casesSnapshot.docs
+    .map((doc) => {
+      const row = doc.data()
+      return { ...row, id: row.id || doc.id }
+    })
+    .filter((row) => !(row.deletedAt || row.deleted_at))
+    .filter((row) => {
+      const data = asObject(row.data)
+      return Boolean(data.patientId || row.patient_id || row.patientId)
+    })
 
-  if (casesError) {
-    throw new Error(`Erro ao buscar casos: ${casesError.message}`)
-  }
+  const caseIds = cases.map((row) => row.id)
+  const patientIds = Array.from(new Set(cases
+    .map((row) => {
+      const data = asObject(row.data)
+      return String(data.patientId || row.patient_id || row.patientId || '').trim()
+    })
+    .filter(Boolean)))
+  const patientsById = new Map()
 
-  const caseIds = (cases || []).map((row) => row.id)
+  await Promise.all(patientIds.map(async (patientId) => {
+    const snapshot = await firestore.collection('patients').doc(patientId).get()
+    if (!snapshot.exists) return
+    patientsById.set(patientId, { id: patientId, ...snapshot.data() })
+  }))
+
   const photosByCaseId = new Map()
 
   if (caseIds.length > 0) {
-    const { data: documents, error: documentsError } = await supabase
-      .from('documents')
-      .select('id, case_id, title, data')
-      .in('case_id', caseIds)
-      .eq('category', 'foto')
-      .eq('status', 'ok')
-      .is('deleted_at', null)
+    const caseIdSet = new Set(caseIds)
+    const documentsSnapshot = await firestore.collection('patient_documents').get()
+    const documents = documentsSnapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((row) => caseIdSet.has(row.caseId || row.case_id))
+      .filter((row) => row.category === 'foto' && row.status === 'ok')
+      .filter((row) => !(row.deletedAt || row.deleted_at))
 
-    if (documentsError) {
-      throw new Error(`Erro ao buscar fotos: ${documentsError.message}`)
-    }
-
-    for (const documentRow of documents || []) {
+    for (const documentRow of documents) {
       const trayNumber = trayNumberFromDocument(documentRow)
       if (!trayNumber) continue
 
-      const set = photosByCaseId.get(documentRow.case_id) || new Set()
+      const rowCaseId = documentRow.caseId || documentRow.case_id
+      const set = photosByCaseId.get(rowCaseId) || new Set()
       set.add(trayNumber)
-      photosByCaseId.set(documentRow.case_id, set)
+      photosByCaseId.set(rowCaseId, set)
     }
   }
 
   const reminders = []
 
-  for (const caseRow of cases || []) {
+  for (const caseRow of cases) {
     const caseData = asObject(caseRow.data)
-    const patient = Array.isArray(caseRow.patients) ? caseRow.patients[0] : caseRow.patients
+    const patientId = String(caseData.patientId || caseRow.patient_id || caseRow.patientId || '').trim()
+    const patient = patientsById.get(patientId)
     const trays = asArray(caseData.trays)
     const photosForCase = photosByCaseId.get(caseRow.id) || new Set()
 
@@ -369,9 +376,9 @@ async function fetchDueReminders(dateIso) {
 
       reminders.push({
         caseId: caseRow.id,
-        patientId: caseRow.patient_id,
+        patientId,
         patientName: patient?.name || caseData.patientName || 'paciente',
-        phone: patient?.whatsapp || patient?.phone,
+        phone: patient?.whatsapp || patient?.phone || caseData.patientWhatsapp || caseData.patientPhone,
         trayNumber,
       })
     }

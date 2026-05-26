@@ -1,4 +1,4 @@
-﻿import { sendPasswordResetEmail } from 'firebase/auth'
+import { sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../lib/firebaseClient'
 import { DATA_MODE } from '../data/dataMode'
 import { logger } from '../lib/logger'

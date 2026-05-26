@@ -1,4 +1,4 @@
-﻿import { DATA_MODE } from '../data/dataMode'
+import { DATA_MODE } from '../data/dataMode'
 import type { Role } from '../types/User'
 import { completeInviteFirebase, validateInviteFirebase } from './inviteRepo'
 
