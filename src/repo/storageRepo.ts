@@ -1,8 +1,12 @@
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { DATA_MODE } from '../data/dataMode'
-import { storage } from '../lib/firebaseClient'
 import { logger } from '../lib/logger'
 import { createValidationError, getErrorMessage } from '../shared/errors'
+import {
+  createSignedFileUrl,
+  deleteFile,
+  downloadFileBlob,
+  uploadFile,
+} from '../shared/infra/supabaseStorageService'
 import { buildUtcTimestampToken, sanitizeTokenSegment } from '../shared/utils/id'
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
@@ -25,13 +29,6 @@ function assertStoragePath(path: string) {
 
 function isLocalMockStorageEnabled() {
   return DATA_MODE === 'local'
-}
-
-function requireFirebaseStorage() {
-  if (!storage) {
-    throw new Error('Firebase Storage nao configurado. Verifique VITE_FIREBASE_STORAGE_BUCKET.')
-  }
-  return storage
 }
 
 function createLocalMockSignedUrl(path: string) {
@@ -69,9 +66,7 @@ export async function uploadToStorage(path: string, file: File) {
       localMockStorage.set(safePath, { file, createdAt: new Date().toISOString() })
       return { ok: true as const, path: safePath }
     }
-    await uploadBytes(ref(requireFirebaseStorage(), safePath), file, {
-      contentType: file.type || 'application/octet-stream',
-    })
+    await uploadFile(file, safePath)
     return { ok: true as const, path: safePath }
   } catch (error) {
     logger.error('Falha ao enviar arquivo ao storage.', { flow: 'storage.upload', path, fileName: file.name }, error)
@@ -85,8 +80,7 @@ export async function createSignedUrl(path: string, expiresIn = 300) {
     if (isLocalMockStorageEnabled()) {
       return createLocalMockSignedUrl(safePath)
     }
-    void expiresIn
-    return { ok: true as const, url: await getDownloadURL(ref(requireFirebaseStorage(), safePath)) }
+    return { ok: true as const, url: await createSignedFileUrl(safePath, expiresIn) }
   } catch (error) {
     logger.error('Falha ao gerar URL assinada.', { flow: 'storage.create_signed_url', path }, error)
     return { ok: false as const, error: getErrorMessage(error, 'Falha ao gerar URL assinada.') }
@@ -101,11 +95,7 @@ export async function downloadBlob(path: string) {
       if (!entry) return { ok: false as const, error: 'Arquivo local simulado nao encontrado. Reenvie o arquivo nesta sessao.' }
       return { ok: true as const, blob: entry.file }
     }
-    const resolved = await createSignedUrl(safePath)
-    if (!resolved.ok) return resolved
-    const response = await fetch(resolved.url)
-    if (!response.ok) return { ok: false as const, error: 'Falha ao baixar arquivo no Firebase Storage.' }
-    return { ok: true as const, blob: await response.blob() }
+    return { ok: true as const, blob: await downloadFileBlob(safePath) }
   } catch (error) {
     logger.error('Falha ao baixar arquivo do storage.', { flow: 'storage.download', path }, error)
     return { ok: false as const, error: getErrorMessage(error, 'Falha ao baixar arquivo.') }
@@ -119,7 +109,7 @@ export async function deleteFromStorage(path: string) {
       localMockStorage.delete(safePath)
       return { ok: true as const }
     }
-    await deleteObject(ref(requireFirebaseStorage(), safePath))
+    await deleteFile(safePath)
     return { ok: true as const }
   } catch (error) {
     logger.error('Falha ao remover arquivo do storage.', { flow: 'storage.delete', path }, error)

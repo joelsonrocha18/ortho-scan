@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Timestamp } from 'firebase/firestore'
 import { LabSLAService } from '../../domain/services/LabSLAService'
-import { subscribeToLabQueue, updateLabCaseStage, type LabCase } from '../../infra/firebaseLabRepository'
+import { subscribeToLabQueue, updateLabCaseStage, type LabCase } from '../../infra'
 import type { LabOrder } from '../../domain/entities/LabOrder'
 
 export type LabStage =
@@ -18,7 +17,7 @@ export type KanbanCard = {
   dentistName: string
   currentStage: LabStage
   priority: 'normal' | 'urgent' | 'vip'
-  dueDate: Timestamp
+  dueDate: string
   slaStatus: 'on_time' | 'warning' | 'overdue'
   alignerCount: number
   assignedTechId?: string
@@ -39,9 +38,18 @@ function normalizeSlaStatus(value: string): KanbanCard['slaStatus'] {
   return 'on_time'
 }
 
+function toIsoDateString(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.slice(0, 10)
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
+    return (value.toDate() as Date).toISOString().slice(0, 10)
+  }
+  return null
+}
+
 function toKanbanCard(item: LabCase): KanbanCard | null {
-  if (!item.dueDate || typeof item.dueDate !== 'object' || !('toDate' in item.dueDate) || typeof item.dueDate.toDate !== 'function') return null
-  const dueDate = item.dueDate as Timestamp
+  const dueDate = toIsoDateString(item.dueDate)
+  if (!dueDate) return null
   const currentStage = isLabStage(item.currentStage) ? item.currentStage : 'triagem'
   const priority = item.priority === 'vip' || item.priority === 'urgent' ? item.priority : 'normal'
   const alignerCount = Math.max(0, Math.trunc(item.alignerCount ?? 0))
@@ -52,14 +60,14 @@ function toKanbanCard(item: LabCase): KanbanCard | null {
     arch: 'ambos',
     trayNumber: 1,
     plannedDate: new Date().toISOString().slice(0, 10),
-    dueDate: dueDate.toDate().toISOString().slice(0, 10),
+    dueDate,
     priority: priority === 'urgent' || priority === 'vip' ? 'Urgente' : 'Medio',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   } satisfies LabOrder)
 
   return {
-    caseId: item.caseId ?? item.id,
+    caseId: item.id,
     patientName: item.patientName ?? 'Paciente sem nome',
     dentistName: item.dentistName ?? 'Dentista nao informado',
     currentStage,

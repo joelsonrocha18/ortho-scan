@@ -76,7 +76,7 @@ function KanbanCardItem({ card }: { card: KanbanCard }) {
         </div>
         <div>
           <dt className="text-slate-500">Prazo</dt>
-          <dd className="font-semibold text-slate-900">{card.dueDate.toDate().toLocaleDateString('pt-BR')}</dd>
+          <dd className="font-semibold text-slate-900">{new Date(`${card.dueDate}T00:00:00`).toLocaleDateString('pt-BR')}</dd>
         </div>
       </dl>
     </article>

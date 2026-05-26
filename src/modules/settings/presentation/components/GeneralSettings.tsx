@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Upload } from 'lucide-react'
 import Button from '../../../../components/Button'
 import Input from '../../../../components/Input'
-import { uploadFile } from '../../../../shared/infra/firebaseStorageService'
+import { uploadFile } from '../../../../shared/infra/supabaseStorageService'
 import type { ClinicSettings } from '../types'
 import SettingsSection from './SettingsSection'
 
@@ -53,7 +53,7 @@ export default function GeneralSettings() {
       <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         <div className="rounded-lg border border-dashed border-slate-300 p-4">
           <p className="text-sm font-medium text-slate-800">Logo da clínica</p>
-          <p className="mt-1 text-sm text-slate-500">{settings.logo_url ? 'Logo enviado para Firebase Storage.' : 'PNG ou JPG com fundo transparente recomendado.'}</p>
+          <p className="mt-1 text-sm text-slate-500">{settings.logo_url ? 'Logo enviado para Supabase Storage.' : 'PNG ou JPG com fundo transparente recomendado.'}</p>
           {uploadProgress !== null ? <p className="mt-2 text-sm text-brand-600">Enviando: {Math.round(uploadProgress)}%</p> : null}
         </div>
         <label>

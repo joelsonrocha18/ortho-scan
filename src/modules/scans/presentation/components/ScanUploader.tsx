@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { UploadCloud } from 'lucide-react'
-import { uploadFile } from '../../../../shared/infra/firebaseStorageService'
+import { uploadFile } from '../../../../shared/infra/supabaseStorageService'
 
 type UploadRow = { name: string; progress: number; status: 'uploading' | 'done' | 'error' }
 

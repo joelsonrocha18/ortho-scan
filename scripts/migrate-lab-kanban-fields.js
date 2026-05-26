@@ -100,7 +100,6 @@ async function main() {
   const app = initializeApp({
     credential: serviceAccount ? cert(serviceAccount) : applicationDefault(),
     projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
   })
   const db = getFirestore(app)
 

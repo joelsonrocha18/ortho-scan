@@ -1,8 +1,7 @@
 import { DATA_MODE } from '../data/dataMode'
-import { storage } from './firebaseClient'
 import { createTimestampedToken, sanitizeTokenSegment } from '../shared/utils/id'
 import { logger } from './logger'
-import { uploadFile } from '../shared/infra/firebaseStorageService'
+import { uploadFile } from '../shared/infra/supabaseStorageService'
 
 type UploadScope = 'scans' | 'patient-docs'
 
@@ -29,7 +28,7 @@ export async function uploadFileToStorage(
   file: File,
   params: { scope: UploadScope; clinicId?: string; ownerId: string },
 ): Promise<UploadResult | null> {
-  if (DATA_MODE !== 'firebase' || !storage) {
+  if (DATA_MODE === 'local') {
     return null
   }
   if (!params.clinicId) {
@@ -41,7 +40,7 @@ export async function uploadFileToStorage(
     return uploadFile(file, path)
   } catch (error) {
     logger.error(
-      'Falha ao enviar arquivo para Firebase Storage.',
+      'Falha ao enviar arquivo para Supabase Storage.',
       {
         scope: params.scope,
         clinicId: params.clinicId,
