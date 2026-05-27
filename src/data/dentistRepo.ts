@@ -5,6 +5,7 @@ import { db as firestoreDb } from '../lib/firebaseClient'
 import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import type { DentistClinic } from '../types/DentistClinic'
 import { createInviteFirebase } from '../repo/inviteRepo'
+import { nullifyUndefinedDeep } from '../shared/utils/firestore'
 
 type DentistPayload = Omit<DentistClinic, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>
 type DentistDocument = Record<string, unknown>
@@ -88,7 +89,7 @@ function mapDentistDocument(id: string, data: DentistDocument): DentistClinic {
 }
 
 function dentistToFirestoreDocument(dentist: DentistClinic): DentistDocument {
-  return {
+  return nullifyUndefinedDeep({
     id: dentist.id,
     short_id: dentist.shortId ?? null,
     name: dentist.name,
@@ -110,7 +111,7 @@ function dentistToFirestoreDocument(dentist: DentistClinic): DentistDocument {
     created_at: dentist.createdAt,
     updated_at: dentist.updatedAt,
     deleted_at: dentist.deletedAt ?? null,
-  }
+  })
 }
 
 async function readDentistFromFirestore(id: string) {

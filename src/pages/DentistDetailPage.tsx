@@ -129,6 +129,7 @@ export default function DentistDetailPage() {
 
   const [form, setForm] = useState<DentistForm>(emptyForm)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [cepStatus, setCepStatus] = useState('')
   const [cepError, setCepError] = useState('')
 
@@ -329,9 +330,36 @@ export default function DentistDetailPage() {
       isActive: form.isActive,
     }
 
-    if (isFirebaseMode) {
+    setSaving(true)
+    try {
+      if (isFirebaseMode) {
+        if (isNew) {
+          const result = await createDentistFirebase({
+            ...payload,
+            isActive: payload.isActive ?? true,
+          })
+          if (!result.ok) {
+            setError(result.error)
+            return
+          }
+          addToast({ type: 'success', title: 'Dentista salvo' })
+          navigate(`/app/dentists/${result.dentist.id}`, { replace: true })
+          return
+        }
+        if (!existing) return
+        const result = await updateDentistFirebase(existing.id, payload)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setFirebaseExisting(result.dentist)
+        setError('')
+        addToast({ type: 'success', title: 'Dentista salvo' })
+        return
+      }
+
       if (isNew) {
-        const result = await createDentistFirebase({
+        const result = createDentist({
           ...payload,
           isActive: payload.isActive ?? true,
         })
@@ -339,40 +367,26 @@ export default function DentistDetailPage() {
           setError(result.error)
           return
         }
+        addToast({ type: 'success', title: 'Dentista salvo' })
         navigate(`/app/dentists/${result.dentist.id}`, { replace: true })
         return
       }
+
       if (!existing) return
-      const result = await updateDentistFirebase(existing.id, payload)
+      const result = updateDentist(existing.id, payload)
       if (!result.ok) {
         setError(result.error)
         return
       }
-      setFirebaseExisting(result.dentist)
       setError('')
-      return
+      addToast({ type: 'success', title: 'Dentista salvo' })
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Nao foi possivel salvar o dentista.'
+      setError(message)
+      addToast({ type: 'error', title: 'Falha ao salvar', message })
+    } finally {
+      setSaving(false)
     }
-
-    if (isNew) {
-      const result = createDentist({
-        ...payload,
-        isActive: payload.isActive ?? true,
-      })
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
-      navigate(`/app/dentists/${result.dentist.id}`, { replace: true })
-      return
-    }
-
-    if (!existing) return
-    const result = updateDentist(existing.id, payload)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setError('')
   }
 
   const handleDelete = async () => {
@@ -639,7 +653,7 @@ export default function DentistDetailPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          {canWrite ? <Button onClick={handleSave}>Salvar</Button> : null}
+          {canWrite ? <Button onClick={handleSave} disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</Button> : null}
           {!isNew && existing?.deletedAt && canDelete ? (
             <Button variant="secondary" onClick={handleRestore}>
               Restaurar

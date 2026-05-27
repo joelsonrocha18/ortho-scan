@@ -4,6 +4,7 @@ import { loadDb, saveDb } from '../data/db'
 import { db as firestoreDb } from '../lib/firebaseClient'
 import { normalizeText } from '../shared/validators'
 import { nowIsoDateTime } from '../shared/utils/date'
+import { nullifyUndefinedDeep } from '../shared/utils/firestore'
 import { createEntityId } from '../shared/utils/id'
 import type { Patient } from '../types/Patient'
 
@@ -72,7 +73,7 @@ function mapPatientDocument(id: string, data: PatientDocument): Patient {
 }
 
 function patientToFirestoreDocument(patient: Patient): PatientDocument {
-  return {
+  return nullifyUndefinedDeep({
     id: patient.id,
     short_id: patient.shortId ?? null,
     name: patient.name,
@@ -91,7 +92,7 @@ function patientToFirestoreDocument(patient: Patient): PatientDocument {
     created_at: patient.createdAt,
     updated_at: patient.updatedAt,
     deleted_at: patient.deletedAt ?? null,
-  }
+  })
 }
 
 async function readPatientFromFirestore(id: string) {

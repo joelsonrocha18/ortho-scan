@@ -5,6 +5,7 @@ import { db as firestoreDb } from '../lib/firebaseClient'
 import { formatCnpj, isValidCnpj } from '../lib/cnpj'
 import { normalizeText } from '../shared/validators'
 import { nowIsoDateTime } from '../shared/utils/date'
+import { nullifyUndefinedDeep } from '../shared/utils/firestore'
 import { createEntityId } from '../shared/utils/id'
 import { createInviteFirebase } from './inviteRepo'
 import type { Clinic } from '../types/Clinic'
@@ -63,7 +64,7 @@ function mapClinicDocument(id: string, data: ClinicDocument): Clinic {
 }
 
 function clinicToFirestoreDocument(clinic: Clinic): ClinicDocument {
-  return {
+  return nullifyUndefinedDeep({
     id: clinic.id,
     short_id: clinic.shortId ?? null,
     trade_name: clinic.tradeName,
@@ -78,7 +79,7 @@ function clinicToFirestoreDocument(clinic: Clinic): ClinicDocument {
     created_at: clinic.createdAt,
     updated_at: clinic.updatedAt,
     deleted_at: clinic.deletedAt ?? null,
-  }
+  })
 }
 
 async function readClinicFromFirestore(id: string) {
