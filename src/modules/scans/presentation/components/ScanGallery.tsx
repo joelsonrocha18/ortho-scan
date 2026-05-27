@@ -29,26 +29,38 @@ export function scanAttachmentToItem(scanId: string, patientName: string, attach
   }
 }
 
-export default function ScanGallery({ scans, onPreview }: { scans: ScanItem[]; onPreview?: (scan: ScanItem) => void }) {
+export default function ScanGallery({
+  scans,
+  loading = false,
+  onPreview,
+}: {
+  scans: ScanItem[]
+  loading?: boolean
+  onPreview?: (scan: ScanItem) => void
+}) {
+  if (loading) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Carregando exames...</div>
+  }
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {scans.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 sm:col-span-2 xl:col-span-4">Nenhum arquivo encontrado.</div> : null}
+      {scans.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 sm:col-span-2 xl:col-span-4">Nenhum exame encontrado.</div> : null}
       {scans.map((scan) => (
         <article key={scan.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex aspect-video items-center justify-center bg-slate-100">
-            {scan.thumbnail_url || scan.type.startsWith('photo') ? <img src={scan.thumbnail_url ?? scan.file_url} alt={scan.patient_name} className="h-full w-full object-cover" /> : <FileBox className="h-10 w-10 text-brand-600" />}
+            {scan.file_url && (scan.thumbnail_url || scan.type.startsWith('photo')) ? <img src={scan.thumbnail_url ?? scan.file_url} alt={scan.patient_name} className="h-full w-full object-cover" /> : <FileBox className="h-10 w-10 text-brand-600" />}
           </div>
           <div className="space-y-3 p-4">
             <div>
               <h3 className="font-semibold text-slate-900">{scan.patient_name}</h3>
-              <p className="text-sm text-slate-500">{scan.type.replaceAll('_', ' ')}</p>
+              <p className="text-sm text-slate-500">{scan.metadata?.scanner_model ?? scan.type.replaceAll('_', ' ')}</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => onPreview?.(scan)}>
+              <Button variant="secondary" size="sm" disabled={!scan.file_url} onClick={() => scan.file_url && onPreview?.(scan)}>
                 <Eye className="mr-2 h-4 w-4" />
-                Prévia
+                Previa
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => window.open(scan.file_url, '_blank', 'noopener,noreferrer')}>
+              <Button variant="ghost" size="sm" disabled={!scan.file_url} onClick={() => scan.file_url && window.open(scan.file_url, '_blank', 'noopener,noreferrer')}>
                 <Download className="h-4 w-4" />
               </Button>
             </div>
