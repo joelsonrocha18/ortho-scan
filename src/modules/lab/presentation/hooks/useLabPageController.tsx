@@ -26,7 +26,7 @@ import {
   getReplenishmentAlertSummaries,
 } from '../../domain'
 import { formatFriendlyRequestCode, getGuideKindForLabOrder, getGuideReprintLabel, isReworkItem, isReworkProductionItem, resolveLabProductLabel, archLabel } from '../lib/labPresentation'
-import { buildLabStickerPrintHtml } from '../lib/labStickerPrint'
+import { buildLabStickerPrintHtml, normalizeStickerSpaces, toDentistShortLabelByGender, toPatientStickerName } from '../lib/labStickerPrint'
 
 type ModalState =
   | { open: false; mode: 'create' | 'edit'; item: null }
@@ -160,6 +160,10 @@ export function useLabPageController() {
     () => new Map<string, { id: string; tradeName: string }>(overview.clinics.map((item): [string, { id: string; tradeName: string }] => [item.id, { id: item.id, tradeName: item.tradeName }])),
     [overview.clinics],
   )
+  const dentistLookupById = useMemo(
+    () => new Map(overview.dentists.map((item) => [item.id, item])),
+    [overview.dentists],
+  )
   const scansById = useMemo(
     () =>
       new Map<string, { purposeLabel?: string; purposeProductId?: string; purposeProductType?: ProductType }>(
@@ -257,18 +261,72 @@ export function useLabPageController() {
     }
     popup.document.write(html)
     popup.document.close()
-    setTimeout(() => {
+    let didPrint = false
+    const triggerPrint = () => {
+      if (didPrint) return
+      didPrint = true
       popup.focus()
       popup.print()
+    }
+    setTimeout(() => {
+      const images = Array.from(popup.document.images)
+      const pendingImages = images.filter((image) => !image.complete)
+      if (pendingImages.length === 0) {
+        triggerPrint()
+        return
+      }
+      let pending = pendingImages.length
+      const done = () => {
+        pending -= 1
+        if (pending <= 0) triggerPrint()
+      }
+      pendingImages.forEach((image) => {
+        image.addEventListener('load', done, { once: true })
+        image.addEventListener('error', done, { once: true })
+      })
+      setTimeout(triggerPrint, 1800)
     }, 120)
   }, [addToast])
 
   const printSticker = useCallback((item: LabOrder) => {
+    const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
+    const patientId = caseItem?.patientId ?? item.patientId
+    const patientOption = patientId ? patientOptionById.get(patientId) : undefined
+    const casePrintFallback = caseItem ? overview.casePrintFallbackByCaseId[caseItem.id] : undefined
+    const dentistId = caseItem?.dentistId ?? patientOption?.dentistId ?? item.dentistId
+    const dentistRef = dentistId ? dentistLookupById.get(dentistId) : undefined
+    const dentistNameRaw = dentistRef?.name || patientOption?.dentistName || casePrintFallback?.dentistName || ''
+    const dentistShort = toDentistShortLabelByGender(dentistNameRaw, dentistRef?.gender)
+    const clinicId = caseItem?.clinicId ?? item.clinicId ?? patientOption?.clinicId ?? ''
+    const normalizedClinicId = clinicId.trim().toLowerCase()
+    const clinicTradeName = normalizeStickerSpaces(
+      clinicLookupById.get(clinicId)?.tradeName || patientOption?.clinicName || casePrintFallback?.clinicName || '',
+    ).toUpperCase()
+    const isInternalArrimo =
+      caseItem?.treatmentOrigin === 'interno' ||
+      normalizedClinicId === 'clinic_arrimo' ||
+      normalizedClinicId === 'cli-0001' ||
+      clinicTradeName === 'ARRIMO'
+    const upperQty = Math.max(0, Math.trunc(item.plannedUpperQty ?? 0))
+    const lowerQty = Math.max(0, Math.trunc(item.plannedLowerQty ?? 0))
+    const trayQty = Math.max(0, Math.trunc(item.trayNumber || 0))
+    const totalLabels = Math.max(upperQty, lowerQty, trayQty, 1)
+    const complementRaw = item.notes?.trim() || ''
+    const complement = complementRaw.length > 0 && complementRaw.length <= 26 ? complementRaw : ''
+
     printHtml(
       'Etiqueta do laboratório',
-      buildLabStickerPrintHtml({ item, productLabel: resolveOrderProductLabel(item) }),
+      buildLabStickerPrintHtml({
+        item,
+        dentistShort,
+        patientName: toPatientStickerName(item.patientName || '-'),
+        isInternalArrimo,
+        totalLabels,
+        assetBaseUrl: window.location.origin,
+        complement,
+      }),
     )
-  }, [printHtml, resolveOrderProductLabel])
+  }, [caseById, clinicLookupById, dentistLookupById, overview.casePrintFallbackByCaseId, patientOptionById, printHtml])
 
   const printGuide = useCallback((item: LabOrder, mode: 'initial' | 'replenishment' | 'delivery_receipt') => {
     const caseItem = item.caseId ? caseById.get(item.caseId) : undefined
