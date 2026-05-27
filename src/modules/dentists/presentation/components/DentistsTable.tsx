@@ -21,7 +21,7 @@ export type DentistListItem = {
   created_at: Date
 }
 
-export default function DentistsTable({ dentists }: { dentists: DentistListItem[] }) {
+export default function DentistsTable({ dentists, loading = false }: { dentists: DentistListItem[]; loading?: boolean }) {
   const [query, setQuery] = useState('')
   const filtered = dentists.filter((dentist) => `${dentist.name} ${dentist.cro} ${dentist.email}`.toLowerCase().includes(query.toLowerCase()))
   const columns = useMemo<Array<ColumnDef<DentistListItem>>>(
@@ -35,5 +35,5 @@ export default function DentistsTable({ dentists }: { dentists: DentistListItem[
     [],
   )
 
-  return <DataTable data={filtered} columns={columns} filters={<Input placeholder="Buscar dentista, CRO ou e-mail" value={query} onChange={(event) => setQuery(event.target.value)} />} actions={(row) => <Button variant="ghost" size="sm"><Link to={`/app/dentists/${row.id}`}>Ver</Link></Button>} />
+  return <DataTable data={filtered} columns={columns} loading={loading} filters={<Input placeholder="Buscar dentista, CRO ou e-mail" value={query} onChange={(event) => setQuery(event.target.value)} />} actions={(row) => <Button variant="ghost" size="sm"><Link to={`/app/dentists/${row.id}`}>Ver</Link></Button>} />
 }

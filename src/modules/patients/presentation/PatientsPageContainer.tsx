@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Plus } from 'lucide-react'
+import { can } from '../../../auth/permissions'
+import Button from '../../../components/Button'
 import { listCasesAsync } from '../../../data/caseRepo'
 import { DATA_MODE } from '../../../data/dataMode'
 import { listDentistsAsync } from '../../../data/dentistRepo'
 import AppShell from '../../../layouts/AppShell'
+import { getCurrentUser } from '../../../lib/auth'
 import { useDb } from '../../../lib/useDb'
 import { listPatientsAsync } from '../../../repo/patientRepo'
 import type { Case } from '../../../types/Case'
@@ -12,6 +17,9 @@ import PatientsTable, { type PatientListItem } from './components/PatientsTable'
 
 export default function PatientsPageContainer() {
   const { db } = useDb()
+  const navigate = useNavigate()
+  const currentUser = getCurrentUser(db)
+  const canWrite = can(currentUser, 'patients.write')
   const [remotePatients, setRemotePatients] = useState<Patient[]>([])
   const [remoteCases, setRemoteCases] = useState<Case[]>([])
   const [remoteDentists, setRemoteDentists] = useState<DentistClinic[]>([])
@@ -79,9 +87,17 @@ export default function PatientsPageContainer() {
 
   return (
     <AppShell breadcrumb={['Pacientes']}>
-      <div className="mb-5">
-        <h1 className="text-2xl font-semibold text-slate-950">Pacientes</h1>
-        <p className="mt-1 text-sm text-slate-600">Lista aprimorada com busca, portal e vinculo com casos ativos.</p>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-950">Pacientes</h1>
+          <p className="mt-1 text-sm text-slate-600">Lista aprimorada com busca, portal e vinculo com casos ativos.</p>
+        </div>
+        {canWrite ? (
+          <Button onClick={() => navigate('/app/patients/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo paciente
+          </Button>
+        ) : null}
       </div>
       {error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       <PatientsTable patients={patients} loading={loading} />
