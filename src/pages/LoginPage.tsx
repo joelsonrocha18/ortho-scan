@@ -72,15 +72,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="app-login-shell relative flex min-h-[100dvh] items-center justify-center overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
+    <div className="app-login-shell relative flex min-h-[100dvh] items-center justify-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
       <img
         src={`${import.meta.env.BASE_URL}brand/orthoscan-submark-dark.jpg`}
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.16]"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-auto w-[min(1780px,140vw)] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.2]"
       />
 
-      <div className="absolute inset-x-0 top-0 z-10 px-3 py-3 sm:px-4 sm:py-4">
+      <div className="absolute inset-x-0 top-0 z-20 px-3 py-3 sm:px-4 sm:py-4">
         <div className="mx-auto flex max-w-7xl justify-end">
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link
@@ -112,7 +112,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="relative mt-20 w-full max-w-md sm:mt-14">
+      <div className="relative z-10 mt-20 w-full max-w-md sm:mt-14">
         <Card className="app-login-card border p-4 text-white sm:p-6">
           <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-5 text-center shadow-[0_18px_40px_-30px_rgba(0,0,0,0.7)]">
             <BrandLockup tone="light" size="lg" align="center" />
