@@ -42,6 +42,17 @@ function asGender(value: unknown): Patient['gender'] {
   return undefined
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return undefined
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function mapPatientDocument(id: string, data: PatientDocument): Patient {
   const now = nowIsoDateTime()
   const address = asObject(data.address)
@@ -65,6 +76,10 @@ function mapPatientDocument(id: string, data: PatientDocument): Patient {
     address: address as Patient['address'],
     primaryDentistId: asText(data.primaryDentistId) ?? asText(data.primary_dentist_id),
     clinicId: asText(data.clinicId) ?? asText(data.clinic_id),
+    portal_uid: asText(data.portal_uid) ?? asText(data.portalUid),
+    portal_enabled: asBoolean(data.portal_enabled) ?? asBoolean(data.portalEnabled) ?? false,
+    active_invite_id: asText(data.active_invite_id) ?? asText(data.activeInviteId),
+    current_tray: asNumber(data.current_tray) ?? asNumber(data.currentTray),
     notes: asText(data.notes),
     createdAt: asText(data.createdAt) ?? asText(data.created_at) ?? now,
     updatedAt: asText(data.updatedAt) ?? asText(data.updated_at) ?? now,
@@ -89,6 +104,10 @@ function patientToFirestoreDocument(patient: Patient): PatientDocument {
     notes: patient.notes ?? null,
     clinic_id: patient.clinicId ?? null,
     primary_dentist_id: patient.primaryDentistId ?? null,
+    portal_uid: patient.portal_uid ?? null,
+    portal_enabled: patient.portal_enabled ?? false,
+    active_invite_id: patient.active_invite_id ?? null,
+    current_tray: patient.current_tray ?? null,
     created_at: patient.createdAt,
     updated_at: patient.updatedAt,
     deleted_at: patient.deletedAt ?? null,
@@ -177,6 +196,7 @@ export function createPatient(payload: PatientPayload) {
     address: payload.address,
     primaryDentistId: payload.primaryDentistId,
     clinicId: payload.clinicId,
+    portal_enabled: payload.portal_enabled ?? false,
     notes: payload.notes,
     createdAt: now,
     updatedAt: now,
@@ -207,6 +227,7 @@ export async function createPatientFirebase(payload: PatientPayload): Promise<Pa
     address: payload.address,
     primaryDentistId: payload.primaryDentistId,
     clinicId: payload.clinicId,
+    portal_enabled: payload.portal_enabled ?? false,
     notes: payload.notes,
     createdAt: now,
     updatedAt: now,

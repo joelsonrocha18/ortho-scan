@@ -70,6 +70,7 @@ type PatientForm = {
   }
   primaryDentistId: string
   clinicId: string
+  portalEnabled: boolean
   notes: string
 }
 
@@ -101,6 +102,7 @@ const emptyForm: PatientForm = {
   },
   primaryDentistId: '',
   clinicId: '',
+  portalEnabled: false,
   notes: '',
 }
 
@@ -443,6 +445,7 @@ export default function PatientDetailPage() {
       },
       primaryDentistId: safeText(existing.primaryDentistId),
       clinicId: safeText(existing.clinicId),
+      portalEnabled: Boolean(existing.portal_enabled),
       notes: safeText(existing.notes),
     })
   }, [existing, isNew])
@@ -683,6 +686,7 @@ export default function PatientDetailPage() {
       },
       primaryDentistId: form.primaryDentistId || undefined,
       clinicId: form.clinicId || undefined,
+      portal_enabled: form.portalEnabled,
       notes: form.notes.trim() || undefined,
     }
 
@@ -1137,6 +1141,25 @@ export default function PatientDetailPage() {
                   {dentistWhatsappValid ? <WhatsappLink value={selectedDentist?.whatsapp} className="text-xs font-semibold" /> : null}
                 </div>
               ) : null}
+            </div>
+
+            <div className="rounded-lg border border-slate-300 bg-white px-3 py-3 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Portal do paciente</p>
+                  <p className="ui-copy-muted text-xs">{form.portalEnabled ? 'Ativo' : 'Inativo'}</p>
+                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={form.portalEnabled}
+                    disabled={!canWrite}
+                    onChange={(event) => setForm((c) => ({ ...c, portalEnabled: event.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-500"
+                  />
+                  Ativo
+                </label>
+              </div>
             </div>
           </div>
         </Card>
