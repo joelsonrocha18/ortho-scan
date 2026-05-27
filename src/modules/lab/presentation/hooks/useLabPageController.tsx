@@ -26,6 +26,7 @@ import {
   getReplenishmentAlertSummaries,
 } from '../../domain'
 import { formatFriendlyRequestCode, getGuideKindForLabOrder, getGuideReprintLabel, isReworkItem, isReworkProductionItem, resolveLabProductLabel, archLabel } from '../lib/labPresentation'
+import { buildLabStickerPrintHtml } from '../lib/labStickerPrint'
 
 type ModalState =
   | { open: false; mode: 'create' | 'edit'; item: null }
@@ -265,7 +266,7 @@ export function useLabPageController() {
   const printSticker = useCallback((item: LabOrder) => {
     printHtml(
       'Etiqueta do laboratório',
-      `<!doctype html><html><head><meta charset="utf-8" /><title>Etiqueta</title></head><body style="font-family:Arial;padding:24px"><h2>${item.patientName}</h2><p>${resolveOrderProductLabel(item)}</p><p>Placa #${item.trayNumber}</p><p>${item.requestCode ?? item.id}</p></body></html>`,
+      buildLabStickerPrintHtml({ item, productLabel: resolveOrderProductLabel(item) }),
     )
   }, [printHtml, resolveOrderProductLabel])
 
